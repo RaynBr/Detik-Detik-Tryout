@@ -15,6 +15,11 @@ class StudentController extends Controller
     {
         $query = UserSiswa::with(['kelas.jenjang']);
 
+        $user = $request->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+        }
+
         if ($request->filled('class_id')) {
             $query->where('idkelas', $request->class_id);
         }
@@ -80,11 +85,17 @@ class StudentController extends Controller
         $id = 'US' . date('Ymd') . str_pad((string)rand(100000, 999999), 10, '0', STR_PAD_LEFT);
         $nisn = $request->nisn ?: ('00' . rand(20000000, 29999999));
 
+        $authUser = $request->user();
+        $idkategori = ($authUser && $authUser->role === 'admin' && !empty($authUser->idkategori))
+            ? $authUser->idkategori
+            : ($request->idkategori ?? $authUser?->idkategori);
+
         $user = UserSiswa::create([
             'iduser' => $id,
             'nama' => $request->name,
             'nisn' => $nisn,
             'idkelas' => $request->class_id ?? null,
+            'idkategori' => $idkategori,
             'login_email' => $request->email,
             'login_password' => Hash::make($request->password),
             'telp' => $request->phone ?? null,
@@ -113,6 +124,11 @@ class StudentController extends Controller
     public function update(Request $request, $id)
     {
         $user = UserSiswa::where('iduser', $id)->firstOrFail();
+        $authUser = $request->user();
+
+        if ($authUser && $authUser->role === 'admin' && !empty($authUser->idkategori) && (string)$user->idkategori !== (string)$authUser->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah siswa instansi lain.'], 403);
+        }
 
         $request->validate([
             'name' => 'required|string|max:100',
@@ -164,6 +180,12 @@ class StudentController extends Controller
     public function destroy($id)
     {
         $user = UserSiswa::where('iduser', $id)->firstOrFail();
+        $authUser = request()->user();
+
+        if ($authUser && $authUser->role === 'admin' && !empty($authUser->idkategori) && (string)$user->idkategori !== (string)$authUser->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses menghapus siswa instansi lain.'], 403);
+        }
+
         $user->update(['status_aktif' => 'N']);
         SiswaKelas::where('iduser', $id)->delete();
 

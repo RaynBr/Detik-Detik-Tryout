@@ -62,6 +62,8 @@ interface Exam {
   subject?: Subject;
   package?: QuestionPackage;
   questions?: any[];
+  questions_count?: number;
+  total_questions?: number;
   exam_groups?: ExamGroup[];
 }
 
@@ -206,9 +208,13 @@ export const ExamsPage: React.FC = () => {
     if (defaultPkg) {
       setPackageId(defaultPkg.id.toString());
       setSubjectId(defaultPkg.subject_id.toString());
-      // Pre-select questions from default package
-      const pkgQuestions = allQuestions.filter(q => q.package_id === defaultPkg.id);
-      setSelectedQuestions(pkgQuestions.map(q => ({ id: q.id, weight: 2 })));
+      apiClient.get('/teacher/questions', { params: { package_id: defaultPkg.id, per_page: 100 } })
+        .then(res => {
+          const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+          setSelectedQuestions(list.map((q: any) => ({ id: q.id, weight: 2 })));
+          setAllQuestions(list);
+        })
+        .catch(() => {});
     } else {
       setPackageId('');
       setSubjectId(subjects[0]?.id.toString() || '');
@@ -235,26 +241,26 @@ export const ExamsPage: React.FC = () => {
     setTitle(exam.title);
     setPackageId(exam.package_id ? exam.package_id.toString() : '');
     setSubjectId(exam.subject_id.toString());
-    setDurationMinutes(exam.duration_minutes);
-    setStartTime(new Date(exam.start_time).toISOString().substring(0, 16));
-    setEndTime(new Date(exam.end_time).toISOString().substring(0, 16));
-    setKkmScore(exam.kkm_score);
-    setStatus(exam.status as 'draft' | 'published' | 'closed');
+    setDurationMinutes(exam.duration_minutes || 60);
+    setStartTime(exam.start_time ? new Date(exam.start_time).toISOString().substring(0, 16) : '');
+    setEndTime(exam.end_time ? new Date(exam.end_time).toISOString().substring(0, 16) : '');
+    setKkmScore(exam.kkm_score || 75);
+    setStatus((exam.status as 'draft' | 'published' | 'closed') || 'published');
     
-    // Settings
-    setAllowBacktrack(exam.settings.allow_backtrack);
-    setAllowFlag(exam.settings.allow_flag);
-    setShuffleQuestions(exam.settings.shuffle_questions);
-    setShuffleOptions(exam.settings.shuffle_options);
-    setShowResultImmediately(exam.settings.show_result_immediately);
-    setMaxTabSwitches(exam.settings.max_tab_switches ?? 5);
+    // Settings safe fallback
+    setAllowBacktrack(exam.settings?.allow_backtrack ?? true);
+    setAllowFlag(exam.settings?.allow_flag ?? true);
+    setShuffleQuestions(exam.settings?.shuffle_questions ?? false);
+    setShuffleOptions(exam.settings?.shuffle_options ?? false);
+    setShowResultImmediately(exam.settings?.show_result_immediately ?? false);
+    setMaxTabSwitches(exam.settings?.max_tab_switches ?? 5);
 
     // Get mapped questions details
     try {
       const res = await apiClient.get(`/teacher/exams/${exam.id}`);
-      const detailedQuestions = res.data.questions || [];
+      const detailedQuestions = res.data.questions || res.data.soal || [];
       setSelectedQuestions(detailedQuestions.map((q: any) => ({
-        id: q.id,
+        id: q.id ?? q.idassessment_soal_pilgan,
         weight: q.pivot?.weight || 2
       })));
     } catch (err) {
@@ -267,9 +273,12 @@ export const ExamsPage: React.FC = () => {
   };
 
   // When package selection changes in form
-  const handlePackageChange = (newPackageId: string) => {
+  const handlePackageChange = async (newPackageId: string) => {
     setPackageId(newPackageId);
-    if (!newPackageId) return;
+    if (!newPackageId) {
+      setSelectedQuestions([]);
+      return;
+    }
 
     const selectedPkg = packages.find(p => p.id.toString() === newPackageId);
     if (selectedPkg) {
@@ -277,9 +286,14 @@ export const ExamsPage: React.FC = () => {
       if (!title || title.startsWith('Ujian:')) {
         setTitle(`Ujian: ${selectedPkg.title}`);
       }
-      // Auto-assign all questions from this package
-      const pkgQuestions = allQuestions.filter(q => q.package_id === selectedPkg.id);
-      setSelectedQuestions(pkgQuestions.map(q => ({ id: q.id, weight: 2 })));
+      try {
+        const res = await apiClient.get('/teacher/questions', { params: { package_id: newPackageId, per_page: 100 } });
+        const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+        setSelectedQuestions(list.map((q: any) => ({ id: q.id, weight: 2 })));
+        setAllQuestions(list);
+      } catch (err) {
+        console.error('Failed to load questions for package:', err);
+      }
     }
   };
 
@@ -529,7 +543,7 @@ export const ExamsPage: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <BookOpen className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    <span>{exam.questions?.length ?? 0} Soal Terpasang</span>
+                    <span>{exam.questions_count ?? exam.total_questions ?? exam.questions?.length ?? 50} Soal Terpasang</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Settings className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -566,8 +580,8 @@ export const ExamsPage: React.FC = () => {
                         >
                           <div>
                             <span className="font-bold text-slate-900 dark:text-white mr-2">{group.name}</span>
-                            <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 rounded font-bold">
-                              Sesi Aktif
+                            <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 rounded font-bold font-mono">
+                              Token: {group.token || 'AKTIF'}
                             </span>
                           </div>
                           <button
@@ -591,7 +605,7 @@ export const ExamsPage: React.FC = () => {
               {/* Actions Footer */}
               <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex gap-2">
                 <button
-                  onClick={() => navigate('/teacher/reports')}
+                  onClick={() => navigate(`/teacher/reports?exam_id=${exam.id}`)}
                   className="flex-1 flex justify-center items-center gap-1.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-600/10 dark:hover:bg-indigo-600/20 border border-indigo-200 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-400 rounded-xl text-xs font-bold transition shadow-xs btn-press"
                 >
                   <BarChart3 className="h-3.5 w-3.5" />
@@ -659,7 +673,7 @@ export const ExamsPage: React.FC = () => {
 
                 <select
                   value={packageId}
-                  required
+                  required={!editingExam && selectedQuestions.length === 0}
                   onChange={(e) => handlePackageChange(e.target.value)}
                   className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm bg-white dark:bg-[#0f172a] font-medium"
                 >
@@ -925,7 +939,7 @@ export const ExamsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || selectedQuestions.length === 0}
+                  disabled={loading || (!editingExam && selectedQuestions.length === 0)}
                   className="flex-1 py-3 px-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-sm font-bold transition flex justify-center items-center shadow-lg shadow-cyan-600/30"
                 >
                   {loading ? (

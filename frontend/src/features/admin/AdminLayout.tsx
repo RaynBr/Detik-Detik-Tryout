@@ -28,7 +28,7 @@ export const AdminLayout: React.FC = () => {
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Bank Soal', path: '/admin/questions', icon: FileQuestion },
     { name: 'Paket TryOut', path: '/admin/exams', icon: ClipboardList },
-    { name: 'Instansi & Pengguna', path: '/admin/instansi', icon: Building2 },
+    { name: user?.role === 'admin' ? 'Pengguna Instansi' : 'Instansi & Pengguna', path: '/admin/instansi', icon: Building2 },
     { name: 'Live Proctoring', path: '/admin/proctoring', icon: ShieldAlert },
     { name: 'Master Jenjang', path: '/admin/jenjang', icon: Layers },
     { name: 'Master Kelas', path: '/admin/classes', icon: GraduationCap },
@@ -47,7 +47,9 @@ export const AdminLayout: React.FC = () => {
           </div>
           <div>
             <h1 className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">Detik Detik TryOut</h1>
-            <p className="text-xs text-slate-500 dark:text-gray-500 font-medium">Administrator IP Portal</p>
+            <p className="text-xs text-slate-500 dark:text-gray-500 font-medium">
+              {user?.role === 'super_admin' ? 'Super Admin IP Portal' : user?.role === 'admin' ? (user?.profile?.institution || 'Admin Sekolah') : 'Portal CBT'}
+            </p>
           </div>
         </div>
 

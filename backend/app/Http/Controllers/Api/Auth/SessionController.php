@@ -27,6 +27,7 @@ class SessionController extends Controller
                 'name' => $user->name,
                 'phone' => $user->telp,
                 'address' => $user->alamat,
+                'idkategori' => $user->idkategori,
                 'institution' => $user->kategori?->nama_kategori,
             ];
             $id = $user->iduser_bo;
@@ -40,6 +41,7 @@ class SessionController extends Controller
                 'id' => $user->iduser,
                 'nisn' => $user->nisn,
                 'institution' => $institutionName,
+                'idkategori' => $user->idkategori ?? $user->kelas?->idkategori,
                 'jenjang' => $user->kelas?->jenjang?->nama_jenjang ?? 'Umum',
                 'class_id' => $user->idkelas,
                 'class_name' => $user->kelas?->nama_kelas ?? 'Belum Ditentukan',
@@ -64,6 +66,7 @@ class SessionController extends Controller
                 'email' => $user->email,
                 'username' => $user->username,
                 'role' => $role,
+                'idkategori' => $user->idkategori ?? null,
                 'profile' => $profile
             ]
         ]);

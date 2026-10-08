@@ -16,10 +16,10 @@ class MasterKelasController extends Controller
         $query = MasterKelas::with(['jenjang', 'waliKelas', 'kategori'])
             ->withCount('siswa');
 
-        if ($request->filled('idkategori')) {
-            $query->where('idkategori', $request->idkategori);
-        } elseif ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
             $query->where('idkategori', $user->idkategori);
+        } elseif ($request->filled('idkategori')) {
+            $query->where('idkategori', $request->idkategori);
         }
 
         if ($request->filled('idjenjang')) {
@@ -70,7 +70,11 @@ class MasterKelasController extends Controller
         $idjenjang = $validated['idjenjang'] ?? $validated['major_id'] ?? 1;
 
         $user = $request->user();
-        $idkategori = $validated['idkategori'] ?? ($user && !empty($user->idkategori) ? $user->idkategori : '27830150842287772');
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $idkategori = $user->idkategori;
+        } else {
+            $idkategori = $validated['idkategori'] ?? ($user && !empty($user->idkategori) ? $user->idkategori : '27830150842287772');
+        }
 
         $kelas = MasterKelas::create([
             'nama_kelas' => trim($namaKelas),
@@ -102,6 +106,11 @@ class MasterKelasController extends Controller
 
     public function show(MasterKelas $masterKela)
     {
+        $user = request()->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki akses ke kelas instansi lain.'], 403);
+        }
+
         $masterKela->load([
             'jenjang',
             'waliKelas',
@@ -124,6 +133,11 @@ class MasterKelasController extends Controller
 
     public function update(Request $request, MasterKelas $masterKela)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah kelas instansi lain.'], 403);
+        }
+
         $validated = $request->validate([
             'nama_kelas' => 'nullable|string|max:50',
             'name' => 'nullable|string|max:50',
@@ -167,6 +181,11 @@ class MasterKelasController extends Controller
 
     public function destroy(MasterKelas $masterKela)
     {
+        $user = request()->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses menghapus kelas instansi lain.'], 403);
+        }
+
         $masterKela->delete();
 
         return response()->json([

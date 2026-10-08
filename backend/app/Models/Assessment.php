@@ -78,6 +78,11 @@ class Assessment extends Model
         return $this->belongsTo(MasterMataPelajaran::class, 'idmapel', 'id');
     }
 
+    public function subject(): BelongsTo
+    {
+        return $this->belongsTo(MasterMataPelajaran::class, 'idmapel', 'id');
+    }
+
     public function pembuat(): BelongsTo
     {
         return $this->belongsTo(UserBo::class, 'iduser_bo', 'iduser_bo');
@@ -96,5 +101,10 @@ class Assessment extends Model
     public function attempts(): HasMany
     {
         return $this->hasMany(AssessmentJawabanPilgan::class, 'idassessment', 'idassessment');
+    }
+
+    public function examGroups(): HasMany
+    {
+        return $this->hasMany(ExamGroup::class, 'exam_id', 'idassessment');
     }
 }

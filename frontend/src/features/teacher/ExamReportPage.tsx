@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '../../shared/api/client';
 import { useToast } from '../../shared/context/ToastContext';
 import { TableSkeleton } from '../../shared/components/LoadingSkeleton';
 import { ExamPrintReportModal } from './components/ExamPrintReportModal';
+import { LaTeXRenderer } from '../../shared/components/LaTeXRenderer';
 import {
   BarChart3,
   FileSpreadsheet,
@@ -20,7 +22,9 @@ import {
   BookOpen,
   ChevronDown,
   Check,
-  X
+  X,
+  Eye,
+  Lightbulb
 } from 'lucide-react';
 
 interface ExamItem {
@@ -115,6 +119,9 @@ interface ReportData {
 
 export const ExamReportPage: React.FC = () => {
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const urlExamId = searchParams.get('exam_id') ? Number(searchParams.get('exam_id')) : null;
+
   const [exams, setExams] = useState<ExamItem[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
   const [report, setReport] = useState<ReportData | null>(null);
@@ -124,6 +131,11 @@ export const ExamReportPage: React.FC = () => {
   const [loadingReport, setLoadingReport] = useState<boolean>(false);
   const [exportingCsv, setExportingCsv] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+
+  // Student Attempt Detail Modal states
+  const [detailModalOpen, setDetailModalOpen] = useState<boolean>(false);
+  const [detailLoading, setDetailLoading] = useState<boolean>(false);
+  const [studentDetail, setStudentDetail] = useState<any | null>(null);
 
   // Filter & Search states
   const [activeTab, setActiveTab] = useState<'students' | 'analysis'>('students');
@@ -140,6 +152,13 @@ export const ExamReportPage: React.FC = () => {
   useEffect(() => {
     fetchExams();
   }, []);
+
+  // Sync when urlExamId changes
+  useEffect(() => {
+    if (urlExamId && exams.some(e => e.id === urlExamId)) {
+      setSelectedExamId(urlExamId);
+    }
+  }, [urlExamId, exams]);
 
   // Click outside to close exam dropdown
   useEffect(() => {
@@ -158,13 +177,31 @@ export const ExamReportPage: React.FC = () => {
       const res = await apiClient.get('/teacher/exams');
       setExams(res.data);
       if (res.data.length > 0) {
-        setSelectedExamId(res.data[0].id);
+        const found = urlExamId && res.data.some((e: any) => e.id === urlExamId);
+        setSelectedExamId(found ? urlExamId : res.data[0].id);
       }
     } catch (err) {
       console.error('Failed to load exams list:', err);
       toast.error('Gagal memuat daftar ujian.');
     } finally {
       setLoadingExams(false);
+    }
+  };
+
+  const openStudentDetail = async (attemptId: number) => {
+    if (!selectedExamId) return;
+    setDetailLoading(true);
+    setDetailModalOpen(true);
+    setStudentDetail(null);
+    try {
+      const res = await apiClient.get(`/teacher/exams/${selectedExamId}/attempts/${attemptId}`);
+      setStudentDetail(res.data);
+    } catch (err) {
+      console.error('Failed to load student attempt detail:', err);
+      toast.error('Gagal memuat rincian lembar jawaban siswa.');
+      setDetailModalOpen(false);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -714,12 +751,13 @@ export const ExamReportPage: React.FC = () => {
                       <th className="px-4 py-3 text-center">Pelanggaran</th>
                       <th className="px-4 py-3 text-center font-black">Nilai Akhir</th>
                       <th className="px-4 py-3 text-center">Hasil</th>
+                      <th className="px-4 py-3 text-center w-24">Lembar Jawaban</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/[0.03]">
                     {filteredStudents.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-12 text-center text-slate-400 dark:text-gray-500 font-medium">
+                        <td colSpan={10} className="px-6 py-12 text-center text-slate-400 dark:text-gray-500 font-medium">
                           Tidak ditemukan data peserta ujian yang sesuai dengan filter.
                         </td>
                       </tr>
@@ -810,6 +848,18 @@ export const ExamReportPage: React.FC = () => {
                               </span>
                             )}
                           </td>
+
+                          {/* Action Button: Detail Lembar Jawaban Siswa */}
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={() => openStudentDetail(st.attempt_id)}
+                              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-600/20 dark:hover:bg-indigo-600/30 text-indigo-700 dark:text-indigo-400 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-xs border border-indigo-200 dark:border-indigo-500/20 active:scale-95"
+                              title="Lihat Lembar Jawaban Siswa"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span>Detail</span>
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -898,6 +948,201 @@ export const ExamReportPage: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Rincian Lembar Jawaban Siswa */}
+          {detailModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-[#070a13]/80 backdrop-blur-md">
+              <div className="w-full max-w-4xl bg-white dark:bg-[#0c1222] border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+                {/* Modal Header */}
+                <div className="px-5 sm:px-6 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0 bg-slate-50/80 dark:bg-white/[0.02]">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-indigo-100 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-200 dark:border-indigo-500/30">
+                      <BookOpen className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-900 dark:text-white">
+                        Lembar Jawaban Siswa
+                      </h3>
+                      {studentDetail && (
+                        <p className="text-xs text-slate-500 dark:text-gray-400">
+                          {studentDetail.attempt?.student_name} ({studentDetail.attempt?.student_nisn}) — Kelas {studentDetail.attempt?.class_name}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setDetailModalOpen(false)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+                  {detailLoading ? (
+                    <div className="py-20 text-center space-y-3">
+                      <RefreshCw className="h-8 w-8 text-indigo-600 animate-spin mx-auto" />
+                      <p className="text-xs text-slate-500 font-semibold">Memuat rekapan lembar jawaban siswa...</p>
+                    </div>
+                  ) : studentDetail ? (
+                    <>
+                      {/* Summary Banner */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 rounded-2xl text-center">
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium block">Skor Siswa</span>
+                          <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                            {studentDetail.attempt?.score ?? 0}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium block">Total Butir Soal</span>
+                          <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                            {studentDetail.questions?.length ?? 0}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-emerald-600 font-medium block">Jawaban Benar</span>
+                          <span className="text-2xl font-black text-emerald-600 font-mono">
+                            {studentDetail.questions?.filter((q: any) => q.is_correct).length ?? 0}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-rose-600 font-medium block">Waktu Pengerjaan</span>
+                          <span className="text-lg font-black text-slate-700 dark:text-gray-300 font-mono pt-1 block">
+                            {studentDetail.attempt?.time_spent || '-'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Question by question inspection */}
+                      <div className="space-y-4">
+                        {studentDetail.questions?.map((q: any) => {
+                          const isCorrect = q.is_correct;
+                          const hasAnswered = !!q.student_answer;
+
+                          return (
+                            <div
+                              key={q.question_id || q.number}
+                              className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                                !hasAnswered
+                                  ? 'border-amber-200 dark:border-amber-500/20 bg-amber-50/20 dark:bg-amber-950/10'
+                                  : isCorrect
+                                  ? 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/15 dark:bg-emerald-950/10'
+                                  : 'border-rose-200 dark:border-rose-500/20 bg-rose-50/15 dark:bg-rose-950/10'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 mb-3">
+                                <span className="text-xs font-black tracking-wider uppercase font-mono text-slate-700 dark:text-slate-300">
+                                  Soal #{q.number}
+                                </span>
+                                <div>
+                                  {isCorrect ? (
+                                    <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      <span>Benar</span>
+                                    </span>
+                                  ) : hasAnswered ? (
+                                    <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-300 dark:border-rose-500/30">
+                                      <XCircle className="h-3 w-3" />
+                                      <span>Salah</span>
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30">
+                                      <AlertTriangle className="h-3 w-3" />
+                                      <span>Tidak Dijawab</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="text-sm font-medium text-slate-900 dark:text-white leading-relaxed mb-3">
+                                <LaTeXRenderer text={q.soal_text} />
+                                {q.soal_gambar && (
+                                  <img src={q.soal_gambar} alt={`Soal ${q.number}`} className="mt-2 max-h-56 rounded-xl border border-slate-200 dark:border-white/10" />
+                                )}
+                              </div>
+
+                              {/* Options */}
+                              <div className="space-y-2 mb-3">
+                                {q.options?.map((opt: any) => {
+                                  const isStudentChoice = q.student_answer === opt.key;
+                                  const isKey = q.correct_answer === opt.key;
+
+                                  let optClass = "border-slate-200 dark:border-white/5 bg-white dark:bg-white/[0.02] text-slate-700 dark:text-gray-300";
+                                  if (isKey) {
+                                    optClass = "border-emerald-400 dark:border-emerald-500/50 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-semibold";
+                                  } else if (isStudentChoice && !isCorrect) {
+                                    optClass = "border-rose-400 dark:border-rose-500/50 bg-rose-50/80 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200";
+                                  }
+
+                                  return (
+                                    <div
+                                      key={opt.key}
+                                      className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-xs ${optClass}`}
+                                    >
+                                      <span className={`w-5 h-5 rounded-lg flex items-center justify-center font-bold text-[11px] shrink-0 ${
+                                        isKey
+                                          ? 'bg-emerald-600 text-white'
+                                          : isStudentChoice
+                                          ? 'bg-rose-600 text-white'
+                                          : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300'
+                                      }`}>
+                                        {opt.key}
+                                      </span>
+                                      <div className="flex-1">
+                                        <LaTeXRenderer text={opt.content} />
+                                        {opt.media && (
+                                          <img src={opt.media} alt={opt.key} className="mt-1 max-h-28 rounded-lg" />
+                                        )}
+                                      </div>
+                                      {isKey && (
+                                        <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 shrink-0 ml-auto bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 rounded-md">
+                                          Kunci Jawaban
+                                        </span>
+                                      )}
+                                      {isStudentChoice && !isKey && (
+                                        <span className="text-[10px] uppercase font-bold text-rose-700 dark:text-rose-400 shrink-0 ml-auto bg-rose-100 dark:bg-rose-500/20 px-2 py-0.5 rounded-md">
+                                          Jawaban Siswa
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Pembahasan */}
+                              {q.explanation && (
+                                <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl space-y-1">
+                                  <div className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-400 text-xs font-bold">
+                                    <Lightbulb className="h-3.5 w-3.5" />
+                                    <span>Pembahasan Soal:</span>
+                                  </div>
+                                  <div className="text-xs text-slate-700 dark:text-indigo-200/90 leading-relaxed pl-5">
+                                    <LaTeXRenderer text={q.explanation} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="px-6 py-3 border-t border-slate-200 dark:border-white/10 flex justify-end shrink-0 bg-slate-50/50 dark:bg-white/[0.02]">
+                  <button
+                    onClick={() => setDetailModalOpen(false)}
+                    className="py-2 px-5 bg-slate-200 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/15 text-slate-800 dark:text-white font-bold text-xs rounded-xl transition"
+                  >
+                    Tutup
+                  </button>
+                </div>
               </div>
             </div>
           )}

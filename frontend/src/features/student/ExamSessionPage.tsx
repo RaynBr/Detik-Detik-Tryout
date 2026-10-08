@@ -17,7 +17,8 @@ import {
 import { 
   Clock, AlertTriangle, Shield, CheckSquare, 
   ChevronLeft, ChevronRight, HelpCircle, Send, Maximize,
-  CheckCircle, X, RefreshCw, Check, Ban, WifiOff, HardDrive
+  CheckCircle, X, RefreshCw, Check, Ban, WifiOff, HardDrive,
+  BookOpen, CheckCircle2, XCircle, AlertCircle, Lightbulb
 } from 'lucide-react';
 
 interface QuestionOption {
@@ -53,6 +54,7 @@ export const ExamSessionPage: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
+  const [isSessionLimited, setIsSessionLimited] = useState<boolean>(false);
   const [loadingSession, setLoadingSession] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -71,6 +73,10 @@ export const ExamSessionPage: React.FC = () => {
   const disqualifiedRef = useRef(false);
   const lastViolationTimestampRef = useRef(0);
 
+  // Countdown Timer Wall-Clock Ref (prevents interval teardown stutter and timer drift)
+  const targetEndTimeRef = useRef<number | null>(null);
+  const autoSubmittedRef = useRef<boolean>(false);
+
   // Autosave and Sync state
   const [savingStatus, setSavingStatus] = useState<'idle' | 'saving' | 'saved' | 'saved_offline' | 'error'>('idle');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -83,6 +89,26 @@ export const ExamSessionPage: React.FC = () => {
   // Responsive & Accessibility State (Mobile Sheet & Font Scaling)
   const [showMobileNavSheet, setShowMobileNavSheet] = useState(false);
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
+
+  // Immediate Review & Pembahasan Modal State
+  const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
+  const [reviewLoading, setReviewLoading] = useState<boolean>(false);
+  const [reviewData, setReviewData] = useState<any | null>(null);
+
+  const fetchSessionReview = async () => {
+    if (!attemptId) return;
+    setReviewLoading(true);
+    setShowReviewModal(true);
+    try {
+      const res = await apiClient.get(`/student/results/${attemptId}`);
+      setReviewData(res.data);
+    } catch (err) {
+      toast.error('Gagal memuat kunci jawaban dan pembahasan.');
+      setShowReviewModal(false);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
 
   // In-memory fallback queue
   const pendingAnswersQueue = useRef<{ [questionId: number]: any }>({});
@@ -145,14 +171,34 @@ export const ExamSessionPage: React.FC = () => {
           }
 
           // Cache entire question set to IndexedDB for offline resilience
-          const remainingSecs = res.data.time_remaining_seconds || 0;
+          const rawSecs = res.data.time_remaining_seconds !== undefined
+            ? res.data.time_remaining_seconds
+            : (res.data.attempt?.time_remaining_seconds !== undefined ? res.data.attempt.time_remaining_seconds : 0);
+          const remainingSecs = Math.max(0, Math.floor(Number(rawSecs) || 0));
+
+          if (res.data.is_session_limited || res.data.attempt?.is_session_limited) {
+            setIsSessionLimited(true);
+          }
+
+          if (remainingSecs <= 0 && attempt.status === 'in_progress') {
+            handleAutoSubmit();
+            setLoadingSession(false);
+            return;
+          }
+
+          targetEndTimeRef.current = Date.now() + remainingSecs * 1000;
           await saveExamSessionOffline(attemptId, qList, remainingSecs);
           const pending = await getPendingOfflineAnswers(attemptId);
           setPendingSyncCount(pending.length);
         }
 
         setQuestions(qList);
-        setTimeRemaining(res.data.time_remaining_seconds || 0);
+        const initialRawSecs = res.data.time_remaining_seconds !== undefined
+          ? res.data.time_remaining_seconds
+          : (res.data.attempt?.time_remaining_seconds || 0);
+        const initialCleanSecs = Math.max(0, Math.floor(Number(initialRawSecs) || 0));
+        setTimeRemaining(initialCleanSecs);
+        targetEndTimeRef.current = Date.now() + initialCleanSecs * 1000;
 
       } catch (err: any) {
         console.warn('Network request failed, attempting IndexedDB offline cache restore:', err);
@@ -180,7 +226,9 @@ export const ExamSessionPage: React.FC = () => {
             }
 
             setQuestions(restoredQuestions);
-            setTimeRemaining(cachedSession.timeRemainingSeconds || 0);
+            const cachedCleanSecs = Math.max(0, Math.floor(Number(cachedSession.timeRemainingSeconds) || 0));
+            setTimeRemaining(cachedCleanSecs);
+            targetEndTimeRef.current = Date.now() + cachedCleanSecs * 1000;
             const pending = await getPendingOfflineAnswers(attemptId);
             setPendingSyncCount(pending.length);
             setSavingStatus('saved_offline');
@@ -280,23 +328,28 @@ export const ExamSessionPage: React.FC = () => {
     };
   }, [attemptId]);
 
-  // 3. Countdown timer with auto-submit
+  // 3. Wall-Clock Synchronized Countdown Timer (drift-proof, zero teardown latency)
   useEffect(() => {
-    if (loadingSession || !timeRemaining || timeRemaining <= 0 || submissionResult) return;
+    if (loadingSession || submissionResult || disqualified) return;
 
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          handleAutoSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const interval = setInterval(() => {
+      if (!targetEndTimeRef.current) return;
 
-    return () => clearInterval(timer);
-  }, [loadingSession, timeRemaining, submissionResult]);
+      const now = Date.now();
+      const diffMs = targetEndTimeRef.current - now;
+      const remainingSecs = Math.max(0, Math.ceil(diffMs / 1000));
+
+      setTimeRemaining(remainingSecs);
+
+      if (remainingSecs <= 0 && !autoSubmittedRef.current) {
+        autoSubmittedRef.current = true;
+        clearInterval(interval);
+        handleAutoSubmit();
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [loadingSession, submissionResult, disqualified]);
 
   // 4. Anti-Cheat: Tab Switching & Window Blur Detection (Alt+Tab, Minimize, Split Screen)
   useEffect(() => {
@@ -704,11 +757,12 @@ export const ExamSessionPage: React.FC = () => {
     }
   };
 
-  // Formatter for time display
+  // Formatter for time display (sanitized against floating-point decimals)
   const formatTime = (secs: number) => {
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
+    const safeSecs = Math.max(0, Math.floor(Number(secs) || 0));
+    const h = Math.floor(safeSecs / 3600);
+    const m = Math.floor((safeSecs % 3600) / 60);
+    const s = safeSecs % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
@@ -780,17 +834,222 @@ export const ExamSessionPage: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={handleReturnToDashboard}
-            className={`w-full py-3.5 px-4 font-bold text-sm rounded-xl shadow-lg transition active:scale-95 text-white ${
-              isDisq
-                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30'
-                : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/30'
-            }`}
-          >
-            Kembali ke Portal Siswa
-          </button>
+          <div className="space-y-2.5">
+            {!isDisq && (
+              <button
+                onClick={fetchSessionReview}
+                className="w-full py-3.5 px-4 font-bold text-sm rounded-xl shadow-md transition active:scale-95 text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center gap-2"
+              >
+                <BookOpen className="h-4 w-4" />
+                <span>Lihat Kunci & Pembahasan Ujian</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleReturnToDashboard}
+              className={`w-full py-3.5 px-4 font-bold text-sm rounded-xl shadow-lg transition active:scale-95 text-white ${
+                isDisq
+                  ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30'
+                  : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/30'
+              }`}
+            >
+              Kembali ke Portal Siswa
+            </button>
+          </div>
         </div>
+
+        {/* Modal Kunci & Pembahasan Ujian */}
+        {showReviewModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-[#070a13]/80 backdrop-blur-md">
+            <div className="w-full max-w-4xl bg-white dark:bg-[#0c1222] border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col text-left">
+              {/* Modal Header */}
+              <div className="px-5 sm:px-6 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0 bg-slate-50/80 dark:bg-white/[0.02]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-200 dark:border-indigo-500/30">
+                    <BookOpen className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white">
+                      Kunci Jawaban & Pembahasan
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-gray-400">
+                      Evaluasi butir soal, pilihan jawaban Anda, dan penjelasan detail.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+                {reviewLoading ? (
+                  <div className="py-20 text-center space-y-3">
+                    <RefreshCw className="h-8 w-8 text-indigo-600 animate-spin mx-auto" />
+                    <p className="text-xs text-slate-500 font-semibold">Memuat pembahasan lengkap...</p>
+                  </div>
+                ) : reviewData ? (
+                  <>
+                    {/* Score summary cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 rounded-2xl text-center">
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium block">Skor Akhir</span>
+                        <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                          {reviewData.attempt?.total_score ?? 0}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium block">Total Soal</span>
+                        <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                          {reviewData.attempt?.total_questions ?? reviewData.questions?.length ?? 0}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-emerald-600 font-medium block">Jawaban Benar</span>
+                        <span className="text-2xl font-black text-emerald-600 font-mono">
+                          {reviewData.attempt?.total_correct ?? 0}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-rose-600 font-medium block">Jawaban Salah</span>
+                        <span className="text-2xl font-black text-rose-600 font-mono">
+                          {reviewData.attempt?.total_incorrect ?? 0}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Questions review list */}
+                    <div className="space-y-4">
+                      {reviewData.questions?.map((q: any) => {
+                        const isCorrect = q.is_correct;
+                        const hasAnswered = !!q.student_answer;
+
+                        return (
+                          <div
+                            key={q.question_id || q.number}
+                            className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                              !hasAnswered
+                                ? 'border-amber-200 dark:border-amber-500/20 bg-amber-50/20 dark:bg-amber-950/10'
+                                : isCorrect
+                                ? 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/15 dark:bg-emerald-950/10'
+                                : 'border-rose-200 dark:border-rose-500/20 bg-rose-50/15 dark:bg-rose-950/10'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                              <span className="text-xs font-black tracking-wider uppercase font-mono text-slate-700 dark:text-slate-300">
+                                Soal #{q.number}
+                              </span>
+                              <div>
+                                {isCorrect ? (
+                                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30">
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    <span>Benar</span>
+                                  </span>
+                                ) : hasAnswered ? (
+                                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-300 dark:border-rose-500/30">
+                                    <XCircle className="h-3 w-3" />
+                                    <span>Salah</span>
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30">
+                                    <AlertCircle className="h-3 w-3" />
+                                    <span>Tidak Dijawab</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-sm font-medium text-slate-900 dark:text-white leading-relaxed mb-3">
+                              <LaTeXRenderer text={q.soal_text} />
+                              {q.soal_gambar && (
+                                <img src={q.soal_gambar} alt={`Soal ${q.number}`} className="mt-2 max-h-56 rounded-xl border border-slate-200 dark:border-white/10" />
+                              )}
+                            </div>
+
+                            {/* Options */}
+                            <div className="space-y-2 mb-3">
+                              {q.options?.map((opt: any) => {
+                                const isStudentChoice = q.student_answer === opt.key;
+                                const isKey = q.correct_answer === opt.key;
+
+                                let optClass = "border-slate-200 dark:border-white/5 bg-white dark:bg-white/[0.02] text-slate-700 dark:text-gray-300";
+                                if (isKey) {
+                                  optClass = "border-emerald-400 dark:border-emerald-500/50 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-semibold";
+                                } else if (isStudentChoice && !isCorrect) {
+                                  optClass = "border-rose-400 dark:border-rose-500/50 bg-rose-50/80 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200";
+                                }
+
+                                return (
+                                  <div
+                                    key={opt.key}
+                                    className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-xs ${optClass}`}
+                                  >
+                                    <span className={`w-5 h-5 rounded-lg flex items-center justify-center font-bold text-[11px] shrink-0 ${
+                                      isKey
+                                        ? 'bg-emerald-600 text-white'
+                                        : isStudentChoice
+                                        ? 'bg-rose-600 text-white'
+                                        : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300'
+                                    }`}>
+                                      {opt.key}
+                                    </span>
+                                    <div className="flex-1">
+                                      <LaTeXRenderer text={opt.content} />
+                                      {opt.media && (
+                                        <img src={opt.media} alt={opt.key} className="mt-1 max-h-28 rounded-lg" />
+                                      )}
+                                    </div>
+                                    {isKey && (
+                                      <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 shrink-0 ml-auto bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 rounded-md">
+                                        Kunci Jawaban
+                                      </span>
+                                    )}
+                                    {isStudentChoice && !isKey && (
+                                      <span className="text-[10px] uppercase font-bold text-rose-700 dark:text-rose-400 shrink-0 ml-auto bg-rose-100 dark:bg-rose-500/20 px-2 py-0.5 rounded-md">
+                                        Jawaban Anda
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Pembahasan */}
+                            {q.explanation && (
+                              <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl space-y-1">
+                                <div className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-400 text-xs font-bold">
+                                  <Lightbulb className="h-3.5 w-3.5" />
+                                  <span>Pembahasan Soal:</span>
+                                </div>
+                                <div className="text-xs text-slate-700 dark:text-indigo-200/90 leading-relaxed pl-5">
+                                  <LaTeXRenderer text={q.explanation} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3 border-t border-slate-200 dark:border-white/10 flex justify-end shrink-0 bg-slate-50/50 dark:bg-white/[0.02]">
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="py-2 px-5 bg-slate-200 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/15 text-slate-800 dark:text-white font-bold text-xs rounded-xl transition"
+                >
+                  Tutup Pembahasan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1002,6 +1261,14 @@ export const ExamSessionPage: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {/* Session Time Window Limitation Alert */}
+      {isSessionLimited && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs px-4 py-2 flex items-center justify-center gap-2 font-medium shrink-0 animate-fade-in">
+          <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span>Waktu pengerjaan disesuaikan dan dibatasi oleh sisa waktu penutupan sesi gelombang ujian ini.</span>
+        </div>
+      )}
 
       {/* Top Floating Offline Notification Banner */}
       {!isOnline && (

@@ -30,6 +30,7 @@ interface ExamListItem {
   subject_code: string;
   subject_name: string;
   duration_minutes: number;
+  effective_duration_minutes?: number;
   start_time: string;
   end_time: string;
   status: string;
@@ -334,7 +335,15 @@ export const StudentExamsPage: React.FC = () => {
                             <div className="grid grid-cols-2 gap-2 p-2.5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 rounded-2xl text-[11px] text-slate-600 dark:text-gray-400 font-medium">
                               <div className="flex items-center gap-1.5">
                                 <Clock className="h-3.5 w-3.5 text-slate-500 dark:text-gray-400" />
-                                <span>{exam.duration_minutes} Menit</span>
+                                <span>
+                                  {exam.effective_duration_minutes !== undefined && exam.effective_duration_minutes < exam.duration_minutes ? (
+                                    <span className="text-amber-600 dark:text-amber-400 font-bold" title={`Durasi normal ${exam.duration_minutes} menit, namun dibatasi sisa waktu sesi`}>
+                                      {exam.effective_duration_minutes} Menit (Sesi Berakhir)
+                                    </span>
+                                  ) : (
+                                    `${exam.duration_minutes} Menit`
+                                  )}
+                                </span>
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <Calendar className="h-3.5 w-3.5 text-slate-500 dark:text-gray-400" />

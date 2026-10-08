@@ -59,12 +59,14 @@ class LoginController extends Controller
                     'email' => $userBo->email,
                     'username' => $userBo->username,
                     'role' => $role,
+                    'idkategori' => $userBo->idkategori,
                     'category' => $userBo->kategori?->nama_kategori,
                     'profile' => [
                         'id' => $userBo->iduser_bo,
                         'name' => $userBo->name,
                         'phone' => $userBo->telp,
                         'address' => $userBo->alamat,
+                        'idkategori' => $userBo->idkategori,
                         'institution' => $userBo->kategori?->nama_kategori,
                     ]
                 ]

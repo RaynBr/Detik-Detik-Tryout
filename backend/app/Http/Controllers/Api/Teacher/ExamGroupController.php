@@ -4,38 +4,41 @@ namespace App\Http\Controllers\Api\Teacher;
 
 use App\Http\Controllers\Controller;
 use App\Models\ExamGroup;
-use App\Models\Exam;
-use App\Models\Student;
+use App\Models\Assessment;
+use App\Models\UserSiswa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
 
 class ExamGroupController extends Controller
 {
+    /**
+     * List all exam groups / waves
+     */
     public function index(Request $request)
     {
-        $query = ExamGroup::with(['exam.subject', 'students.user']);
+        $query = ExamGroup::with(['assessment.mapel', 'assessment.kelas']);
 
-        if ($request->has('exam_id')) {
+        if ($request->filled('exam_id')) {
             $query->where('exam_id', $request->exam_id);
         }
 
         return response()->json($query->latest()->get());
     }
 
+    /**
+     * Store new exam group / wave
+     */
     public function store(Request $request)
     {
         $request->validate([
-            'exam_id' => 'required|exists:exams,id',
+            'exam_id' => 'required',
             'name' => 'required|string|max:255',
             'start_time' => 'nullable|date',
-            'end_time' => 'nullable|date|after:start_time',
-            'token' => 'nullable|string|min:4|max:10|unique:exam_groups,token',
+            'end_time' => 'nullable|date|after_or_equal:start_time',
+            'token' => 'nullable|string|min:3|max:20',
             'max_participants' => 'nullable|integer|min:1',
             'class_ids' => 'nullable|array',
-            'class_ids.*' => 'exists:classes,id',
             'student_ids' => 'nullable|array',
-            'student_ids.*' => 'exists:students,id',
         ]);
 
         $token = $request->token ?: strtoupper(Str::random(6));
@@ -44,31 +47,44 @@ class ExamGroupController extends Controller
             $token = strtoupper(Str::random(6));
         }
 
-        $studentIds = collect($request->input('student_ids', []));
+        $classIds = $request->input('class_ids', []);
+        $studentIds = $request->input('student_ids', []);
 
-        if ($request->has('class_ids') && !empty($request->class_ids)) {
-            $classStudentIds = Student::whereIn('class_id', $request->class_ids)->pluck('id');
-            $studentIds = $studentIds->merge($classStudentIds)->unique()->values();
+        // If classes specified but student_ids empty, automatically map student IDs from UserSiswa
+        if (!empty($classIds) && empty($studentIds)) {
+            $studentIds = UserSiswa::whereIn('idkelas', $classIds)->pluck('iduser')->toArray();
         }
 
-        $examGroup = DB::transaction(function () use ($request, $token, $studentIds) {
-            $group = ExamGroup::create([
-                'exam_id' => $request->exam_id,
-                'name' => $request->name,
-                'start_time' => $request->start_time,
-                'end_time' => $request->end_time,
-                'token' => $token,
-                'max_participants' => $request->max_participants,
-            ]);
+        $examGroup = ExamGroup::create([
+            'exam_id' => (string) $request->exam_id,
+            'name' => $request->name,
+            'start_time' => $request->start_time,
+            'end_time' => $request->end_time,
+            'token' => $token,
+            'max_participants' => $request->max_participants ?? 100,
+            'class_ids' => $classIds,
+            'student_ids' => $studentIds,
+        ]);
 
-            if ($studentIds->isNotEmpty()) {
-                $group->students()->sync($studentIds->all());
+        // Synchronize timing & class to Assessment if appropriate
+        $assessment = Assessment::find($request->exam_id);
+        if ($assessment) {
+            $updates = [];
+            if ($request->filled('start_time')) {
+                $updates['tanggal_mulai_assessment'] = $request->start_time;
             }
+            if ($request->filled('end_time')) {
+                $updates['tanggal_batas_assessment'] = $request->end_time;
+            }
+            if (!empty($classIds) && empty($assessment->idkelas)) {
+                $updates['idkelas'] = $classIds[0];
+            }
+            if (!empty($updates)) {
+                $assessment->update($updates);
+            }
+        }
 
-            return $group;
-        });
-
-        $examGroup->load(['exam', 'students.user']);
+        $examGroup->load(['assessment.mapel', 'assessment.kelas']);
 
         return response()->json([
             'message' => 'Gelombang ujian berhasil dibuat.',
@@ -76,14 +92,18 @@ class ExamGroupController extends Controller
         ], 201);
     }
 
+    /**
+     * Show single exam group
+     */
     public function show($id)
     {
-        $group = ExamGroup::with(['exam.subject', 'students.user', 'students.classRoom', 'students.major'])
-            ->findOrFail($id);
-
+        $group = ExamGroup::with(['assessment.mapel', 'assessment.kelas'])->findOrFail($id);
         return response()->json($group);
     }
 
+    /**
+     * Update exam group
+     */
     public function update(Request $request, $id)
     {
         $group = ExamGroup::findOrFail($id);
@@ -91,39 +111,33 @@ class ExamGroupController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'start_time' => 'nullable|date',
-            'end_time' => 'nullable|date|after:start_time',
-            'token' => 'nullable|string|min:4|max:10|unique:exam_groups,token,' . $id,
+            'end_time' => 'nullable|date|after_or_equal:start_time',
+            'token' => 'nullable|string|min:3|max:20|unique:exam_groups,token,' . $id,
             'max_participants' => 'nullable|integer|min:1',
             'class_ids' => 'nullable|array',
-            'class_ids.*' => 'exists:classes,id',
             'student_ids' => 'nullable|array',
-            'student_ids.*' => 'exists:students,id',
         ]);
 
-        $studentIds = collect($request->input('student_ids', []));
+        $token = $request->token ?: $group->token;
 
-        if ($request->has('class_ids') && !empty($request->class_ids)) {
-            $classStudentIds = Student::whereIn('class_id', $request->class_ids)->pluck('id');
-            $studentIds = $studentIds->merge($classStudentIds)->unique()->values();
+        $classIds = $request->has('class_ids') ? $request->class_ids : $group->class_ids;
+        $studentIds = $request->has('student_ids') ? $request->student_ids : $group->student_ids;
+
+        if (!empty($classIds) && empty($studentIds)) {
+            $studentIds = UserSiswa::whereIn('idkelas', $classIds)->pluck('iduser')->toArray();
         }
 
-        DB::transaction(function () use ($request, $group, $studentIds) {
-            $token = $request->token ?: $group->token;
+        $group->update([
+            'name' => $request->name,
+            'start_time' => $request->start_time,
+            'end_time' => $request->end_time,
+            'token' => $token,
+            'max_participants' => $request->max_participants ?? $group->max_participants,
+            'class_ids' => $classIds,
+            'student_ids' => $studentIds,
+        ]);
 
-            $group->update([
-                'name' => $request->name,
-                'start_time' => $request->start_time,
-                'end_time' => $request->end_time,
-                'token' => $token,
-                'max_participants' => $request->max_participants,
-            ]);
-
-            if ($request->has('class_ids') || $request->has('student_ids')) {
-                $group->students()->sync($studentIds->all());
-            }
-        });
-
-        $group->load(['exam', 'students.user']);
+        $group->load(['assessment.mapel', 'assessment.kelas']);
 
         return response()->json([
             'message' => 'Gelombang ujian berhasil diperbarui.',
@@ -131,6 +145,9 @@ class ExamGroupController extends Controller
         ]);
     }
 
+    /**
+     * Delete exam group
+     */
     public function destroy($id)
     {
         $group = ExamGroup::findOrFail($id);

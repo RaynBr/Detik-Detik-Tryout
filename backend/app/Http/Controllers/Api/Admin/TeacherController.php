@@ -10,17 +10,23 @@ use Illuminate\Support\Facades\DB;
 
 class TeacherController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $teachers = UserBo::with(['kategori', 'mapelAjar.mataPelajaran'])
+        $user = $request->user();
+        $query = UserBo::with(['kategori', 'mapelAjar.mataPelajaran'])
             ->where('status_remove', '!=', 'Y')
             ->where(function ($q) {
                 $q->where('role_type', 'guru')
                   ->orWhere('role_type', 'admin_sekolah')
                   ->orWhere('status_admin', '2')
                   ->orWhereNull('role_type');
-            })
-            ->get();
+            });
+
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+        }
+
+        $teachers = $query->get();
 
         $mapped = $teachers->map(function ($t) {
             return [
@@ -62,6 +68,11 @@ class TeacherController extends Controller
             'role_type' => 'nullable|in:guru,admin_sekolah',
         ]);
 
+        $user = $request->user();
+        $idkategori = ($user && $user->role === 'admin' && !empty($user->idkategori)) 
+            ? $user->idkategori 
+            : ($request->idkategori ?? $user?->idkategori);
+
         $id = (string) (time() . rand(1000, 9999));
         $username = $request->username ?: strtolower(explode('@', $request->email)[0]);
 
@@ -73,6 +84,7 @@ class TeacherController extends Controller
 
         $userBo = UserBo::create([
             'iduser_bo' => $id,
+            'idkategori' => $idkategori,
             'nama' => $request->name,
             'login_email' => $request->email,
             'login_username' => $username,
@@ -103,7 +115,12 @@ class TeacherController extends Controller
 
     public function update(Request $request, $id)
     {
+        $user = $request->user();
         $userBo = UserBo::where('iduser_bo', $id)->firstOrFail();
+
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$userBo->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah guru instansi lain.'], 403);
+        }
 
         $request->validate([
             'name' => 'required|string|max:255',
@@ -154,7 +171,13 @@ class TeacherController extends Controller
 
     public function destroy($id)
     {
+        $user = request()->user();
         $userBo = UserBo::where('iduser_bo', $id)->firstOrFail();
+
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$userBo->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses menghapus guru instansi lain.'], 403);
+        }
+
         $userBo->update(['status_remove' => 'Y', 'status_aktif' => 'N']);
 
         return response()->json([

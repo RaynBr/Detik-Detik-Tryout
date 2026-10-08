@@ -27,11 +27,54 @@ class InstansiController extends Controller
     }
 
     /**
-     * List all institutions with aggregated counts
+     * Authorize whether the authenticated user can access/manage the given institution.
+     * Super Admin has full multi-tenant access.
+     * Admin Instansi / Sekolah is STRICTLY limited to their own institution.
+     */
+    protected function authorizeInstansi(Request $request, string $idkategori): ?\Illuminate\Http\JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        // Super Admin has unrestricted access to all institutions
+        if ($user->role === 'super_admin') {
+            return null;
+        }
+
+        // Admin instansi / sekolah can only access their own institution
+        if ($user->role === 'admin') {
+            if (empty($user->idkategori) || (string)$user->idkategori !== (string)$idkategori) {
+                return response()->json([
+                    'message' => 'Akses ditolak: Admin instansi tidak diizinkan mengakses atau mengelola data instansi lain.'
+                ], 403);
+            }
+            return null;
+        }
+
+        return response()->json([
+            'message' => 'Akses ditolak: Anda tidak memiliki izin untuk fitur ini.'
+        ], 403);
+    }
+
+    /**
+     * List institutions with aggregated counts.
+     * - Super Admin sees all institutions.
+     * - Admin Instansi ONLY sees their own institution.
      */
     public function index(Request $request)
     {
+        $user = $request->user();
         $query = KategoriUserBo::where('status_remove', 'N');
+
+        // Non-super_admin (Admin Instansi / Guru) CANNOT see or access other institutions
+        if ($user && $user->role !== 'super_admin') {
+            if (empty($user->idkategori)) {
+                return response()->json([]);
+            }
+            $query->where('idkategori', $user->idkategori);
+        }
 
         if ($request->has('search') && !empty($request->search)) {
             $query->where('nama_kategori', 'like', '%' . $request->search . '%');
@@ -73,10 +116,18 @@ class InstansiController extends Controller
     }
 
     /**
-     * Create a new institution
+     * Create a new institution.
+     * ONLY Super Admin can create institutions.
      */
     public function store(Request $request)
     {
+        $user = $request->user();
+        if (!$user || $user->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Hanya Super Administrator IP yang berhak menambahkan instansi baru.'
+            ], 403);
+        }
+
         $request->validate([
             'nama_kategori' => 'required|string|max:255',
         ]);
@@ -97,10 +148,15 @@ class InstansiController extends Controller
     }
 
     /**
-     * Show detail of an institution and all its members
+     * Show detail of an institution and all its members.
+     * Admin Instansi can only view their own institution.
      */
-    public function show($idkategori)
+    public function show(Request $request, $idkategori)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $instansi = KategoriUserBo::where('idkategori', $idkategori)
             ->where('status_remove', 'N')
             ->firstOrFail();
@@ -137,10 +193,18 @@ class InstansiController extends Controller
     }
 
     /**
-     * Update an institution
+     * Update an institution.
+     * ONLY Super Admin can update master institution details.
      */
     public function update(Request $request, $idkategori)
     {
+        $user = $request->user();
+        if (!$user || $user->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Hanya Super Administrator IP yang berhak mengubah nama master instansi.'
+            ], 403);
+        }
+
         $request->validate([
             'nama_kategori' => 'required|string|max:255',
         ]);
@@ -157,10 +221,18 @@ class InstansiController extends Controller
     }
 
     /**
-     * Delete an institution (soft delete)
+     * Delete an institution (soft delete).
+     * ONLY Super Admin can deactivate an institution.
      */
-    public function destroy($idkategori)
+    public function destroy(Request $request, $idkategori)
     {
+        $user = $request->user();
+        if (!$user || $user->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Hanya Super Administrator IP yang berhak menonaktifkan instansi.'
+            ], 403);
+        }
+
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
         $instansi->update(['status_remove' => 'Y']);
 
@@ -175,6 +247,10 @@ class InstansiController extends Controller
 
     public function storeAdmin(Request $request, $idkategori)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $request->validate([
             'nama' => 'required|string|max:255',
             'login_username' => 'required|string|max:50',
@@ -210,6 +286,10 @@ class InstansiController extends Controller
 
     public function updateAdmin(Request $request, $idkategori, $iduser_bo)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $request->validate([
             'nama' => 'required|string|max:255',
             'login_username' => 'required|string|max:50',
@@ -249,8 +329,12 @@ class InstansiController extends Controller
         ]);
     }
 
-    public function destroyAdmin($idkategori, $iduser_bo)
+    public function destroyAdmin(Request $request, $idkategori, $iduser_bo)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $admin = UserBo::where('iduser_bo', $iduser_bo)
             ->where('idkategori', $idkategori)
             ->firstOrFail();
@@ -268,6 +352,10 @@ class InstansiController extends Controller
 
     public function storeGuru(Request $request, $idkategori)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $request->validate([
             'nama' => 'required|string|max:255',
             'login_username' => 'required|string|max:50',
@@ -303,6 +391,10 @@ class InstansiController extends Controller
 
     public function updateGuru(Request $request, $idkategori, $iduser_bo)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $request->validate([
             'nama' => 'required|string|max:255',
             'login_username' => 'required|string|max:50',
@@ -342,8 +434,12 @@ class InstansiController extends Controller
         ]);
     }
 
-    public function destroyGuru($idkategori, $iduser_bo)
+    public function destroyGuru(Request $request, $idkategori, $iduser_bo)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $guru = UserBo::where('iduser_bo', $iduser_bo)
             ->where('idkategori', $idkategori)
             ->firstOrFail();
@@ -361,6 +457,10 @@ class InstansiController extends Controller
 
     public function storeSiswa(Request $request, $idkategori)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $request->validate([
             'nama' => 'required|string|max:255',
             'nisn' => 'required|string|max:30',
@@ -393,6 +493,10 @@ class InstansiController extends Controller
 
     public function updateSiswa(Request $request, $idkategori, $iduser)
     {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
         $request->validate([
             'nama' => 'required|string|max:255',
             'nisn' => 'required|string|max:30',
@@ -403,7 +507,9 @@ class InstansiController extends Controller
             'status_aktif' => 'nullable|in:Y,N',
         ]);
 
-        $siswa = UserSiswa::where('iduser', $iduser)->firstOrFail();
+        $siswa = UserSiswa::where('iduser', $iduser)
+            ->where('idkategori', $idkategori)
+            ->firstOrFail();
 
         $updateData = [
             'nama' => $request->nama,
@@ -430,9 +536,15 @@ class InstansiController extends Controller
         ]);
     }
 
-    public function destroySiswa($idkategori, $iduser)
+    public function destroySiswa(Request $request, $idkategori, $iduser)
     {
-        $siswa = UserSiswa::where('iduser', $iduser)->firstOrFail();
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $siswa = UserSiswa::where('iduser', $iduser)
+            ->where('idkategori', $idkategori)
+            ->firstOrFail();
         $siswa->update(['status_aktif' => 'N']);
 
         return response()->json([

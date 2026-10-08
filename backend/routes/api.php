@@ -83,6 +83,10 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::post('exams/generate-random', [TeacherExamController::class, 'generateRandom50']);
         Route::post('exams/{idassessment}/assign-class', [TeacherExamController::class, 'assignToClass']);
         Route::get('exams/{idassessment}/results', [TeacherExamController::class, 'results']);
+        Route::get('exams/{idassessment}/report', [TeacherExamController::class, 'report']);
+        Route::get('exams/{idassessment}/report/export', [TeacherExamController::class, 'exportReport']);
+        Route::get('exams/{idassessment}/attempts/{attemptId}', [TeacherExamController::class, 'attemptDetail']);
+        Route::apiResource('exam-groups', \App\Http\Controllers\Api\Teacher\ExamGroupController::class);
         Route::apiResource('exams', TeacherExamController::class);
         Route::apiResource('packages', TeacherExamController::class);
     });

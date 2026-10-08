@@ -7,6 +7,7 @@ use App\Models\Assessment;
 use App\Models\AssessmentSoalPilgan;
 use App\Models\AssessmentJawabanPilgan;
 use App\Models\AssessmentJawabanPilganDetail;
+use App\Models\ExamGroup;
 use App\Models\UserSiswa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,8 +27,8 @@ class ExamAttemptController extends Controller
         $idkelas = $user->idkelas;
         $idkategori = $user->idkategori;
 
-        $assessments = Assessment::with(['mapel', 'jenjang', 'kelas'])
-            ->where(function ($q) use ($idkelas, $idkategori) {
+        $assessments = Assessment::with(['mapel', 'jenjang', 'kelas', 'examGroups'])
+            ->where(function ($q) use ($idkelas, $idkategori, $user) {
                 if ($idkelas) {
                     $q->where('idkelas', $idkelas);
                 }
@@ -35,7 +36,17 @@ class ExamAttemptController extends Controller
                     $q->orWhere('idkategori', $idkategori);
                 }
                 $q->orWhereNull('idkelas');
+
+                // Include exams that have exam groups targeting this class or this student
+                $q->orWhereHas('examGroups', function ($gq) use ($idkelas, $user) {
+                    if ($idkelas) {
+                        $gq->whereJsonContains('class_ids', (int)$idkelas)
+                           ->orWhereJsonContains('class_ids', (string)$idkelas);
+                    }
+                    $gq->orWhereJsonContains('student_ids', (string)$user->iduser);
+                });
             })
+            ->orderBy('tanggal_input', 'desc')
             ->orderBy('idassessment', 'desc')
             ->get();
 
@@ -52,14 +63,51 @@ class ExamAttemptController extends Controller
                 $attemptStatus = ($attempt->komentar === 'submitted') ? 'submitted' : 'in_progress';
             }
 
+            // Match specific exam group for this student if any exists
+            $matchedGroup = $a->examGroups->first(function ($g) use ($user) {
+                $classIds = $g->class_ids ?: [];
+                $studentIds = $g->student_ids ?: [];
+                return in_array((string)$user->iduser, $studentIds) || 
+                       ($user->idkelas && (in_array($user->idkelas, $classIds) || in_array((string)$user->idkelas, $classIds)));
+            }) ?: $a->examGroups->first();
+
+            $groupName = $matchedGroup ? $matchedGroup->name : ($a->kelas?->nama_kelas ?? 'Umum');
+            if ($matchedGroup && $matchedGroup->start_time) {
+                $startTime = $matchedGroup->start_time->format('Y-m-d H:i:s');
+            }
+            if ($matchedGroup && $matchedGroup->end_time) {
+                $endTime = $matchedGroup->end_time->format('Y-m-d H:i:s');
+            }
+
+            $durationMinutes = (int) ($a->waktu_pengerjaan ?: 60);
+            $effectiveDuration = $durationMinutes;
+
+            // If session end time is approaching, calculate effective duration remaining
+            $sessionEndCarbon = null;
+            if ($matchedGroup && $matchedGroup->end_time) {
+                $sessionEndCarbon = \Carbon\Carbon::parse($matchedGroup->end_time);
+            } elseif ($a->tanggal_batas_assessment) {
+                $sessionEndCarbon = \Carbon\Carbon::parse($a->tanggal_batas_assessment);
+            }
+
+            if ($sessionEndCarbon) {
+                $secsUntilSessionEnd = max(0, $sessionEndCarbon->getTimestamp() - now()->getTimestamp());
+                $minsUntilSessionEnd = (int) floor($secsUntilSessionEnd / 60);
+                if ($minsUntilSessionEnd < $durationMinutes) {
+                    $effectiveDuration = max(0, $minsUntilSessionEnd);
+                }
+            }
+
             return [
-                'exam_group_id' => (string) $a->idassessment,
+                'exam_group_id' => (string) ($matchedGroup ? $matchedGroup->id : $a->idassessment),
                 'exam_id' => (string) $a->idassessment,
                 'title' => $a->nama_assessment,
-                'group_name' => $a->kelas?->nama_kelas ?? 'Umum',
+                'group_name' => $groupName,
+                'token' => $matchedGroup?->token,
                 'subject_code' => $a->mapel?->kode_mapel ?? 'TRYOUT',
                 'subject_name' => $a->mapel?->nama_mapel ?? 'TryOut Ujian',
-                'duration_minutes' => (int) ($a->waktu_pengerjaan ?: 60),
+                'duration_minutes' => $durationMinutes,
+                'effective_duration_minutes' => $effectiveDuration,
                 'start_time' => $startTime,
                 'end_time' => $endTime,
                 'status' => 'published',
@@ -90,13 +138,52 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
-        $idassessment = (string) $request->exam_group_id;
+        $groupIdOrAssessmentId = (string) $request->exam_group_id;
+
+        // Resolve assessment ID from exam_group_id
+        $group = ExamGroup::find($groupIdOrAssessmentId);
+        if ($group) {
+            $idassessment = (string) $group->exam_id;
+        } else {
+            $idassessment = $groupIdOrAssessmentId;
+        }
+
         $assessment = Assessment::findOrFail($idassessment);
+
+        // Check session timing window constraints
+        $sessionStartTime = null;
+        $sessionEndTime = null;
+
+        if ($group && $group->start_time) {
+            $sessionStartTime = \Carbon\Carbon::parse($group->start_time);
+        } elseif ($assessment->tanggal_mulai_assessment) {
+            $sessionStartTime = \Carbon\Carbon::parse($assessment->tanggal_mulai_assessment);
+        }
+
+        if ($group && $group->end_time) {
+            $sessionEndTime = \Carbon\Carbon::parse($group->end_time);
+        } elseif ($assessment->tanggal_batas_assessment) {
+            $sessionEndTime = \Carbon\Carbon::parse($assessment->tanggal_batas_assessment);
+        }
+
+        if ($sessionStartTime && now()->lt($sessionStartTime)) {
+            return response()->json([
+                'message' => 'Sesi ujian baru akan dimulai pada: ' . $sessionStartTime->format('d/m/Y H:i') . ' WIB.'
+            ], 422);
+        }
+
+        if ($sessionEndTime && now()->gt($sessionEndTime)) {
+            return response()->json([
+                'message' => 'Sesi ujian telah berakhir pada: ' . $sessionEndTime->format('d/m/Y H:i') . ' WIB.'
+            ], 422);
+        }
 
         // Check if existing attempt exists
         $attempt = AssessmentJawabanPilgan::where('idassessment', $idassessment)
             ->where('iduser', $user->iduser)
             ->first();
+
+        $durationMinutes = (int) ($assessment->waktu_pengerjaan ?: 60);
 
         if (!$attempt) {
             $attemptId = (string) (time() . rand(1000000, 9999999));
@@ -127,21 +214,34 @@ class ExamAttemptController extends Controller
                 'lama_dikerjakan' => '',
                 'tgl_input_time' => now(),
             ]);
+        } else {
+            // If existing attempt was in progress but expired (started longer than duration ago),
+            // reset tgl_input_time to now so student gets the fresh full duration to take it
+            $elapsedSeconds = abs(now()->diffInSeconds(\Carbon\Carbon::parse($attempt->tgl_input_time)));
+            if ($attempt->komentar !== 'submitted' && $elapsedSeconds >= ($durationMinutes * 60)) {
+                $attempt->update([
+                    'tgl_input_time' => now(),
+                    'komentar' => 'in_progress',
+                ]);
+            }
         }
+
+        $status = ($attempt->komentar === 'submitted') ? 'submitted' : 'in_progress';
 
         return response()->json([
             'message' => 'Sesi ujian berhasil dimulai.',
             'attempt' => [
                 'id' => $attempt->idassessment_jawaban_pilgan,
-                'status' => ($attempt->komentar === 'submitted') ? 'submitted' : 'in_progress',
-                'total_score' => $attempt->nilai,
+                'status' => $status,
+                'total_score' => ($status === 'submitted') ? (float)$attempt->nilai : null,
             ]
         ]);
     }
 
     /**
-     * Get attempt questions with randomized options per student
-     * User Requirement: "siswa mendapan 50 soal yang sama sesuai apa yang di berikan oleh guru tetapi urutan jawabannya acak"
+     * Get attempt questions with dynamic time remaining based on personal start and session end time
+     * User Requirement: "waktu pengerjaannya bergerak sesuai kapan siswa mengerjakan,
+     * tetapi contoh jika waktu pengerjaan 2 jam tetapi 1jam lagi sesinya habis maka waktu siswa hanya 1 jam begitupun lainnya"
      */
     public function showAttempt(Request $request, $attemptId)
     {
@@ -155,12 +255,94 @@ class ExamAttemptController extends Controller
             ->orderBy('idassessment_soal_pilgan', 'asc')
             ->get();
 
-        // Calculate time remaining in seconds
+        // Safety fallback: if no questions attached, auto-populate from bank soal
+        if ($allQuestions->isEmpty()) {
+            $fallbackPool = AssessmentSoalPilgan::where(function ($q) use ($assessment) {
+                if ($assessment->idmapel) $q->where('idmapel', $assessment->idmapel);
+                if ($assessment->idjenjang) $q->where('idjenjang', $assessment->idjenjang);
+            })->limit(50)->get();
+
+            if ($fallbackPool->isEmpty()) {
+                $fallbackPool = AssessmentSoalPilgan::limit(50)->get();
+            }
+
+            foreach ($fallbackPool as $sq) {
+                $newSoalId = (string) (time() . rand(1000000, 9999999));
+                AssessmentSoalPilgan::create([
+                    'idassessment_soal_pilgan' => $newSoalId,
+                    'idassessment' => $assessment->idassessment,
+                    'idjenjang' => $sq->idjenjang ?: $assessment->idjenjang,
+                    'idmapel' => $sq->idmapel ?: $assessment->idmapel,
+                    'soal_text' => $sq->soal_text,
+                    'soal_gambar' => $sq->soal_gambar,
+                    'pilihan_a_text' => $sq->pilihan_a_text,
+                    'pilihan_a_gambar' => $sq->pilihan_a_gambar,
+                    'pilihan_b_text' => $sq->pilihan_b_text,
+                    'pilihan_b_gambar' => $sq->pilihan_b_gambar,
+                    'pilihan_c_text' => $sq->pilihan_c_text,
+                    'pilihan_c_gambar' => $sq->pilihan_c_gambar,
+                    'pilihan_d_text' => $sq->pilihan_d_text,
+                    'pilihan_d_gambar' => $sq->pilihan_d_gambar,
+                    'pilihan_e_text' => $sq->pilihan_e_text,
+                    'pilihan_e_gambar' => $sq->pilihan_e_gambar,
+                    'jawaban' => $sq->jawaban,
+                    'penjelasan_jawaban' => $sq->penjelasan_jawaban,
+                    'tanggal_input' => now(),
+                ]);
+            }
+
+            $allQuestions = AssessmentSoalPilgan::where('idassessment', $assessment->idassessment)
+                ->orderBy('idassessment_soal_pilgan', 'asc')
+                ->get();
+        }
+
+        // 1. Calculate student personal duration remaining based on start time
         $durationMinutes = (int) ($assessment->waktu_pengerjaan ?: 60);
         $startTime = \Carbon\Carbon::parse($attempt->tgl_input_time);
-        $elapsedSeconds = now()->diffInSeconds($startTime);
-        $totalDurationSeconds = $durationMinutes * 60;
-        $timeRemaining = max(0, $totalDurationSeconds - $elapsedSeconds);
+        $elapsedSeconds = (int) floor(abs(now()->diffInSeconds($startTime)));
+        $personalRemainingSeconds = (int) max(0, ($durationMinutes * 60) - $elapsedSeconds);
+
+        // 2. Identify the active session wave / window specifically for this student
+        $matchedGroup = ExamGroup::where('exam_id', $assessment->idassessment)
+            ->get()
+            ->first(function ($g) use ($user) {
+                $studentIds = $g->student_ids ?: [];
+                $classIds = $g->class_ids ?: [];
+                if (in_array((string)$user->iduser, $studentIds)) {
+                    return true;
+                }
+                if ($user->idkelas && (in_array($user->idkelas, $classIds) || in_array((string)$user->idkelas, $classIds))) {
+                    return true;
+                }
+                return false;
+            });
+
+        $sessionEndTime = null;
+        if ($matchedGroup && $matchedGroup->end_time) {
+            $sessionEndTime = \Carbon\Carbon::parse($matchedGroup->end_time);
+        } elseif ($assessment->tanggal_batas_assessment) {
+            $sessionEndTime = \Carbon\Carbon::parse($assessment->tanggal_batas_assessment);
+        }
+
+        // 3. User Requirement:
+        // "waktu pengerjaannya bergerak sesuai kapan siswa mengerjakan,
+        //  tetapi contoh jika waktu pengerjaan 2 jam tetapi 1jam lagi sesinya habis maka waktu siswa hanya 1 jam begitupun lainnya"
+        $isSessionLimited = false;
+        if ($sessionEndTime) {
+            $nowTimestamp = now()->getTimestamp();
+            $endTimestamp = $sessionEndTime->getTimestamp();
+            $sessionRemainingSeconds = (int) max(0, $endTimestamp - $nowTimestamp);
+
+            // Siswa hanya mendapat MINIMUM antara sisa durasi personal dan sisa waktu sesi!
+            if ($sessionRemainingSeconds < $personalRemainingSeconds) {
+                $timeRemaining = (int) floor($sessionRemainingSeconds);
+                $isSessionLimited = true;
+            } else {
+                $timeRemaining = (int) floor($personalRemainingSeconds);
+            }
+        } else {
+            $timeRemaining = (int) floor($personalRemainingSeconds);
+        }
 
         // Map existing answers by question ID
         $savedAnswers = $attempt->details->keyBy('idassessment_soal_pilgan');
@@ -190,7 +372,6 @@ class ExamAttemptController extends Controller
             }
 
             // Deterministic randomized shuffle per student attempt using seeded shuffle
-            // This ensures each student gets distinct option ordering while keeping consistent during reloads
             $seed = crc32($attempt->idassessment_jawaban_pilgan . '_' . $q->idassessment_soal_pilgan);
             mt_srand($seed);
             $shuffledOptions = $rawOptions;
@@ -215,14 +396,17 @@ class ExamAttemptController extends Controller
             ];
         }
 
-        $attemptStatus = ($attempt->nilai !== null) ? 'submitted' : 'in_progress';
+        // Canonical attempt status check based strictly on komentar === 'submitted'
+        $attemptStatus = ($attempt->komentar === 'submitted') ? 'submitted' : 'in_progress';
 
         return response()->json([
             'attempt' => [
                 'id' => $attempt->idassessment_jawaban_pilgan,
                 'status' => $attemptStatus,
-                'total_score' => $attempt->nilai,
+                'total_score' => ($attemptStatus === 'submitted') ? (float)$attempt->nilai : null,
                 'time_remaining_seconds' => $timeRemaining,
+                'is_session_limited' => $isSessionLimited,
+                'session_end_time' => $sessionEndTime ? $sessionEndTime->format('Y-m-d H:i:s') : null,
                 'tab_switch_count' => 0,
                 'exam' => [
                     'title' => $assessment->nama_assessment,
@@ -232,6 +416,9 @@ class ExamAttemptController extends Controller
                     ]
                 ]
             ],
+            'time_remaining_seconds' => $timeRemaining,
+            'is_session_limited' => $isSessionLimited,
+            'session_end_time' => $sessionEndTime ? $sessionEndTime->format('Y-m-d H:i:s') : null,
             'questions' => $questionsPayload
         ]);
     }

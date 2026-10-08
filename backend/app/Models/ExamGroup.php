@@ -19,16 +19,25 @@ class ExamGroup extends Model
         'end_time',
         'token',
         'max_participants',
+        'class_ids',
+        'student_ids',
     ];
 
     protected $casts = [
         'start_time' => 'datetime',
         'end_time' => 'datetime',
+        'class_ids' => 'array',
+        'student_ids' => 'array',
     ];
+
+    public function assessment(): BelongsTo
+    {
+        return $this->belongsTo(Assessment::class, 'exam_id', 'idassessment');
+    }
 
     public function exam(): BelongsTo
     {
-        return $this->belongsTo(Exam::class);
+        return $this->belongsTo(Assessment::class, 'exam_id', 'idassessment');
     }
 
     public function students(): BelongsToMany
