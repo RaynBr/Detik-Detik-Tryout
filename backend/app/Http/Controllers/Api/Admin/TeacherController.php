@@ -3,133 +3,162 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
-use App\Models\Teacher;
+use App\Models\GuruMataPelajaran;
+use App\Models\UserBo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 
 class TeacherController extends Controller
 {
     public function index()
     {
-        $teachers = User::role('guru')
-            ->with(['teacher.subjects'])
+        $teachers = UserBo::with(['kategori', 'mapelAjar.mataPelajaran'])
+            ->where('status_remove', '!=', 'Y')
+            ->where(function ($q) {
+                $q->where('role_type', 'guru')
+                  ->orWhere('role_type', 'admin_sekolah')
+                  ->orWhere('status_admin', '2')
+                  ->orWhereNull('role_type');
+            })
             ->get();
 
-        return response()->json($teachers);
+        $mapped = $teachers->map(function ($t) {
+            return [
+                'id' => $t->iduser_bo,
+                'name' => $t->name,
+                'email' => $t->email,
+                'username' => $t->username,
+                'phone' => $t->telp,
+                'role' => $t->role,
+                'institution' => $t->kategori?->nama_kategori,
+                'is_active' => $t->status_aktif === 'Y',
+                'teacher' => [
+                    'id' => $t->iduser_bo,
+                    'user_id' => $t->iduser_bo,
+                    'nip' => $t->iduser_bo,
+                    'subjects' => $t->mapelAjar->map(function ($m) {
+                        return [
+                            'id' => $m->mataPelajaran?->id,
+                            'name' => $m->mataPelajaran?->nama_mapel,
+                            'code' => $m->mataPelajaran?->kode_mapel,
+                        ];
+                    })->filter(fn($s) => !empty($s['id']))->values()
+                ]
+            ];
+        });
+
+        return response()->json($mapped);
     }
 
     public function store(Request $request)
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:6',
-            'nip' => 'nullable|string|unique:teachers,nip',
+            'email' => 'required|email',
+            'username' => 'nullable|string',
+            'password' => 'required|string|min:4',
+            'phone' => 'nullable|string',
             'subject_ids' => 'nullable|array',
-            'subject_ids.*' => 'exists:subjects,id',
+            'role_type' => 'nullable|in:guru,admin_sekolah',
         ]);
 
-        $teacherUser = DB::transaction(function () use ($request) {
-            // Create user
-            $user = User::create([
-                'name' => $request->name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'is_active' => true,
-            ]);
+        $id = (string) (time() . rand(1000, 9999));
+        $username = $request->username ?: strtolower(explode('@', $request->email)[0]);
 
-            // Assign role
-            $user->assignRole('guru');
+        // Base64 x5 encoded password for user_bo compatibility
+        $pwd = $request->password;
+        for ($i = 0; $i < 5; $i++) {
+            $pwd = base64_encode($pwd);
+        }
 
-            // Create profile
-            $teacher = Teacher::create([
-                'user_id' => $user->id,
-                'nip' => $request->nip,
-            ]);
+        $userBo = UserBo::create([
+            'iduser_bo' => $id,
+            'nama' => $request->name,
+            'login_email' => $request->email,
+            'login_username' => $username,
+            'login_password' => $pwd,
+            'telp' => $request->phone ?? null,
+            'status_admin' => '2',
+            'role_type' => $request->role_type ?? 'guru',
+            'status_aktif' => 'Y',
+            'status_remove' => 'N',
+            'tanggal_input' => now(),
+        ]);
 
-            // Sync subjects
-            if ($request->has('subject_ids')) {
-                $teacher->subjects()->sync($request->subject_ids);
+        if ($request->filled('subject_ids')) {
+            foreach ($request->subject_ids as $mapelId) {
+                GuruMataPelajaran::create([
+                    'iduser_bo' => $userBo->iduser_bo,
+                    'idmapel' => $mapelId,
+                    'tahun_ajaran' => '2026/2027',
+                ]);
             }
-
-            return $user;
-        });
-
-        $teacherUser->load(['teacher.subjects']);
+        }
 
         return response()->json([
             'message' => 'Guru berhasil ditambahkan.',
-            'data' => $teacherUser
+            'data' => $userBo
         ], 201);
-    }
-
-    public function show($id)
-    {
-        $teacher = User::role('guru')
-            ->with(['teacher.subjects'])
-            ->findOrFail($id);
-
-        return response()->json($teacher);
     }
 
     public function update(Request $request, $id)
     {
-        $user = User::role('guru')->findOrFail($id);
-        $teacher = $user->teacher;
+        $userBo = UserBo::where('iduser_bo', $id)->firstOrFail();
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $user->id,
-            'password' => 'nullable|string|min:6',
-            'nip' => 'nullable|string|unique:teachers,nip,' . ($teacher->id ?? 0),
+            'email' => 'required|email',
+            'phone' => 'nullable|string',
+            'password' => 'nullable|string|min:4',
             'subject_ids' => 'nullable|array',
-            'subject_ids.*' => 'exists:subjects,id',
+            'is_active' => 'nullable|boolean',
         ]);
 
-        DB::transaction(function () use ($request, $user, $teacher) {
-            // Update User fields
-            $user->name = $request->name;
-            $user->email = $request->email;
-            if ($request->filled('password')) {
-                $user->password = Hash::make($request->password);
-            }
-            $user->save();
+        $updateData = [
+            'nama' => $request->name,
+            'login_email' => $request->email,
+            'telp' => $request->phone ?? $userBo->telp,
+            'tanggal_update' => now(),
+        ];
 
-            // Ensure profile exists, then update NIP
-            if (! $teacher) {
-                $teacher = Teacher::create([
-                    'user_id' => $user->id,
-                    'nip' => $request->nip,
+        if ($request->has('is_active')) {
+            $updateData['status_aktif'] = $request->is_active ? 'Y' : 'N';
+        }
+
+        if ($request->filled('password')) {
+            $pwd = $request->password;
+            for ($i = 0; $i < 5; $i++) {
+                $pwd = base64_encode($pwd);
+            }
+            $updateData['login_password'] = $pwd;
+        }
+
+        $userBo->update($updateData);
+
+        if ($request->has('subject_ids')) {
+            GuruMataPelajaran::where('iduser_bo', $userBo->iduser_bo)->delete();
+            foreach ($request->subject_ids as $mapelId) {
+                GuruMataPelajaran::create([
+                    'iduser_bo' => $userBo->iduser_bo,
+                    'idmapel' => $mapelId,
+                    'tahun_ajaran' => '2026/2027',
                 ]);
-            } else {
-                $teacher->update(['nip' => $request->nip]);
             }
-
-            // Sync subjects
-            if ($request->has('subject_ids')) {
-                $teacher->subjects()->sync($request->subject_ids);
-            }
-        });
-
-        $user->load(['teacher.subjects']);
+        }
 
         return response()->json([
-            'message' => 'Guru berhasil diperbarui.',
-            'data' => $user
+            'message' => 'Data guru berhasil diperbarui.',
+            'data' => $userBo
         ]);
     }
 
     public function destroy($id)
     {
-        $user = User::role('guru')->findOrFail($id);
-
-        // Delete user (cascades to profile)
-        $user->delete();
+        $userBo = UserBo::where('iduser_bo', $id)->firstOrFail();
+        $userBo->update(['status_remove' => 'Y', 'status_aktif' => 'N']);
 
         return response()->json([
-            'message' => 'Guru berhasil dihapus.'
+            'message' => 'Guru berhasil dinonaktifkan/dihapus.'
         ]);
     }
 }

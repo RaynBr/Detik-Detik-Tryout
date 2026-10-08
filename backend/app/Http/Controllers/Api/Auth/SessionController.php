@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\UserBo;
+use App\Models\UserSiswa;
 use Illuminate\Http\Request;
 
 class SessionController extends Controller
@@ -10,21 +12,46 @@ class SessionController extends Controller
     public function me(Request $request)
     {
         $user = $request->user();
-        
-        $role = $user->getRoleNames()->first();
-        
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $role = $user->role ?? 'siswa';
         $profile = null;
-        if ($role === 'siswa') {
-            $user->load('student.classRoom', 'student.major');
-            $profile = $user->student;
-        } elseif ($role === 'guru') {
-            $user->load('teacher');
-            $profile = $user->teacher;
+
+        if ($user instanceof UserBo) {
+            $user->load('kategori');
+            $profile = [
+                'id' => $user->iduser_bo,
+                'name' => $user->name,
+                'phone' => $user->telp,
+                'address' => $user->alamat,
+                'institution' => $user->kategori?->nama_kategori,
+            ];
+            $id = $user->iduser_bo;
+        } elseif ($user instanceof UserSiswa) {
+            $user->load('kelas.jenjang');
+            $profile = [
+                'id' => $user->iduser,
+                'nisn' => $user->nisn,
+                'class_id' => $user->idkelas,
+                'class_room' => $user->kelas ? [
+                    'id' => $user->kelas->id,
+                    'name' => $user->kelas->nama_kelas,
+                    'level' => $user->kelas->tingkat,
+                    'jenjang' => $user->kelas->jenjang?->nama_jenjang,
+                ] : null,
+            ];
+            $id = $user->iduser;
+        } else {
+            $id = $user->id ?? 1;
+            $profile = null;
         }
 
         return response()->json([
             'user' => [
-                'id' => $user->id,
+                'id' => $id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'username' => $user->username,

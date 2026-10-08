@@ -13,7 +13,8 @@ import {
   Menu, 
   X,
   ShieldAlert,
-  BarChart3
+  BarChart3,
+  Layers
 } from 'lucide-react';
 
 export const AdminLayout: React.FC = () => {
@@ -26,11 +27,12 @@ export const AdminLayout: React.FC = () => {
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Live Proctoring', path: '/admin/proctoring', icon: ShieldAlert },
     { name: 'Laporan Hasil', path: '/admin/reports', icon: BarChart3 },
-    { name: 'Jurusan', path: '/admin/majors', icon: School },
-    { name: 'Kelas', path: '/admin/classes', icon: GraduationCap },
+    { name: 'Master Jenjang', path: '/admin/jenjang', icon: Layers },
+    { name: 'Master Kelas', path: '/admin/classes', icon: GraduationCap },
     { name: 'Mata Pelajaran', path: '/admin/subjects', icon: BookOpen },
+    { name: 'Jurusan / Peminatan', path: '/admin/majors', icon: School },
     { name: 'Tahun Ajaran', path: '/admin/academic-years', icon: Calendar },
-    { name: 'Data Guru', path: '/admin/teachers', icon: Users },
+    { name: 'Data Guru (BO)', path: '/admin/teachers', icon: Users },
     { name: 'Data Siswa', path: '/admin/students', icon: Users },
   ];
 
@@ -77,13 +79,23 @@ export const AdminLayout: React.FC = () => {
             <ThemeToggle compact />
           </div>
 
-          <div className="flex items-center gap-3 px-2 py-1">
-            <div className="h-8 w-8 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center font-bold text-indigo-600 dark:text-indigo-400">
-              A
+          <div className="flex items-center gap-3 px-2 py-1.5 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5">
+            <div className="h-9 w-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 shrink-0">
+              {user?.name?.charAt(0) || 'A'}
             </div>
-            <div className="overflow-hidden">
+            <div className="overflow-hidden flex-1 min-w-0">
               <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user?.name}</p>
-              <p className="text-[10px] text-slate-500 dark:text-gray-500 truncate">{user?.email}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md ${
+                  user?.role === 'super_admin' 
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300' 
+                    : user?.role === 'admin'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                }`}>
+                  {user?.role === 'super_admin' ? 'Super Admin IP' : user?.role === 'admin' ? 'Admin Sekolah' : 'Guru'}
+                </span>
+              </div>
             </div>
           </div>
 

@@ -1,269 +1,665 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../shared/api/client';
 import { TableSkeleton } from '../../shared/components/LoadingSkeleton';
-import { Plus, Edit2, Trash2, X, BookOpen, Search } from 'lucide-react';
+import { useToast } from '../../shared/context/ToastContext';
+import { 
+  Plus, 
+  Edit2, 
+  Trash2, 
+  X, 
+  BookOpen, 
+  Search, 
+  Users, 
+  UserPlus, 
+  UserMinus
+} from 'lucide-react';
+
+interface MasterJenjang {
+  id: number;
+  kode_jenjang: string;
+  nama_jenjang: string;
+}
+
+interface Teacher {
+  id: string;
+  name: string;
+}
+
+interface TeacherSubjectAssignment {
+  id: number;
+  iduser_bo: string;
+  idmapel: number;
+  idkelas?: number | null;
+  tahun_ajaran: string;
+  guru?: {
+    iduser_bo: string;
+    nama: string;
+    login_email: string;
+  };
+  kelas?: {
+    id: number;
+    nama_kelas: string;
+  };
+}
 
 interface Subject {
   id: number;
-  name: string;
-  code: string;
+  kode_mapel: string;
+  code?: string;
+  nama_mapel: string;
+  name?: string;
+  idjenjang: number;
+  jenjang?: MasterJenjang;
+  kelompok: string;
+  kkm: number;
+  deskripsi: string | null;
+  guru_pengampu?: TeacherSubjectAssignment[];
 }
-
-import { useToast } from '../../shared/context/ToastContext';
 
 export const SubjectsPage: React.FC = () => {
   const { toast } = useToast();
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [jenjangList, setJenjangList] = useState<MasterJenjang[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  
+  // Search and Filter
   const [search, setSearch] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [selectedJenjangFilter, setSelectedJenjangFilter] = useState<string>('all');
+  const [selectedKelompokFilter, setSelectedKelompokFilter] = useState<string>('all');
 
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('');
+  // Modals
+  const [modalOpen, setModalOpen] = useState(false);
+  const [teachersModalOpen, setTeachersModalOpen] = useState(false);
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [activeSubjectForTeachers, setActiveSubjectForTeachers] = useState<Subject | null>(null);
+
+  // Form states
+  const [namaMapel, setNamaMapel] = useState('');
+  const [kodeMapel, setKodeMapel] = useState('');
+  const [idjenjang, setIdjenjang] = useState<number>(1);
+  const [kelompok, setKelompok] = useState('Wajib');
+  const [kkm, setKkm] = useState(75.00);
+  const [deskripsi, setDeskripsi] = useState('');
+  const [selectedTeacherToAssign, setSelectedTeacherToAssign] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const fetchSubjects = async () => {
+  const fetchData = async () => {
     setLoadingData(true);
     try {
-      const response = await apiClient.get('/admin/subjects');
-      setSubjects(response.data);
+      const [subjectsRes, jenjangRes, teachersRes] = await Promise.all([
+        apiClient.get('/admin/subjects'),
+        apiClient.get('/admin/jenjang'),
+        apiClient.get('/admin/teachers'),
+      ]);
+      setSubjects(subjectsRes.data);
+      setJenjangList(jenjangRes.data);
+      setTeachers(teachersRes.data);
     } catch (err) {
-      console.error('Failed to fetch subjects:', err);
+      console.error('Failed to fetch subjects data:', err);
+      toast.error('Gagal memuat data mata pelajaran.');
     } finally {
       setLoadingData(false);
     }
   };
 
   useEffect(() => {
-    fetchSubjects();
+    fetchData();
   }, []);
 
   const openAddModal = () => {
     setEditingSubject(null);
-    setName('');
-    setCode('');
+    setNamaMapel('');
+    setKodeMapel('');
+    setIdjenjang(jenjangList[0]?.id || 1);
+    setKelompok('Wajib');
+    setKkm(75.00);
+    setDeskripsi('');
     setError(null);
     setModalOpen(true);
   };
 
-  const openEditModal = (subject: Subject) => {
-    setEditingSubject(subject);
-    setName(subject.name);
-    setCode(subject.code);
+  const openEditModal = (s: Subject) => {
+    setEditingSubject(s);
+    setNamaMapel(s.nama_mapel || s.name || '');
+    setKodeMapel(s.kode_mapel || s.code || '');
+    setIdjenjang(s.idjenjang || s.jenjang?.id || 1);
+    setKelompok(s.kelompok || 'Wajib');
+    setKkm(s.kkm || 75.00);
+    setDeskripsi(s.deskripsi || '');
     setError(null);
     setModalOpen(true);
+  };
+
+  const openTeachersModal = async (s: Subject) => {
+    try {
+      const res = await apiClient.get(`/admin/subjects/${s.id}`);
+      setActiveSubjectForTeachers(res.data);
+      setTeachersModalOpen(true);
+    } catch (err) {
+      toast.error('Gagal memuat data guru pengampu.');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     setLoading(true);
+    setError(null);
+
+    const payload = {
+      nama_mapel: namaMapel.trim(),
+      kode_mapel: kodeMapel.trim().toUpperCase(),
+      idjenjang,
+      kelompok,
+      kkm,
+      deskripsi: deskripsi.trim() || null,
+    };
 
     try {
       if (editingSubject) {
-        await apiClient.put(`/admin/subjects/${editingSubject.id}`, { name, code });
-        toast.success('Mata pelajaran berhasil diperbarui!');
+        await apiClient.put(`/admin/subjects/${editingSubject.id}`, payload);
+        toast.success(`Mata pelajaran ${namaMapel} berhasil diperbarui.`);
       } else {
-        await apiClient.post('/admin/subjects', { name, code });
-        toast.success('Mata pelajaran baru berhasil ditambahkan!');
+        await apiClient.post('/admin/subjects', payload);
+        toast.success(`Mata pelajaran ${namaMapel} berhasil dibuat.`);
       }
-      fetchSubjects();
       setModalOpen(false);
+      fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Gagal menyimpan data mata pelajaran.');
+      setError(err.response?.data?.message || 'Gagal menyimpan mata pelajaran.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus mata pelajaran ini?')) return;
+  const handleDelete = async (s: Subject) => {
+    if (!window.confirm(`Hapus mata pelajaran ${s.nama_mapel || s.name}?`)) return;
+
     try {
-      await apiClient.delete(`/admin/subjects/${id}`);
-      toast.success('Mata pelajaran berhasil dihapus!');
-      fetchSubjects();
+      await apiClient.delete(`/admin/subjects/${s.id}`);
+      toast.success('Mata pelajaran berhasil dihapus.');
+      fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Gagal menghapus mata pelajaran.');
     }
   };
 
-  const filteredSubjects = subjects.filter(
-    (s) =>
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.code.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleAssignTeacher = async () => {
+    if (!activeSubjectForTeachers || !selectedTeacherToAssign) return;
+
+    try {
+      await apiClient.post(`/admin/subjects/${activeSubjectForTeachers.id}/teachers`, {
+        iduser_bo: selectedTeacherToAssign,
+      });
+      toast.success('Guru pengampu berhasil ditugaskan.');
+      setSelectedTeacherToAssign('');
+      const res = await apiClient.get(`/admin/subjects/${activeSubjectForTeachers.id}`);
+      setActiveSubjectForTeachers(res.data);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal menugaskan guru.');
+    }
+  };
+
+  const handleRemoveTeacher = async (iduser_bo: string) => {
+    if (!activeSubjectForTeachers) return;
+    if (!window.confirm('Hapus penugasan guru ini untuk mata pelajaran ini?')) return;
+
+    try {
+      await apiClient.delete(`/admin/subjects/${activeSubjectForTeachers.id}/teachers/${iduser_bo}`);
+      toast.success('Penugasan guru berhasil dihapus.');
+      const res = await apiClient.get(`/admin/subjects/${activeSubjectForTeachers.id}`);
+      setActiveSubjectForTeachers(res.data);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus penugasan guru.');
+    }
+  };
+
+  const filtered = subjects.filter((s) => {
+    const matchesSearch = 
+      (s.nama_mapel || s.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.kode_mapel || s.code || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.kelompok || '').toLowerCase().includes(search.toLowerCase());
+
+    const matchesJenjang = selectedJenjangFilter === 'all' || String(s.idjenjang) === selectedJenjangFilter;
+    const matchesKelompok = selectedKelompokFilter === 'all' || s.kelompok === selectedKelompokFilter;
+
+    return matchesSearch && matchesJenjang && matchesKelompok;
+  });
 
   return (
     <div className="space-y-6">
-      
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-500/30">
-              <BookOpen className="h-6 w-6" />
-            </div>
-            <span>Mata Pelajaran</span>
-          </h1>
-          <p className="text-slate-500 dark:text-gray-400 text-xs md:text-sm mt-1 font-medium">
-            Kelola daftar mata pelajaran (kurikulum sekolah) untuk paket soal & ujian.
-          </p>
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 glass-panel rounded-3xl border border-slate-200/80 dark:border-white/5 relative overflow-hidden">
+        <div className="absolute top-0 right-0 -mr-8 -mt-8 w-40 h-40 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="flex items-center gap-4 relative">
+          <div className="p-3.5 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-500/20 shadow-md">
+            <BookOpen className="h-7 w-7" />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Master Mata Pelajaran
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-gray-400 font-medium mt-0.5">
+              Standar kurikulum, nilai KKM, pengelompokan peminatan, dan penugasan guru pengampu
+            </p>
+          </div>
         </div>
+
         <button
+          id="btn-add-subject"
           onClick={openAddModal}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-indigo-600/30 active:scale-95"
+          className="flex items-center justify-center gap-2 px-5 py-3 bg-cyan-600 hover:bg-cyan-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-cyan-600/30 transition duration-150 shrink-0"
         >
           <Plus className="h-4 w-4" />
-          <span>Tambah Mapel</span>
+          <span>Tambah Mata Pelajaran</span>
         </button>
       </div>
 
-      {/* Control Bar */}
-      <div className="flex justify-between items-center glass-panel p-4 rounded-3xl shadow-sm">
-        <div className="relative w-full max-w-sm">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-gray-400">
-            <Search className="h-4 w-4" />
-          </span>
-          <input
-            type="text"
-            placeholder="Cari mapel atau kode..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
-          />
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 glass-panel rounded-2xl border border-slate-200/80 dark:border-white/5">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto flex-1">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              id="search-subjects"
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari kode atau nama mapel..."
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <select
+              value={selectedJenjangFilter}
+              onChange={(e) => setSelectedJenjangFilter(e.target.value)}
+              className="w-full sm:w-44 px-3 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+            >
+              <option value="all">Semua Jenjang</option>
+              {jenjangList.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.kode_jenjang} - {j.nama_jenjang}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedKelompokFilter}
+              onChange={(e) => setSelectedKelompokFilter(e.target.value)}
+              className="w-full sm:w-36 px-3 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+            >
+              <option value="all">Semua Kelompok</option>
+              <option value="Wajib">Wajib</option>
+              <option value="Peminatan">Peminatan</option>
+              <option value="Keahlian">Keahlian</option>
+              <option value="Muatan Lokal">Muatan Lokal</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="text-xs text-slate-500 font-semibold self-end sm:self-center">
+          Total: {filtered.length} Mata Pelajaran
         </div>
       </div>
 
-      {/* Table or Skeleton */}
-      {loadingData ? (
-        <TableSkeleton rows={4} columns={3} />
-      ) : (
-        <div className="glass-panel rounded-3xl overflow-hidden shadow-xl">
+      {/* Table Container */}
+      <div className="glass-panel rounded-3xl border border-slate-200/80 dark:border-white/5 overflow-hidden shadow-sm">
+        {loadingData ? (
+          <div className="p-6">
+            <TableSkeleton rows={5} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-12 text-center space-y-3">
+            <div className="p-4 bg-slate-100 dark:bg-white/5 rounded-full inline-block text-slate-400">
+              <BookOpen className="h-8 w-8" />
+            </div>
+            <p className="text-sm font-semibold text-slate-700 dark:text-gray-300">
+              Belum ada mata pelajaran yang sesuai.
+            </p>
+          </div>
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse text-xs sm:text-sm">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02] text-xs font-bold text-slate-600 dark:text-gray-400 uppercase tracking-wider">
-                  <th className="px-6 py-4">Kode Mapel</th>
-                  <th className="px-6 py-4">Nama Mata Pelajaran</th>
-                  <th className="px-6 py-4 text-right">Aksi</th>
+                <tr className="border-b border-slate-200 dark:border-white/5 bg-slate-50/60 dark:bg-white/[0.02] text-slate-500 dark:text-gray-400 font-bold uppercase tracking-wider text-[11px]">
+                  <th className="py-4 px-5">Kode</th>
+                  <th className="py-4 px-5">Nama Mata Pelajaran</th>
+                  <th className="py-4 px-5">Jenjang</th>
+                  <th className="py-4 px-5">Kelompok</th>
+                  <th className="py-4 px-5">KKM</th>
+                  <th className="py-4 px-5">Guru Pengampu</th>
+                  <th className="py-4 px-5 text-right">Aksi</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200/70 dark:divide-white/5 text-sm text-slate-700 dark:text-gray-300 font-medium">
-                {filteredSubjects.length > 0 ? (
-                  filteredSubjects.map((subject) => (
-                    <tr key={subject.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.01] transition-colors">
-                      <td className="px-6 py-4 font-mono font-bold text-slate-900 dark:text-white">
-                        <span className="px-2.5 py-1 bg-cyan-100 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20 text-xs rounded-lg">
-                          {subject.code}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">{subject.name}</td>
-                      <td className="px-6 py-4 text-right space-x-1">
+              <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                {filtered.map((s) => (
+                  <tr 
+                    key={s.id}
+                    className="hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition duration-150"
+                  >
+                    <td className="py-4 px-5">
+                      <span className="font-mono font-bold text-xs bg-slate-100 dark:bg-white/5 px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-white/5">
+                        {s.kode_mapel || s.code}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5">
+                      <div>
+                        <p className="font-bold text-slate-900 dark:text-white">
+                          {s.nama_mapel || s.name}
+                        </p>
+                        {s.deskripsi && (
+                          <p className="text-[11px] text-slate-400 max-w-xs truncate">{s.deskripsi}</p>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-4 px-5">
+                      <span className="px-2.5 py-1 rounded-lg font-bold text-xs bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-500/20">
+                        {s.jenjang?.kode_jenjang || 'Semua'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        s.kelompok === 'Wajib'
+                          ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                          : s.kelompok === 'Peminatan'
+                          ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                          : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      }`}>
+                        {s.kelompok || 'Wajib'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5">
+                      <span className="font-black text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 px-2 py-0.5 rounded-lg border border-cyan-500/20">
+                        {s.kkm || 75}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5">
+                      <button
+                        onClick={() => openTeachersModal(s)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-slate-700 dark:text-gray-300 hover:text-cyan-600 font-bold text-xs transition border border-slate-200/60 dark:border-white/5"
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                        <span>{s.guru_pengampu?.length || 0} Guru Ditugaskan</span>
+                      </button>
+                    </td>
+                    <td className="py-4 px-5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => openEditModal(subject)}
-                          className="inline-flex p-2 hover:bg-indigo-50 dark:hover:bg-white/5 text-indigo-600 dark:text-indigo-400 rounded-xl transition"
-                          title="Edit"
+                          onClick={() => openTeachersModal(s)}
+                          title="Kelola Guru Pengampu"
+                          className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-xl transition"
+                        >
+                          <Users className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(s)}
+                          title="Edit Mata Pelajaran"
+                          className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl transition"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(subject.id)}
-                          className="inline-flex p-2 hover:bg-rose-50 dark:hover:bg-white/5 text-rose-600 dark:text-rose-400 rounded-xl transition"
-                          title="Hapus"
+                          onClick={() => handleDelete(s)}
+                          title="Hapus Mata Pelajaran"
+                          className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-12 text-center text-slate-500 dark:text-gray-500 font-medium">
-                      Tidak ada data mata pelajaran ditemukan.
+                      </div>
                     </td>
                   </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Modal Dialog */}
+      {/* Add / Edit Subject Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-[#070a13]/80 backdrop-blur-md">
-          <div className="w-full max-w-md glass-panel rounded-3xl p-6 md:p-8 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-lg glass-panel rounded-3xl p-6 sm:p-7 border border-slate-200 dark:border-white/10 shadow-2xl relative animate-scale-up">
             <button
               onClick={() => setModalOpen(false)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-xl"
+              className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl transition"
             >
               <X className="h-5 w-5" />
             </button>
-            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-6">
-              {editingSubject ? 'Edit Mata Pelajaran' : 'Tambah Mata Pelajaran Baru'}
-            </h2>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-500/20">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  {editingSubject ? 'Ubah Mata Pelajaran' : 'Tambah Mata Pelajaran Baru'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-gray-400">
+                  Konfigurasikan jenjang kurikulum, kode, dan standar nilai KKM
+                </p>
+              </div>
+            </div>
 
             {error && (
-              <div className="mb-4 p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 rounded-xl text-sm font-semibold">
+              <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 rounded-2xl text-xs font-semibold">
                 {error}
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                  Kode Mapel
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: BIND, MTK, IPA"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
-                />
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Kode Mapel
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={kodeMapel}
+                    onChange={(e) => setKodeMapel(e.target.value.toUpperCase())}
+                    placeholder="MTK-SMA"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-cyan-500/30"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Nama Mata Pelajaran
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={namaMapel}
+                    onChange={(e) => setNamaMapel(e.target.value)}
+                    placeholder="Contoh: Matematika Peminatan"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/30"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Jenjang
+                  </label>
+                  <select
+                    value={idjenjang}
+                    onChange={(e) => setIdjenjang(parseInt(e.target.value))}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/30"
+                  >
+                    {jenjangList.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        {j.kode_jenjang}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Kelompok
+                  </label>
+                  <select
+                    value={kelompok}
+                    onChange={(e) => setKelompok(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/30"
+                  >
+                    <option value="Wajib">Wajib</option>
+                    <option value="Peminatan">Peminatan</option>
+                    <option value="Keahlian">Keahlian</option>
+                    <option value="Muatan Lokal">Muatan Lokal</option>
+                  </select>
+                </div>
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    KKM (0 - 100)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={kkm}
+                    onChange={(e) => setKkm(parseFloat(e.target.value) || 75)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/30"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                  Nama Mata Pelajaran
+                  Deskripsi / Cakupan Materi
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Matematika, Bahasa Indonesia"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
+                <textarea
+                  rows={2}
+                  value={deskripsi}
+                  onChange={(e) => setDeskripsi(e.target.value)}
+                  placeholder="Keterangan kurikulum atau fokus bahasan materi..."
+                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/30"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition"
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-gray-300 text-xs sm:text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5 transition"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition flex justify-center items-center shadow-lg shadow-indigo-600/30"
+                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-cyan-600/30 transition flex items-center gap-2"
                 >
-                  {loading ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  ) : (
-                    <span>Simpan</span>
-                  )}
+                  {loading && <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{editingSubject ? 'Simpan Perubahan' : 'Buat Mapel'}</span>
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Manage Teachers for Subject Modal */}
+      {teachersModalOpen && activeSubjectForTeachers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-2xl glass-panel rounded-3xl p-6 sm:p-7 border border-slate-200 dark:border-white/10 shadow-2xl relative animate-scale-up max-h-[85vh] flex flex-col">
+            <button
+              onClick={() => setTeachersModalOpen(false)}
+              className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl transition"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5 shrink-0">
+              <div className="p-3 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-500/20">
+                <Users className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  Guru Pengampu: {activeSubjectForTeachers.nama_mapel || activeSubjectForTeachers.name}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-gray-400">
+                  Tugaskan pengajar dari data User BO (Guru / Penilai)
+                </p>
+              </div>
+            </div>
+
+            {/* Assign Teacher Bar */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5 flex flex-col sm:flex-row items-center gap-3 mb-4 shrink-0">
+              <select
+                value={selectedTeacherToAssign}
+                onChange={(e) => setSelectedTeacherToAssign(e.target.value)}
+                className="w-full sm:flex-1 px-3 py-2 bg-white dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white"
+              >
+                <option value="">-- Pilih Guru dari User BO --</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleAssignTeacher}
+                disabled={!selectedTeacherToAssign}
+                className="w-full sm:w-auto px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+              >
+                <UserPlus className="h-4 w-4" />
+                <span>Tugaskan Guru</span>
+              </button>
+            </div>
+
+            {/* Teachers List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {activeSubjectForTeachers.guru_pengampu && activeSubjectForTeachers.guru_pengampu.length > 0 ? (
+                activeSubjectForTeachers.guru_pengampu.map((gp, index) => (
+                  <div
+                    key={gp.id || index}
+                    className="p-3 rounded-2xl bg-white dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5 flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-slate-900 dark:text-white">
+                        {gp.guru?.nama || gp.iduser_bo}
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        {gp.guru?.login_email || '-'} • TA: {gp.tahun_ajaran}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveTeacher(gp.iduser_bo)}
+                      title="Hapus penugasan"
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-slate-400 text-xs italic">
+                  Belum ada guru yang ditugaskan untuk mata pelajaran ini.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 mt-3 border-t border-slate-100 dark:border-white/5 flex justify-end shrink-0">
+              <button
+                onClick={() => setTeachersModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition"
+              >
+                Selesai
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default SubjectsPage;

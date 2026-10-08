@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use App\Models\UserBo;
+use App\Models\UserSiswa;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -18,74 +18,121 @@ class LoginController extends Controller
             'password' => 'required|string',
         ]);
 
-        // Attempt to find user by email or username (NISN)
-        $user = User::where('email', $request->login)
-            ->orWhere('username', $request->login)
+        $loginInput = trim($request->login);
+        $password = (string) $request->password;
+
+        // 1. Attempt to authenticate as Back Office User (Super Admin IP, Admin Sekolah, Guru)
+        $userBo = UserBo::with('kategori')
+            ->where(function ($q) use ($loginInput) {
+                $q->where('login_email', $loginInput)
+                  ->orWhere('login_username', $loginInput)
+                  ->orWhere('iduser_bo', $loginInput);
+            })
+            ->where('status_remove', '!=', 'Y')
             ->first();
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'login' => ['Kredensial yang Anda masukkan salah.'],
+        if ($userBo && $userBo->verifyPassword($password)) {
+            if ($userBo->status_aktif !== 'Y') {
+                return response()->json([
+                    'message' => 'Akun staff/guru Anda sedang dinonaktifkan. Silakan hubungi super administrator.',
+                ], 403);
+            }
+
+            $sessionToken = Str::random(40);
+            $userBo->update([
+                'active_session_token' => $sessionToken,
+                'last_login_at' => now(),
+            ]);
+
+            // Revoke previous tokens
+            $userBo->tokens()->delete();
+            $apiToken = $userBo->createToken('cbt_auth_token')->plainTextToken;
+
+            $role = $userBo->role; // 'super_admin' | 'admin' | 'guru'
+
+            return response()->json([
+                'token' => $apiToken,
+                'session_token' => $sessionToken,
+                'user' => [
+                    'id' => $userBo->iduser_bo,
+                    'name' => $userBo->name,
+                    'email' => $userBo->email,
+                    'username' => $userBo->username,
+                    'role' => $role,
+                    'category' => $userBo->kategori?->nama_kategori,
+                    'profile' => [
+                        'id' => $userBo->iduser_bo,
+                        'name' => $userBo->name,
+                        'phone' => $userBo->telp,
+                        'address' => $userBo->alamat,
+                        'institution' => $userBo->kategori?->nama_kategori,
+                    ]
+                ]
             ]);
         }
 
-        if (! $user->is_active) {
+        // 2. Attempt to authenticate as Student (Siswa from `user` table)
+        $userSiswa = UserSiswa::with('kelas.jenjang')
+            ->where(function ($q) use ($loginInput) {
+                $q->where('login_email', $loginInput)
+                  ->orWhere('nisn', $loginInput)
+                  ->orWhere('iduser', $loginInput)
+                  ->orWhere('telp', $loginInput);
+            })
+            ->first();
+
+        if ($userSiswa && $userSiswa->verifyPassword($password)) {
+            if ($userSiswa->status_aktif !== 'Y') {
+                return response()->json([
+                    'message' => 'Akun siswa Anda belum aktif atau telah dinonaktifkan.',
+                ], 403);
+            }
+
+            $sessionToken = Str::random(40);
+            $userSiswa->update([
+                'active_session_token' => $sessionToken,
+                'last_login_at' => now(),
+            ]);
+
+            $userSiswa->tokens()->delete();
+            $apiToken = $userSiswa->createToken('cbt_auth_token')->plainTextToken;
+
             return response()->json([
-                'message' => 'Akun Anda dinonaktifkan. Silakan hubungi admin.',
-            ], 403);
+                'token' => $apiToken,
+                'session_token' => $sessionToken,
+                'user' => [
+                    'id' => $userSiswa->iduser,
+                    'name' => $userSiswa->name,
+                    'email' => $userSiswa->email,
+                    'username' => $userSiswa->username,
+                    'role' => 'siswa',
+                    'profile' => [
+                        'id' => $userSiswa->iduser,
+                        'nisn' => $userSiswa->nisn,
+                        'class_id' => $userSiswa->idkelas,
+                        'class_room' => $userSiswa->kelas ? [
+                            'id' => $userSiswa->kelas->id,
+                            'name' => $userSiswa->kelas->nama_kelas,
+                            'level' => $userSiswa->kelas->tingkat,
+                            'jenjang' => $userSiswa->kelas->jenjang?->nama_jenjang,
+                        ] : null,
+                    ]
+                ]
+            ]);
         }
 
-        // Generate a new session lock token
-        $sessionToken = Str::random(40);
-
-        // Update database with new session token and last login
-        $user->update([
-            'active_session_token' => $sessionToken,
-            'last_login_at' => now(),
-        ]);
-
-        // Revoke all previous tokens for this user (Single Session Lock)
-        $user->tokens()->delete();
-
-        // Create new Sanctum API token
-        $apiToken = $user->createToken('cbt_auth_token')->plainTextToken;
-
-        // Retrieve user roles and profile details
-        $role = $user->getRoleNames()->first();
-        
-        $profile = null;
-        if ($role === 'siswa') {
-            $user->load('student.classRoom', 'student.major');
-            $profile = $user->student;
-        } elseif ($role === 'guru') {
-            $user->load('teacher');
-            $profile = $user->teacher;
-        }
-
-        return response()->json([
-            'token' => $apiToken,
-            'session_token' => $sessionToken,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'username' => $user->username,
-                'role' => $role,
-                'profile' => $profile
-            ]
+        throw ValidationException::withMessages([
+            'login' => ['Kredensial yang Anda masukkan salah.'],
         ]);
     }
 
     public function logout(Request $request)
     {
         $user = $request->user();
-        
+
         if ($user) {
-            // Clear the active session token in DB
             $user->update(['active_session_token' => null]);
-            
-            // Revoke current token
-            $user->currentAccessToken()->delete();
+            $user->currentAccessToken()?->delete();
         }
 
         return response()->json([

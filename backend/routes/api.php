@@ -2,9 +2,10 @@
 
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\SessionController;
+use App\Http\Controllers\Api\Admin\MasterJenjangController;
+use App\Http\Controllers\Api\Admin\MasterKelasController;
+use App\Http\Controllers\Api\Admin\MasterMataPelajaranController;
 use App\Http\Controllers\Api\Admin\MajorController;
-use App\Http\Controllers\Api\Admin\ClassController;
-use App\Http\Controllers\Api\Admin\SubjectController;
 use App\Http\Controllers\Api\Admin\AcademicYearController;
 use App\Http\Controllers\Api\Admin\TeacherController;
 use App\Http\Controllers\Api\Admin\StudentController;
@@ -22,22 +23,34 @@ use App\Http\Controllers\Api\Proctoring\ViolationLogController;
 use Illuminate\Support\Facades\Route;
 
 // Public Auth routes
-Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:15,1');
+Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:30,1');
 
 // Protected routes (Requires Auth & Session Lock check)
 Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
     Route::get('/auth/me', [SessionController::class, 'me']);
     Route::post('/auth/logout', [LoginController::class, 'logout']);
 
-    // Admin-only Master Data management routes
+    // Admin & Super Admin Master Data management routes
     Route::middleware(['role:super_admin|admin'])->prefix('admin')->group(function () {
+        // Master Jenjang Pendidikan (SD, SMP, SMA, SMK)
+        Route::apiResource('jenjang', MasterJenjangController::class);
+
+        // Master Kelas
+        Route::post('classes/{masterKela}/students', [MasterKelasController::class, 'addStudent']);
+        Route::delete('classes/{masterKela}/students/{iduser}', [MasterKelasController::class, 'removeStudent']);
+        Route::apiResource('classes', MasterKelasController::class);
+
+        // Master Mata Pelajaran
+        Route::post('subjects/{masterMataPelajaran}/teachers', [MasterMataPelajaranController::class, 'assignTeacher']);
+        Route::delete('subjects/{masterMataPelajaran}/teachers/{iduser_bo}', [MasterMataPelajaranController::class, 'removeTeacher']);
+        Route::apiResource('subjects', MasterMataPelajaranController::class);
+
+        // Jurusan & Tahun Ajaran
         Route::apiResource('majors', MajorController::class);
-        Route::apiResource('classes', ClassController::class);
-        Route::apiResource('subjects', SubjectController::class);
-        
         Route::post('academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate']);
         Route::apiResource('academic-years', AcademicYearController::class);
         
+        // Master Guru & Siswa
         Route::apiResource('teachers', TeacherController::class);
         Route::post('students/import', [StudentController::class, 'import']);
         Route::apiResource('students', StudentController::class);
@@ -49,8 +62,9 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
 
     // Teacher Bank Soal & Exam management routes
     Route::middleware(['role:guru|super_admin|admin'])->prefix('teacher')->group(function () {
-        Route::get('subjects', [SubjectController::class, 'index']);
-        Route::get('classes', [ClassController::class, 'index']);
+        Route::get('jenjang', [MasterJenjangController::class, 'index']);
+        Route::get('subjects', [MasterMataPelajaranController::class, 'index']);
+        Route::get('classes', [MasterKelasController::class, 'index']);
         Route::get('students', [StudentController::class, 'index']);
 
         Route::post('packages/{package}/duplicate', [QuestionPackageController::class, 'duplicate']);

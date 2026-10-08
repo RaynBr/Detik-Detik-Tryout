@@ -142,13 +142,63 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
-        {/* Helpful Footer Info */}
-        <div className="mt-8 pt-6 border-t border-slate-200/80 dark:border-white/5 text-center space-y-2">
-          <p className="text-[11px] text-slate-500 dark:text-gray-400 font-medium">
-            💡 <strong>Petunjuk Masuk:</strong> Siswa menggunakan <strong>NISN</strong>, Guru & Admin menggunakan <strong>Username / Email</strong>.
+        {/* Quick Demo Accounts Selection */}
+        <div className="mt-6 pt-5 border-t border-slate-200/80 dark:border-white/5 space-y-3">
+          <p className="text-[11px] font-bold text-slate-500 dark:text-gray-400 text-center uppercase tracking-wider">
+            Akun Siap Uji (Database Sertidemi)
           </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginInput('adminnyaadmin');
+                setPassword('coreofthecore');
+              }}
+              className="px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-500/30 transition text-left"
+            >
+              👑 Super Admin IP
+              <span className="block text-[9px] font-normal opacity-70">adminnyaadmin</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginInput('pgrislcc');
+                setPassword('12345');
+              }}
+              className="px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-500/30 transition text-left"
+            >
+              🏫 Admin Sekolah
+              <span className="block text-[9px] font-normal opacity-70">pgrislcc (PGRI)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginInput('edismulyanta');
+                setPassword('12345');
+              }}
+              className="px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-500/30 transition text-left"
+            >
+              👨‍🏫 Guru Pengajar
+              <span className="block text-[9px] font-normal opacity-70">edismulyanta</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginInput('verinakris@gmail.com');
+                setPassword('123456');
+              }}
+              className="px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-500/30 transition text-left"
+            >
+              🎓 Siswa
+              <span className="block text-[9px] font-normal opacity-70">verinakris@gmail.com</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Helpful Footer Info */}
+        <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-white/5 text-center">
           <p className="text-[10px] text-slate-400 dark:text-gray-500 font-mono">
-            Sistem CBT v2.4 • Single Session Lock Aktif
+            Sistem CBT Sertidemi • Single Session Lock Aktif
           </p>
         </div>
 

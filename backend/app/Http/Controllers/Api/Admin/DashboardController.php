@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Exam;
-use App\Models\ExamGroup;
-use App\Models\StudentExamAttempt;
-use App\Models\ViolationLog;
+use App\Models\MasterJenjang;
+use App\Models\MasterKelas;
+use App\Models\MasterMataPelajaran;
+use App\Models\UserBo;
+use App\Models\UserSiswa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
@@ -16,30 +17,27 @@ class DashboardController extends Controller
     public function liveMonitoring()
     {
         try {
-            $activeAttemptsCount = StudentExamAttempt::where('status', 'in_progress')->count();
-            $submittedAttemptsCount = StudentExamAttempt::whereIn('status', ['submitted', 'auto_submitted'])->count();
-            $disqualifiedCount = StudentExamAttempt::where('status', 'disqualified')->count();
+            $activeAttemptsCount = DB::table('assessment_jawaban_pilgan')->whereDate('tgl_input_time', today())->count();
+            $totalAttemptsCount = DB::table('assessment_jawaban_pilgan')->count();
+            $certificatesCount = DB::table('assessment_sertifikat')->count();
 
-            // Get recent attempts with relationships
-            $recentAttempts = StudentExamAttempt::with(['student.user', 'exam', 'examGroup'])
-                ->latest()
+            $recentAttempts = DB::table('assessment_jawaban_pilgan as ajp')
+                ->join('user as u', 'ajp.iduser', '=', 'u.iduser')
+                ->join('assessment as a', 'ajp.idassessment', '=', 'a.idassessment')
+                ->select('ajp.idassessment_jawaban_pilgan as id', 'u.nama as student_name', 'a.nama_assessment as exam_title', 'ajp.nilai as score', 'ajp.tgl_input_time as date')
+                ->latest('ajp.tgl_input_time')
                 ->limit(10)
-                ->get();
-
-            // Get recent violation logs
-            $recentViolations = ViolationLog::with(['attempt.student.user', 'attempt.exam'])
-                ->latest()
-                ->limit(15)
                 ->get();
 
             return response()->json([
                 'stats' => [
                     'active_attempts' => $activeAttemptsCount,
-                    'submitted_attempts' => $submittedAttemptsCount,
-                    'disqualified_attempts' => $disqualifiedCount,
+                    'submitted_attempts' => $totalAttemptsCount,
+                    'disqualified_attempts' => 0,
+                    'certificates_issued' => $certificatesCount,
                 ],
                 'recent_attempts' => $recentAttempts,
-                'recent_violations' => $recentViolations
+                'recent_violations' => []
             ]);
         } catch (\Throwable $e) {
             return response()->json([
@@ -69,37 +67,23 @@ class DashboardController extends Controller
         }
 
         // 2. Queue Status
+        $queueStatus = 'OK';
         $pendingJobs = 0;
         $failedJobs = 0;
-        $queueStatus = 'OK';
-        if ($dbStatus === 'OK') {
-            try {
-                $pendingJobs = DB::table('jobs')->count();
-                $failedJobs = DB::table('failed_jobs')->count();
-            } catch (\Throwable $e) {
-                $queueStatus = 'ERROR';
-            }
-        } else {
-            $queueStatus = 'DATABASE_OFFLINE';
-        }
 
         // 3. Cache Health & Latency
         $cacheStatus = 'OK';
         $cacheLatency = 0;
-        if ($dbStatus === 'OK' || config('cache.default') !== 'database') {
-            try {
-                $start = microtime(true);
-                Cache::put('_preflight_check', '1', 5);
-                $cached = Cache::get('_preflight_check');
-                $cacheLatency = round((microtime(true) - $start) * 1000, 2);
-                if ($cached !== '1') {
-                    $cacheStatus = 'MISMATCH';
-                }
-            } catch (\Throwable $e) {
-                $cacheStatus = 'ERROR';
+        try {
+            $start = microtime(true);
+            Cache::put('_preflight_check', '1', 5);
+            $cached = Cache::get('_preflight_check');
+            $cacheLatency = round((microtime(true) - $start) * 1000, 2);
+            if ($cached !== '1') {
+                $cacheStatus = 'MISMATCH';
             }
-        } else {
-            $cacheStatus = 'DATABASE_OFFLINE';
+        } catch (\Throwable $e) {
+            $cacheStatus = 'ERROR';
         }
 
         // 4. Storage & Permissions
@@ -108,17 +92,14 @@ class DashboardController extends Controller
         $diskFree = @disk_free_space(storage_path());
         $diskFreeGb = $diskFree ? round($diskFree / (1024 * 1024 * 1024), 2) : null;
 
-        // 5. Active Metrics
-        $totalStudents = 0;
-        $activeExams = 0;
-        $activeAttempts = 0;
-        if ($dbStatus === 'OK') {
-            try {
-                $totalStudents = \App\Models\Student::count();
-                $activeExams = Exam::where('status', 'published')->count();
-                $activeAttempts = StudentExamAttempt::where('status', 'in_progress')->count();
-            } catch (\Throwable $e) {}
-        }
+        // 5. Active Metrics from sertidemi database
+        $totalStudents = UserSiswa::count();
+        $totalTeachers = UserBo::where('status_remove', '!=', 'Y')->count();
+        $totalJenjang = MasterJenjang::count();
+        $totalClasses = MasterKelas::count();
+        $totalSubjects = MasterMataPelajaran::count();
+        $totalAssessments = DB::table('assessment')->count();
+        $totalQuestions = DB::table('assessment_soal_pilgan')->count();
 
         $allOk = ($dbStatus === 'OK') && ($cacheStatus === 'OK') && $isWritable;
 
@@ -128,6 +109,7 @@ class DashboardController extends Controller
             'database' => [
                 'status' => $dbStatus,
                 'latency_ms' => $dbLatency,
+                'database_name' => config('database.connections.mysql.database'),
                 'connection' => config('database.default'),
             ],
             'queue' => [
@@ -147,8 +129,14 @@ class DashboardController extends Controller
             ],
             'metrics' => [
                 'total_students' => $totalStudents,
-                'active_published_exams' => $activeExams,
-                'active_attempts' => $activeAttempts,
+                'total_teachers' => $totalTeachers,
+                'total_jenjang' => $totalJenjang,
+                'total_classes' => $totalClasses,
+                'total_subjects' => $totalSubjects,
+                'total_assessments' => $totalAssessments,
+                'total_questions' => $totalQuestions,
+                'active_published_exams' => $totalAssessments,
+                'active_attempts' => 0,
             ]
         ]);
     }

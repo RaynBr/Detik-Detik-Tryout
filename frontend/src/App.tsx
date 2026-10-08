@@ -21,6 +21,7 @@ const ExamReportPage = lazy(() => import('./features/teacher/ExamReportPage').th
 const AdminLayout = lazy(() => import('./features/admin/AdminLayout').then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import('./features/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const LiveMonitoringPage = lazy(() => import('./features/admin/LiveMonitoringPage').then(m => ({ default: m.LiveMonitoringPage })));
+const JenjangPage = lazy(() => import('./features/admin/JenjangPage').then(m => ({ default: m.JenjangPage })));
 const MajorsPage = lazy(() => import('./features/admin/MajorsPage').then(m => ({ default: m.MajorsPage })));
 const ClassesPage = lazy(() => import('./features/admin/ClassesPage').then(m => ({ default: m.ClassesPage })));
 const SubjectsPage = lazy(() => import('./features/admin/SubjectsPage').then(m => ({ default: m.SubjectsPage })));
@@ -83,6 +84,7 @@ export const App: React.FC = () => {
                   <Route path="/admin/dashboard" element={<AdminDashboard />} />
                   <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
                   <Route path="/admin/reports" element={<ExamReportPage />} />
+                  <Route path="/admin/jenjang" element={<JenjangPage />} />
                   <Route path="/admin/majors" element={<MajorsPage />} />
                   <Route path="/admin/classes" element={<ClassesPage />} />
                   <Route path="/admin/subjects" element={<SubjectsPage />} />
