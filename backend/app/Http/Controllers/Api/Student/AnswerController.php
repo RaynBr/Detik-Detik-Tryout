@@ -3,59 +3,67 @@
 namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
-use App\Models\StudentExamAttempt;
-use App\Models\StudentAnswer;
+use App\Models\AssessmentJawabanPilgan;
+use App\Models\AssessmentJawabanPilganDetail;
 use Illuminate\Http\Request;
 
 class AnswerController extends Controller
 {
     public function saveAnswer(Request $request, $attemptId)
     {
-        $student = $request->user()->student;
-        if (!$student) {
-            return response()->json(['message' => 'Profil siswa tidak ditemukan.'], 404);
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
-        $attempt = StudentExamAttempt::where('student_id', $student->id)->findOrFail($attemptId);
+        $attempt = AssessmentJawabanPilgan::where('idassessment_jawaban_pilgan', $attemptId)
+            ->where('iduser', $user->iduser)
+            ->firstOrFail();
 
-        if ($attempt->status !== 'in_progress') {
-            return response()->json(['message' => 'Sesi ujian ini telah ditutup. Tidak dapat menyimpan jawaban.'], 403);
+        if ($attempt->komentar === 'submitted') {
+            return response()->json(['message' => 'Sesi ujian telah diselesaikan. Tidak dapat mengubah jawaban.'], 403);
         }
 
         $request->validate([
-            'question_id' => 'required|exists:question_banks,id',
-            'answer_content' => 'nullable|array',
-            'is_flagged' => 'required|boolean',
+            'question_id' => 'required',
+            'answer_content' => 'nullable',
         ]);
 
+        $questionId = (string) $request->question_id;
         $answerContent = $request->answer_content;
-        if (is_array($answerContent) && isset($answerContent['essay_text']) && is_string($answerContent['essay_text'])) {
-            $answerContent['essay_text'] = strip_tags($answerContent['essay_text']);
+
+        $chosenLetter = null;
+        if (is_array($answerContent) && isset($answerContent['option_id'])) {
+            $chosenLetter = (string) $answerContent['option_id'];
+        } elseif (is_string($answerContent)) {
+            $chosenLetter = $answerContent;
         }
 
-        $answer = \Illuminate\Support\Facades\DB::transaction(function () use ($attempt, $request, $answerContent) {
-            $ans = StudentAnswer::firstOrCreate(
-                [
-                    'attempt_id' => $attempt->id,
-                    'question_bank_id' => $request->question_id
-                ],
-                [
-                    'answer_content' => null,
-                    'is_flagged' => false
-                ]
-            );
+        // Upsert answer in assessment_jawaban_pilgan_detail
+        $detail = AssessmentJawabanPilganDetail::where('idassessment_jawaban_pilgan', $attemptId)
+            ->where('idassessment_soal_pilgan', $questionId)
+            ->first();
 
-            $ans->update([
-                'answer_content' => $answerContent,
-                'is_flagged' => $request->is_flagged,
+        if (!$detail) {
+            $detailId = (string) (time() . rand(1000000, 9999999));
+            $detail = AssessmentJawabanPilganDetail::create([
+                'idassessment_jawaban_pilgan_detail' => $detailId,
+                'idassessment_jawaban_pilgan' => $attemptId,
+                'idassessment_soal_pilgan' => $questionId,
+                'jawaban' => $chosenLetter ?: 'A',
             ]);
-
-            return $ans;
-        });
+        } else {
+            $detail->update([
+                'jawaban' => $chosenLetter ?: $detail->jawaban,
+            ]);
+        }
 
         return response()->json([
-            'message' => 'Jawaban disimpan.',
-            'data' => $answer
+            'message' => 'Jawaban berhasil disimpan.',
+            'data' => [
+                'question_id' => $questionId,
+                'chosen_option' => $chosenLetter,
+            ]
         ]);
     }
 }

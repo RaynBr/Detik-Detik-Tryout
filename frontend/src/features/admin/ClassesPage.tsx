@@ -429,15 +429,18 @@ export const ClassesPage: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                  Nama Kelas
+                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                  Nama Kelas (Format Teks Bebas)
                 </label>
+                <p className="text-[11px] text-slate-500 dark:text-gray-400 mb-2">
+                  Dapat diisi nama kustom untuk sekolah swasta/internasional (Contoh: "X Cambridge A", "7 Al-Farabi", "Toddler Bunga").
+                </p>
                 <input
                   type="text"
                   required
                   value={namaKelas}
                   onChange={(e) => setNamaKelas(e.target.value)}
-                  placeholder="Contoh: Kelas 10 MIPA 1, Kelas 7-A"
+                  placeholder="Contoh: 10 Cambridge Science, 7 Al-Farabi, X MIPA 1"
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
                 />
               </div>

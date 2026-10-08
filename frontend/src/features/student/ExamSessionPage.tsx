@@ -906,7 +906,7 @@ export const ExamSessionPage: React.FC = () => {
             Modul Proteksi Aktif {isFullscreen ? '(Layar Penuh)' : ''}
           </span>
           <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 md:hidden">
-            CBT Online
+            Detik Detik TryOut
           </span>
         </div>
 

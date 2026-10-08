@@ -139,4 +139,13 @@ class UserBo extends Authenticatable
     {
         return $this->hasMany(GuruMataPelajaran::class, 'iduser_bo', 'iduser_bo');
     }
+
+    public function hasRole($roles): bool
+    {
+        $currentRole = $this->role;
+        if (is_array($roles)) {
+            return in_array($currentRole, $roles);
+        }
+        return $currentRole === $roles;
+    }
 }

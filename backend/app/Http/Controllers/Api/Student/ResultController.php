@@ -3,48 +3,93 @@
 namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
-use App\Models\StudentExamAttempt;
+use App\Models\AssessmentJawabanPilgan;
+use App\Models\AssessmentSoalPilgan;
 use Illuminate\Http\Request;
 
 class ResultController extends Controller
 {
     public function showResult(Request $request, $attemptId)
     {
-        $student = $request->user()->student;
-        if (!$student) {
-            return response()->json(['message' => 'Profil siswa tidak ditemukan.'], 404);
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
-        $attempt = StudentExamAttempt::where('student_id', $student->id)
-            ->with(['exam.subject', 'examGroup', 'answers.questionBank.options'])
-            ->findOrFail($attemptId);
+        $attempt = AssessmentJawabanPilgan::with(['assessment.mapel', 'details'])
+            ->where('idassessment_jawaban_pilgan', $attemptId)
+            ->where('iduser', $user->iduser)
+            ->firstOrFail();
 
-        $exam = $attempt->exam;
+        $assessment = $attempt->assessment;
+        $questions = AssessmentSoalPilgan::where('idassessment', $assessment->idassessment)
+            ->orderBy('idassessment_soal_pilgan', 'asc')
+            ->get();
 
-        // Hide results if option is disabled in settings and the exam window is still open
-        $showResults = $exam->settings['show_result_immediately'] ?? false;
-        $now = now();
-        $isClosed = $now->gt($exam->end_time);
+        $savedAnswers = $attempt->details->keyBy('idassessment_soal_pilgan');
 
-        if (!$showResults && !$isClosed) {
-            return response()->json([
-                'attempt' => [
-                    'id' => $attempt->id,
-                    'status' => $attempt->status,
-                    'started_at' => $attempt->started_at,
-                    'submitted_at' => $attempt->submitted_at,
-                    'total_score' => null, // Hidden
-                    'is_passed' => null,   // Hidden
-                ],
-                'message' => 'Hasil ujian akan diumumkan setelah waktu pengerjaan berakhir.',
-                'results_hidden' => true
-            ]);
+        $correctCount = 0;
+        $reviewQuestions = [];
+
+        foreach ($questions as $idx => $q) {
+            $studentAns = $savedAnswers->get($q->idassessment_soal_pilgan);
+            $chosen = $studentAns ? strtoupper(trim($studentAns->jawaban)) : null;
+            $correctKey = strtoupper(trim($q->jawaban));
+            $isCorrect = ($chosen !== null && $chosen === $correctKey);
+
+            if ($isCorrect) {
+                $correctCount++;
+            }
+
+            $options = [];
+            if (!empty($q->pilihan_a_text) || !empty($q->pilihan_a_gambar)) {
+                $options[] = ['key' => 'A', 'content' => $q->pilihan_a_text ?: 'Pilihan A', 'media' => $q->pilihan_a_gambar];
+            }
+            if (!empty($q->pilihan_b_text) || !empty($q->pilihan_b_gambar)) {
+                $options[] = ['key' => 'B', 'content' => $q->pilihan_b_text ?: 'Pilihan B', 'media' => $q->pilihan_b_gambar];
+            }
+            if (!empty($q->pilihan_c_text) || !empty($q->pilihan_c_gambar)) {
+                $options[] = ['key' => 'C', 'content' => $q->pilihan_c_text ?: 'Pilihan C', 'media' => $q->pilihan_c_gambar];
+            }
+            if (!empty($q->pilihan_d_text) || !empty($q->pilihan_d_gambar)) {
+                $options[] = ['key' => 'D', 'content' => $q->pilihan_d_text ?: 'Pilihan D', 'media' => $q->pilihan_d_gambar];
+            }
+            if (!empty($q->pilihan_e_text) || !empty($q->pilihan_e_gambar)) {
+                $options[] = ['key' => 'E', 'content' => $q->pilihan_e_text ?: 'Pilihan E', 'media' => $q->pilihan_e_gambar];
+            }
+
+            $reviewQuestions[] = [
+                'number' => $idx + 1,
+                'question_id' => $q->idassessment_soal_pilgan,
+                'soal_text' => $q->soal_text ?: 'Pertanyaan',
+                'soal_gambar' => $q->soal_gambar,
+                'options' => $options,
+                'student_answer' => $chosen,
+                'correct_answer' => $correctKey,
+                'is_correct' => $isCorrect,
+                'explanation' => $q->penjelasan_jawaban ?: 'Tidak ada pembahasan khusus untuk nomor ini.',
+            ];
         }
 
-        // Return full attempt details
+        $totalQuestions = count($questions);
+        $score = ($totalQuestions > 0) ? round(($correctCount / $totalQuestions) * 100, 2) : 0;
+
         return response()->json([
-            'attempt' => $attempt,
-            'results_hidden' => false
+            'attempt' => [
+                'id' => $attempt->idassessment_jawaban_pilgan,
+                'assessment_id' => $assessment->idassessment,
+                'title' => $assessment->nama_assessment,
+                'subject' => $assessment->mapel?->nama_mapel ?? 'TryOut',
+                'status' => 'submitted',
+                'total_score' => (float) ($attempt->nilai ?? $score),
+                'total_questions' => $totalQuestions,
+                'total_correct' => $correctCount,
+                'total_incorrect' => $totalQuestions - $correctCount,
+                'duration_spent' => $attempt->lama_dikerjakan ?: '-',
+                'submitted_at' => $attempt->tgl_input_time,
+            ],
+            'questions' => $reviewQuestions,
+            'results_hidden' => false,
         ]);
     }
 }

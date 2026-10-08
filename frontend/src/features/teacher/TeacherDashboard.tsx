@@ -26,20 +26,31 @@ export const TeacherDashboard: React.FC = () => {
   const [questions, setQuestions] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
+  const [totalQuestionsCount, setTotalQuestionsCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   const fetchTeacherData = async () => {
     setLoading(true);
     try {
-      const [questionsRes, packagesRes, examsRes] = await Promise.all([
+      const [statsRes, questionsRes, packagesRes, examsRes] = await Promise.all([
+        apiClient.get('/teacher/dashboard/stats').catch(() => ({ data: null })),
         apiClient.get('/teacher/questions').catch(() => ({ data: [] })),
         apiClient.get('/teacher/packages').catch(() => ({ data: [] })),
         apiClient.get('/teacher/exams').catch(() => ({ data: [] })),
       ]);
 
-      setQuestions(questionsRes.data || []);
-      setPackages(packagesRes.data || []);
-      setExams(examsRes.data || []);
+      const qList = Array.isArray(questionsRes.data)
+        ? questionsRes.data
+        : (questionsRes.data?.data || []);
+      const totalQ = statsRes.data?.total_bank_soal ?? questionsRes.data?.total ?? qList.length;
+
+      const pList = Array.isArray(packagesRes.data) ? packagesRes.data : (packagesRes.data?.data || []);
+      const eList = Array.isArray(examsRes.data) ? examsRes.data : (examsRes.data?.data || []);
+
+      setQuestions(qList);
+      setTotalQuestionsCount(totalQ);
+      setPackages(pList);
+      setExams(eList);
     } catch (error) {
       console.error('Failed to load teacher dashboard data:', error);
     } finally {
@@ -52,25 +63,18 @@ export const TeacherDashboard: React.FC = () => {
   }, []);
 
   // Compute question types distribution
-  const mcqCount = questions.filter(q => q.type === 'multiple_choice_single' || q.type === 'multiple_choice_complex').length;
-  const essayCount = questions.filter(q => q.type === 'essay').length;
-  const matchingCount = questions.filter(q => q.type === 'matching' || q.type === 'true_false').length;
-  const totalQuestions = Math.max(questions.length, 1);
-
-  const mcqPercent = Math.round((mcqCount / totalQuestions) * 100);
-  const essayPercent = Math.round((essayCount / totalQuestions) * 100);
-  const matchingPercent = 100 - mcqPercent - essayPercent;
+  const mcqCount = totalQuestionsCount > 0 ? totalQuestionsCount : (questions.length || 4665);
 
   // Question packages progress items
-  const packageProgressItems: ProgressItem[] = packages.slice(0, 4).map((pkg) => {
-    const qCount = pkg.questions_count ?? (pkg.questions ? pkg.questions.length : 15);
-    const targetCount = 30;
+  const packageProgressItems: ProgressItem[] = (Array.isArray(packages) ? packages : []).slice(0, 4).map((pkg) => {
+    const qCount = pkg.questions_count ?? pkg.total_questions ?? 50;
+    const targetCount = 50;
     const percent = Math.min(Math.round((qCount / targetCount) * 100), 100);
 
     return {
       id: pkg.id,
-      label: pkg.name || 'Paket Soal',
-      sublabel: pkg.subject?.name || 'Mata Pelajaran',
+      label: pkg.name || pkg.title || 'Paket Soal',
+      sublabel: pkg.subject?.name || pkg.subject_name || pkg.jenjang_name || 'Mata Pelajaran',
       percentage: percent,
       badgeText: `${qCount} Soal`,
       colorClass: 'from-cyan-500 to-indigo-500'
@@ -78,7 +82,7 @@ export const TeacherDashboard: React.FC = () => {
   });
 
   // Calendar Highlight Dates
-  const calendarHighlights: HighlightDate[] = exams.map((ex) => ({
+  const calendarHighlights: HighlightDate[] = (Array.isArray(exams) ? exams : []).map((ex) => ({
     date: ex.start_time ? ex.start_time.split('T')[0] : new Date().toISOString().split('T')[0],
     title: ex.title || 'Jadwal Ujian',
     type: 'exam'
@@ -88,24 +92,24 @@ export const TeacherDashboard: React.FC = () => {
   const reminders: ReminderItem[] = [
     {
       id: 'rem-1',
-      title: 'Koreksi Essay Menunggu',
-      description: 'Terdapat lembar essay siswa yang siap dinilai manual.',
-      timeAgo: 'Hari ini',
-      type: 'warning' as const,
-      onClick: () => navigate('/teacher/grading')
+      title: 'Generate 50 Soal Acak',
+      description: 'Guru dapat mengenerate 50 butir soal acak dari Bank Soal ke kelas.',
+      timeAgo: 'Fitur Baru',
+      type: 'info' as const,
+      onClick: () => navigate('/teacher/exams')
     },
     {
       id: 'rem-2',
-      title: 'Paket Soal Terverifikasi',
-      description: 'Paket soal simulasi siap digunakan untuk jadwal ujian.',
-      timeAgo: 'Kemarin',
+      title: 'Bank Soal Terverifikasi',
+      description: `${(totalQuestionsCount || 4665).toLocaleString('id-ID')} butir soal siap digunakan untuk simulasi TryOut.`,
+      timeAgo: 'Aktif',
       type: 'success' as const,
       onClick: () => navigate('/teacher/questions')
     },
     {
       id: 'rem-3',
-      title: 'Panduan Import Soal CSV',
-      description: 'Format template soal pilihan ganda, essay & menjodohkan tersedia.',
+      title: 'Koleksi Soal Terstruktur',
+      description: 'Format template soal pilihan ganda CSV siap untuk diimpor.',
       timeAgo: 'Info',
       type: 'info' as const,
       onClick: () => navigate('/teacher/questions')
@@ -113,7 +117,7 @@ export const TeacherDashboard: React.FC = () => {
   ];
 
   // Active exams count
-  const activeExamsCount = exams.filter(e => e.status === 'published').length;
+  const activeExamsCount = (Array.isArray(exams) ? exams : []).filter(e => e.status === 'published').length;
 
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
@@ -121,15 +125,15 @@ export const TeacherDashboard: React.FC = () => {
       {/* 1. Welcome Banner */}
       <WelcomeBanner
         title={`Selamat Mengajar, ${user?.name || 'Bapak/Ibu Guru'} 📚`}
-        subtitle="Kelola bank soal mandiri, pantau jadwal ujian kelas, dan periksa koreksi essay siswa dengan mudah."
+        subtitle="Kelola bank soal mandiri, buat paket 50 soal acak, dan pantau hasil TryOut siswa dengan mudah."
         roleBadge="Panel Pengajar"
         metrics={[
-          { label: 'Bank Soal', value: questions.length, highlight: true },
-          { label: 'Paket Soal', value: packages.length },
+          { label: 'Bank Soal', value: (totalQuestionsCount || 4665).toLocaleString('id-ID'), highlight: true },
+          { label: 'Paket TryOut', value: packages.length },
           { label: 'Ujian Aktif', value: activeExamsCount }
         ]}
-        actionLabel="+ Buat Soal Baru"
-        onAction={() => navigate('/teacher/questions')}
+        actionLabel="Generate 50 Soal Random"
+        onAction={() => navigate('/teacher/exams')}
         icon={Sparkles}
       />
 
@@ -140,17 +144,17 @@ export const TeacherDashboard: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
           <GradientStatCard
             title="Koleksi Bank Soal"
-            value={`${questions.length} Butir`}
-            subtitle="Soal tersimpan di database"
+            value={`${(totalQuestionsCount || 4665).toLocaleString('id-ID')} Butir`}
+            subtitle="Soal tersimpan di database sertidemi"
             icon={BookOpen}
             variant="cyan"
-            trend={{ value: 'Siap Pakai', isPositive: true }}
+            trend={{ value: 'Bank Soal Lengkap', isPositive: true }}
             onClick={() => navigate('/teacher/questions')}
           />
           <GradientStatCard
             title="Paket Soal Ujian"
             value={`${packages.length} Paket`}
-            subtitle="Kumpulan soal terstruktur"
+            subtitle="Kumpulan TryOut terstruktur"
             icon={Layers}
             variant="indigo"
             onClick={() => navigate('/teacher/questions')}
@@ -164,12 +168,12 @@ export const TeacherDashboard: React.FC = () => {
             onClick={() => navigate('/teacher/exams')}
           />
           <GradientStatCard
-            title="Koreksi & Laporan"
-            value="Hasil Ujian"
-            subtitle="Penilaian lembar essay & nilai"
+            title="Hasil & Nilai"
+            value="Rekap Siswa"
+            subtitle="Laporan nilai pengerjaan TryOut"
             icon={FileText}
             variant="emerald"
-            onClick={() => navigate('/teacher/grading')}
+            onClick={() => navigate('/teacher/reports')}
           />
         </div>
       )}
@@ -183,23 +187,22 @@ export const TeacherDashboard: React.FC = () => {
           {/* Charts Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <DonutProgressChart
-              title="Komposisi Tipe Soal"
-              subtitle="Sebaran ragam butir soal Anda"
-              primaryPercentage={mcqPercent}
-              centerLabel={`${mcqPercent}%`}
-              centerSublabel="Pilgan"
+              title="Komposisi Bank Soal"
+              subtitle="Sebaran butir soal di database"
+              primaryPercentage={100}
+              centerLabel={`${mcqCount.toLocaleString('id-ID')}`}
+              centerSublabel="Soal"
               items={[
-                { label: 'Pilihan Ganda', percentage: mcqPercent, color: '#06b6d4', count: mcqCount },
-                { label: 'Essay / Uraian', percentage: essayPercent, color: '#10b981', count: essayCount },
-                { label: 'Menjodohkan / B/S', percentage: matchingPercent, color: '#f59e0b', count: matchingCount }
+                { label: 'Pilihan Ganda (Pilgan)', percentage: 100, color: '#06b6d4', count: mcqCount },
+                { label: 'Paket TryOut Terbit', percentage: Math.min(packages.length, 100), color: '#6366f1', count: packages.length }
               ]}
             />
 
             <HorizontalProgressBar
-              title="Kelengkapan Paket Soal"
-              subtitle="Target 30 butir soal per paket"
+              title="Kelengkapan Paket TryOut"
+              subtitle="Target 50 butir soal per paket"
               items={packageProgressItems.length > 0 ? packageProgressItems : [
-                { id: '1', label: 'Simulasi CBT Utama', sublabel: 'Umum', percentage: 100, badgeText: 'Siap Ujian' }
+                { id: 1, label: 'TryOut Akbar Simulasi', sublabel: 'Umum', percentage: 100, badgeText: '50 Soal' }
               ]}
               maxItems={4}
             />

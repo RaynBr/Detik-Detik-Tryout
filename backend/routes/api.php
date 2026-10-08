@@ -5,17 +5,12 @@ use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\Admin\MasterJenjangController;
 use App\Http\Controllers\Api\Admin\MasterKelasController;
 use App\Http\Controllers\Api\Admin\MasterMataPelajaranController;
-use App\Http\Controllers\Api\Admin\MajorController;
-use App\Http\Controllers\Api\Admin\AcademicYearController;
+use App\Http\Controllers\Api\Admin\InstansiController;
 use App\Http\Controllers\Api\Admin\TeacherController;
 use App\Http\Controllers\Api\Admin\StudentController;
 use App\Http\Controllers\Api\Admin\DashboardController;
-use App\Http\Controllers\Api\Teacher\QuestionPackageController;
-use App\Http\Controllers\Api\Teacher\QuestionBankController;
-use App\Http\Controllers\Api\Teacher\QuestionImportController;
-use App\Http\Controllers\Api\Teacher\ExamController;
-use App\Http\Controllers\Api\Teacher\ExamGroupController;
-use App\Http\Controllers\Api\Teacher\GradingController;
+use App\Http\Controllers\Api\Teacher\TeacherExamController;
+use App\Http\Controllers\Api\Teacher\TeacherQuestionBankController;
 use App\Http\Controllers\Api\Student\ExamAttemptController;
 use App\Http\Controllers\Api\Student\AnswerController;
 use App\Http\Controllers\Api\Student\ResultController;
@@ -30,12 +25,27 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
     Route::get('/auth/me', [SessionController::class, 'me']);
     Route::post('/auth/logout', [LoginController::class, 'logout']);
 
-    // Admin & Super Admin Master Data management routes
+    // Admin & Super Admin Management routes
     Route::middleware(['role:super_admin|admin'])->prefix('admin')->group(function () {
+        // Manajemen Instansi & Multi-Tenant User CRUD (Super Admin)
+        Route::post('instansi/{idkategori}/admins', [InstansiController::class, 'storeAdmin']);
+        Route::put('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'updateAdmin']);
+        Route::delete('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'destroyAdmin']);
+
+        Route::post('instansi/{idkategori}/gurus', [InstansiController::class, 'storeGuru']);
+        Route::put('instansi/{idkategori}/gurus/{iduser_bo}', [InstansiController::class, 'updateGuru']);
+        Route::delete('instansi/{idkategori}/gurus/{iduser_bo}', [InstansiController::class, 'destroyGuru']);
+
+        Route::post('instansi/{idkategori}/siswas', [InstansiController::class, 'storeSiswa']);
+        Route::put('instansi/{idkategori}/siswas/{iduser}', [InstansiController::class, 'updateSiswa']);
+        Route::delete('instansi/{idkategori}/siswas/{iduser}', [InstansiController::class, 'destroySiswa']);
+
+        Route::apiResource('instansi', InstansiController::class);
+
         // Master Jenjang Pendidikan (SD, SMP, SMA, SMK)
         Route::apiResource('jenjang', MasterJenjangController::class);
 
-        // Master Kelas
+        // Master Kelas (Free text names for private schools)
         Route::post('classes/{masterKela}/students', [MasterKelasController::class, 'addStudent']);
         Route::delete('classes/{masterKela}/students/{iduser}', [MasterKelasController::class, 'removeStudent']);
         Route::apiResource('classes', MasterKelasController::class);
@@ -44,49 +54,37 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::post('subjects/{masterMataPelajaran}/teachers', [MasterMataPelajaranController::class, 'assignTeacher']);
         Route::delete('subjects/{masterMataPelajaran}/teachers/{iduser_bo}', [MasterMataPelajaranController::class, 'removeTeacher']);
         Route::apiResource('subjects', MasterMataPelajaranController::class);
-
-        // Jurusan & Tahun Ajaran
-        Route::apiResource('majors', MajorController::class);
-        Route::post('academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate']);
-        Route::apiResource('academic-years', AcademicYearController::class);
         
-        // Master Guru & Siswa
+        // Master Guru & Siswa (Admin Scope)
         Route::apiResource('teachers', TeacherController::class);
         Route::post('students/import', [StudentController::class, 'import']);
         Route::apiResource('students', StudentController::class);
 
-        // Live monitor & pre-flight system health check
+        // Live monitor, stats & pre-flight system health check
+        Route::get('dashboard/stats', [DashboardController::class, 'stats']);
         Route::get('dashboard/live-monitoring', [DashboardController::class, 'liveMonitoring']);
         Route::get('dashboard/pre-flight-check', [DashboardController::class, 'preFlightCheck']);
     });
 
-    // Teacher Bank Soal & Exam management routes
+    // Teacher Bank Soal & TryOut Exam management routes
     Route::middleware(['role:guru|super_admin|admin'])->prefix('teacher')->group(function () {
+        Route::get('dashboard/stats', [DashboardController::class, 'stats']);
         Route::get('jenjang', [MasterJenjangController::class, 'index']);
         Route::get('subjects', [MasterMataPelajaranController::class, 'index']);
         Route::get('classes', [MasterKelasController::class, 'index']);
         Route::get('students', [StudentController::class, 'index']);
 
-        Route::post('packages/{package}/duplicate', [QuestionPackageController::class, 'duplicate']);
-        Route::apiResource('packages', QuestionPackageController::class);
+        // Bank Soal & Import Template
+        Route::get('questions/template', [TeacherQuestionBankController::class, 'downloadTemplate']);
+        Route::post('questions/import', [TeacherQuestionBankController::class, 'import']);
+        Route::apiResource('questions', TeacherQuestionBankController::class);
 
-        Route::get('questions/template', [QuestionImportController::class, 'downloadTemplate']);
-        Route::get('questions/template/word', [QuestionImportController::class, 'downloadWordTemplate']);
-        Route::post('questions/import', [QuestionImportController::class, 'import']);
-        Route::apiResource('questions', QuestionBankController::class);
-
-        // Exams & Groups CRUD
-        Route::apiResource('exams', ExamController::class);
-        Route::apiResource('exam-groups', ExamGroupController::class);
-
-        // Sessional grading endpoints
-        Route::get('exams/{exam}/attempts', [GradingController::class, 'examAttempts']);
-        Route::get('attempts/{attempt}', [GradingController::class, 'showAttemptAnswers']);
-        Route::post('answers/{answer}/grade', [GradingController::class, 'gradeAnswer']);
-
-        // Exam Analytics & Results Reporting endpoints
-        Route::get('exams/{exam}/report', [\App\Http\Controllers\Api\Teacher\ExamReportController::class, 'getExamReport']);
-        Route::get('exams/{exam}/report/export', [\App\Http\Controllers\Api\Teacher\ExamReportController::class, 'exportCsv']);
+        // TryOut Exams & Packages (Support 50 random question generator & class assignments)
+        Route::post('exams/generate-random', [TeacherExamController::class, 'generateRandom50']);
+        Route::post('exams/{idassessment}/assign-class', [TeacherExamController::class, 'assignToClass']);
+        Route::get('exams/{idassessment}/results', [TeacherExamController::class, 'results']);
+        Route::apiResource('exams', TeacherExamController::class);
+        Route::apiResource('packages', TeacherExamController::class);
     });
 
     // Student Exam pengerjaan routes with High-Throughput Burst Rate Limiting

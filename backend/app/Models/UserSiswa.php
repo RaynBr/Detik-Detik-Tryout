@@ -24,6 +24,7 @@ class UserSiswa extends Authenticatable
         'nama',
         'nisn',
         'idkelas',
+        'idkategori',
         'telp',
         'alamat',
         'login_email',
@@ -85,6 +86,11 @@ class UserSiswa extends Authenticatable
     public function kelas(): BelongsTo
     {
         return $this->belongsTo(MasterKelas::class, 'idkelas', 'id');
+    }
+
+    public function kategori(): BelongsTo
+    {
+        return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
     }
 
     public function riwayatKelas(): HasMany

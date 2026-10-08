@@ -31,16 +31,24 @@ class SessionController extends Controller
             ];
             $id = $user->iduser_bo;
         } elseif ($user instanceof UserSiswa) {
-            $user->load('kelas.jenjang');
+            $user->load(['kelas.jenjang', 'kelas.kategori', 'kategori']);
+            $institutionName = $user->kategori?->nama_kategori 
+                ?? $user->kelas?->kategori?->nama_kategori 
+                ?? 'Sekolah Mitra';
+
             $profile = [
                 'id' => $user->iduser,
                 'nisn' => $user->nisn,
+                'institution' => $institutionName,
+                'jenjang' => $user->kelas?->jenjang?->nama_jenjang ?? 'Umum',
                 'class_id' => $user->idkelas,
+                'class_name' => $user->kelas?->nama_kelas ?? 'Belum Ditentukan',
                 'class_room' => $user->kelas ? [
                     'id' => $user->kelas->id,
                     'name' => $user->kelas->nama_kelas,
                     'level' => $user->kelas->tingkat,
                     'jenjang' => $user->kelas->jenjang?->nama_jenjang,
+                    'institution' => $institutionName,
                 ] : null,
             ];
             $id = $user->iduser;

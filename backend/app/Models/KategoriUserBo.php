@@ -27,4 +27,28 @@ class KategoriUserBo extends Model
     {
         return $this->hasMany(UserBo::class, 'idkategori', 'idkategori');
     }
+
+    public function adminSekolah(): HasMany
+    {
+        return $this->hasMany(UserBo::class, 'idkategori', 'idkategori')
+            ->where(function ($q) {
+                $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin');
+            });
+    }
+
+    public function guru(): HasMany
+    {
+        return $this->hasMany(UserBo::class, 'idkategori', 'idkategori')
+            ->where('role_type', 'guru');
+    }
+
+    public function siswa(): HasMany
+    {
+        return $this->hasMany(UserSiswa::class, 'idkategori', 'idkategori');
+    }
+
+    public function kelas(): HasMany
+    {
+        return $this->hasMany(MasterKelas::class, 'idkategori', 'idkategori');
+    }
 }

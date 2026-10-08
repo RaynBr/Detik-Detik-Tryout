@@ -8,12 +8,17 @@ export interface UserProfile {
   nisn?: string;
   nis?: string;
   nip?: string;
+  institution?: string;
+  jenjang?: string;
+  class_name?: string;
   class_id?: number;
   major_id?: number;
   class_room?: {
     id: number;
     name: string;
     level: number;
+    jenjang?: string;
+    institution?: string;
   };
   major?: {
     id: number;

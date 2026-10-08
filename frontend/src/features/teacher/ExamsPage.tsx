@@ -5,7 +5,7 @@ import { LaTeXRenderer } from '../../shared/components/LaTeXRenderer';
 import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../shared/context/ToastContext';
 import { 
-  Plus, Edit2, Trash2, Calendar, Clock, Settings, Users, 
+  Sparkles, Plus, Edit2, Trash2, Calendar, Clock, Settings, Users, 
   BookOpen, AlertCircle, X, Search, Folder, CheckCircle, ChevronDown, ChevronUp, BarChart3
 } from 'lucide-react';
 
@@ -112,30 +112,86 @@ export const ExamsPage: React.FC = () => {
   const [selectedClassIds, setSelectedClassIds] = useState<number[]>([]);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   
+  const [jenjangList, setJenjangList] = useState<any[]>([]);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [generateForm, setGenerateForm] = useState({
+    nama_assessment: '',
+    deskripsi_assessment: '',
+    idjenjang: 1,
+    idmapel: 1,
+    idkelas: '',
+    total_soal: 50,
+    waktu_pengerjaan: 60,
+    tanggal_mulai_assessment: '',
+    tanggal_batas_assessment: '',
+  });
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const fetchData = async () => {
     setLoadingExams(true);
     try {
-      const [examsRes, packagesRes, subjectsRes, questionsRes, studentsRes, classesRes] = await Promise.all([
+      const [examsRes, packagesRes, subjectsRes, questionsRes, studentsRes, classesRes, jenjangRes] = await Promise.all([
         apiClient.get('/teacher/exams'),
         apiClient.get('/teacher/packages'),
         apiClient.get('/teacher/subjects'),
         apiClient.get('/teacher/questions'),
         apiClient.get('/teacher/students'),
         apiClient.get('/teacher/classes'),
+        apiClient.get('/teacher/jenjang').catch(() => ({ data: [] })),
       ]);
-      setExams(examsRes.data);
-      setPackages(packagesRes.data);
-      setSubjects(subjectsRes.data);
-      setAllQuestions(questionsRes.data);
-      setStudents(studentsRes.data);
-      setClasses(classesRes.data);
+      setExams(Array.isArray(examsRes.data) ? examsRes.data : (examsRes.data?.data || []));
+      setPackages(Array.isArray(packagesRes.data) ? packagesRes.data : (packagesRes.data?.data || []));
+      setSubjects(Array.isArray(subjectsRes.data) ? subjectsRes.data : (subjectsRes.data?.data || []));
+      setAllQuestions(Array.isArray(questionsRes.data) ? questionsRes.data : (questionsRes.data?.data || []));
+      setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : (studentsRes.data?.data || []));
+      setClasses(Array.isArray(classesRes.data) ? classesRes.data : (classesRes.data?.data || []));
+      setJenjangList(Array.isArray(jenjangRes.data) ? jenjangRes.data : (jenjangRes.data?.data || []));
+      if (subjectsRes.data?.[0]?.id) {
+        setGenerateForm(prev => ({ ...prev, idmapel: subjectsRes.data[0].id }));
+      }
+      if (jenjangRes.data?.[0]?.id) {
+        setGenerateForm(prev => ({ ...prev, idjenjang: jenjangRes.data[0].id }));
+      }
     } catch (err) {
       console.error('Failed to load exams data:', err);
     } finally {
       setLoadingExams(false);
+    }
+  };
+
+  const handleGenerateRandomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!generateForm.nama_assessment.trim()) {
+      toast.warning('Silakan isi judul paket TryOut.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload: any = {
+        ...generateForm,
+        idkelas: generateForm.idkelas ? parseInt(generateForm.idkelas) : null,
+      };
+      const res = await apiClient.post('/teacher/exams/generate-random', payload);
+      toast.success(res.data?.message || 'Berhasil mengenerate 50 soal acak dari Bank Soal!');
+      setShowGenerateModal(false);
+      setGenerateForm({
+        nama_assessment: '',
+        deskripsi_assessment: '',
+        idjenjang: jenjangList[0]?.id || 1,
+        idmapel: subjects[0]?.id || 1,
+        idkelas: '',
+        total_soal: 50,
+        waktu_pengerjaan: 60,
+        tanggal_mulai_assessment: '',
+        tanggal_batas_assessment: '',
+      });
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mengenerate soal dari Bank Soal.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -408,13 +464,23 @@ export const ExamsPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30 self-start md:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Buat Jadwal Ujian Baru</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowGenerateModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/20 active:scale-95"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>Generate 50 Soal Random (Bank Soal)</span>
+          </button>
+
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30 self-start md:self-auto"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Buat Paket Manual</span>
+          </button>
+        </div>
       </div>
 
       {/* Grid of Exams or Skeleton */}
@@ -1068,6 +1134,154 @@ export const ExamsPage: React.FC = () => {
                   ) : (
                     <span>Simpan Sesi Gelombang</span>
                   )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Generate 50 Soal Random dari Bank Soal */}
+      {showGenerateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-[#0c101d] rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-white/10 animate-scale-up">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-white/5 mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-gradient-to-tr from-indigo-500 to-cyan-400 text-white rounded-xl shadow-md">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                    Generate 50 Soal Acak
+                  </h2>
+                  <p className="text-[11px] text-slate-500 dark:text-gray-400">
+                    Otomatis mengambil 50 butir soal dari Bank Soal sesuai kurikulum
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGenerateModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGenerateRandomSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                  Judul Paket TryOut
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: TryOut Akbar Ujian Nasional Matematika Seri A"
+                  value={generateForm.nama_assessment}
+                  onChange={(e) => setGenerateForm({ ...generateForm, nama_assessment: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Jenjang Pendidikan
+                  </label>
+                  <select
+                    value={generateForm.idjenjang}
+                    onChange={(e) => setGenerateForm({ ...generateForm, idjenjang: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                  >
+                    {jenjangList.map((j) => (
+                      <option key={j.id} value={j.id}>{j.kode_jenjang} - {j.nama_jenjang}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Mata Pelajaran
+                  </label>
+                  <select
+                    value={generateForm.idmapel}
+                    onChange={(e) => setGenerateForm({ ...generateForm, idmapel: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                  >
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                  Tugaskan Langsung ke Kelas (Opsional)
+                </label>
+                <select
+                  value={generateForm.idkelas}
+                  onChange={(e) => setGenerateForm({ ...generateForm, idkelas: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="">-- Simpan ke Bank Soal (Belum Ditugaskan) --</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nama_kelas || c.name}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Jika dikosongkan, paket akan disimpan di Bank Soal dan bisa ditugaskan ke murid sewaktu-waktu.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Jumlah Soal
+                  </label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="100"
+                    value={generateForm.total_soal}
+                    onChange={(e) => setGenerateForm({ ...generateForm, total_soal: parseInt(e.target.value) || 50 })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Durasi Pengerjaan (Menit)
+                  </label>
+                  <input
+                    type="number"
+                    min="10"
+                    max="300"
+                    value={generateForm.waktu_pengerjaan}
+                    onChange={(e) => setGenerateForm({ ...generateForm, waktu_pengerjaan: parseInt(e.target.value) || 60 })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl text-[11px] text-indigo-900 dark:text-indigo-200 font-medium">
+                💡 <strong>Catatan Sistem:</strong> Seluruh murid di kelas ini akan mendapatkan <strong>50 butir soal yang sama</strong>, namun sistem secara otomatis akan <strong>mengacak urutan opsi pilihan jawaban (A, B, C, D, E)</strong> secara unik per siswa.
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setShowGenerateModal(false)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>{loading ? 'Mengenerate...' : 'Generate 50 Soal Sekarang'}</span>
                 </button>
               </div>
             </form>

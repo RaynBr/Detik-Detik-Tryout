@@ -7,14 +7,15 @@ import {
   GraduationCap, 
   BookOpen, 
   School, 
-  Calendar, 
-  Users, 
   LogOut, 
   Menu, 
   X,
   ShieldAlert,
   BarChart3,
-  Layers
+  Layers,
+  Building2,
+  FileQuestion,
+  ClipboardList
 } from 'lucide-react';
 
 export const AdminLayout: React.FC = () => {
@@ -25,15 +26,14 @@ export const AdminLayout: React.FC = () => {
 
   const menuItems = [
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
+    { name: 'Bank Soal', path: '/admin/questions', icon: FileQuestion },
+    { name: 'Paket TryOut', path: '/admin/exams', icon: ClipboardList },
+    { name: 'Instansi & Pengguna', path: '/admin/instansi', icon: Building2 },
     { name: 'Live Proctoring', path: '/admin/proctoring', icon: ShieldAlert },
-    { name: 'Laporan Hasil', path: '/admin/reports', icon: BarChart3 },
     { name: 'Master Jenjang', path: '/admin/jenjang', icon: Layers },
     { name: 'Master Kelas', path: '/admin/classes', icon: GraduationCap },
     { name: 'Mata Pelajaran', path: '/admin/subjects', icon: BookOpen },
-    { name: 'Jurusan / Peminatan', path: '/admin/majors', icon: School },
-    { name: 'Tahun Ajaran', path: '/admin/academic-years', icon: Calendar },
-    { name: 'Data Guru (BO)', path: '/admin/teachers', icon: Users },
-    { name: 'Data Siswa', path: '/admin/students', icon: Users },
+    { name: 'Laporan Nilai', path: '/admin/reports', icon: BarChart3 },
   ];
 
   return (
@@ -46,8 +46,8 @@ export const AdminLayout: React.FC = () => {
             <School className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">CBT Admin</h1>
-            <p className="text-xs text-slate-500 dark:text-gray-500 font-medium">Manajemen Master Data</p>
+            <h1 className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">Detik Detik TryOut</h1>
+            <p className="text-xs text-slate-500 dark:text-gray-500 font-medium">Administrator IP Portal</p>
           </div>
         </div>
 
@@ -116,8 +116,8 @@ export const AdminLayout: React.FC = () => {
             <School className="h-4.5 w-4.5" />
           </div>
           <div>
-            <h1 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">CBT Admin</h1>
-            <p className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Manajemen Master Data</p>
+            <h1 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">Detik Detik TryOut</h1>
+            <p className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Administrator IP Portal</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

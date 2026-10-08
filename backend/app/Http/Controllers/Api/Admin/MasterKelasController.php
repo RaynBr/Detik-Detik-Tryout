@@ -12,8 +12,15 @@ class MasterKelasController extends Controller
 {
     public function index(Request $request)
     {
-        $query = MasterKelas::with(['jenjang', 'waliKelas'])
+        $user = $request->user();
+        $query = MasterKelas::with(['jenjang', 'waliKelas', 'kategori'])
             ->withCount('siswa');
+
+        if ($request->filled('idkategori')) {
+            $query->where('idkategori', $request->idkategori);
+        } elseif ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+        }
 
         if ($request->filled('idjenjang')) {
             $query->where('idjenjang', $request->idjenjang);
@@ -23,14 +30,14 @@ class MasterKelasController extends Controller
             $query->where('tingkat', $request->tingkat);
         }
 
-        $classes = $query->orderBy('tingkat', 'asc')
-            ->orderBy('nama_kelas', 'asc')
+        $classes = $query->orderBy('nama_kelas', 'asc')
             ->get();
 
         // Also add aliases for frontend compatibility
         $mapped = $classes->map(function ($c) {
             $c->name = $c->nama_kelas;
             $c->level = $c->tingkat;
+            $c->institution = $c->kategori?->nama_kategori ?? 'Semua';
             $c->major = [
                 'id' => $c->idjenjang,
                 'name' => $c->jenjang?->nama_jenjang ?? $c->jurusan,
@@ -45,10 +52,11 @@ class MasterKelasController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'nama_kelas' => 'nullable|string|max:50',
-            'name' => 'nullable|string|max:50', // fallback alias
+            'nama_kelas' => 'nullable|string|max:100',
+            'name' => 'nullable|string|max:100', // fallback alias
             'idjenjang' => 'nullable|exists:master_jenjang,id',
             'major_id' => 'nullable', // fallback alias
+            'idkategori' => 'nullable|string|max:25',
             'tingkat' => 'nullable|integer',
             'level' => 'nullable|integer', // fallback alias
             'jurusan' => 'nullable|string|max:100',
@@ -61,9 +69,13 @@ class MasterKelasController extends Controller
         $tingkat = $validated['tingkat'] ?? $validated['level'] ?? 10;
         $idjenjang = $validated['idjenjang'] ?? $validated['major_id'] ?? 1;
 
+        $user = $request->user();
+        $idkategori = $validated['idkategori'] ?? ($user && !empty($user->idkategori) ? $user->idkategori : '27830150842287772');
+
         $kelas = MasterKelas::create([
             'nama_kelas' => trim($namaKelas),
             'idjenjang' => $idjenjang,
+            'idkategori' => $idkategori,
             'tingkat' => $tingkat,
             'jurusan' => $validated['jurusan'] ?? 'Umum',
             'wali_kelas_id' => $validated['wali_kelas_id'] ?? null,

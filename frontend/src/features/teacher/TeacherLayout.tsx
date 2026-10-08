@@ -9,7 +9,6 @@ import {
   LogOut, 
   Menu, 
   X, 
-  FileText, 
   Calendar,
   BarChart3
 } from 'lucide-react';
@@ -23,9 +22,8 @@ export const TeacherLayout: React.FC = () => {
   const menuItems = [
     { name: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
     { name: 'Bank Soal', path: '/teacher/questions', icon: BookOpen },
-    { name: 'Jadwal Ujian', path: '/teacher/exams', icon: Calendar },
-    { name: 'Koreksi Manual', path: '/teacher/grading', icon: FileText },
-    { name: 'Laporan Hasil', path: '/teacher/reports', icon: BarChart3 },
+    { name: 'Paket TryOut & Ujian', path: '/teacher/exams', icon: Calendar },
+    { name: 'Laporan Nilai Siswa', path: '/teacher/reports', icon: BarChart3 },
   ];
 
   return (
@@ -38,8 +36,8 @@ export const TeacherLayout: React.FC = () => {
             <School className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">CBT Guru</h1>
-            <p className="text-xs text-slate-500 dark:text-gray-500 font-medium">Panel Pengajar</p>
+            <h1 className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">Detik Detik TryOut</h1>
+            <p className="text-xs text-slate-500 dark:text-gray-500 font-medium">Panel Pengajar / Guru</p>
           </div>
         </div>
 
@@ -98,8 +96,8 @@ export const TeacherLayout: React.FC = () => {
             <School className="h-4.5 w-4.5" />
           </div>
           <div>
-            <h1 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">CBT Guru</h1>
-            <p className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Panel Pengajar</p>
+            <h1 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">Detik Detik TryOut</h1>
+            <p className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Panel Pengajar / Guru</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

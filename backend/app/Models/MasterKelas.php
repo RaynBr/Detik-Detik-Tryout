@@ -15,6 +15,7 @@ class MasterKelas extends Model
 
     protected $fillable = [
         'idjenjang',
+        'idkategori',
         'nama_kelas',
         'tingkat',
         'jurusan',
@@ -23,6 +24,11 @@ class MasterKelas extends Model
         'keterangan',
         'status_aktif',
     ];
+
+    public function kategori(): BelongsTo
+    {
+        return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
 
     public function jenjang(): BelongsTo
     {

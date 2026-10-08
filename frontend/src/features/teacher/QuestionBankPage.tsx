@@ -82,11 +82,13 @@ export const QuestionBankPage: React.FC = () => {
     setLoadingPackages(true);
     try {
       const [packagesRes, subjectsRes] = await Promise.all([
-        apiClient.get('/teacher/packages'),
-        apiClient.get('/teacher/subjects')
+        apiClient.get('/teacher/packages').catch(() => ({ data: [] })),
+        apiClient.get('/teacher/subjects').catch(() => ({ data: [] }))
       ]);
-      setPackages(packagesRes.data);
-      setSubjects(subjectsRes.data);
+      const pList = Array.isArray(packagesRes.data) ? packagesRes.data : (packagesRes.data?.data || []);
+      const sList = Array.isArray(subjectsRes.data) ? subjectsRes.data : (subjectsRes.data?.data || []);
+      setPackages(pList);
+      setSubjects(sList);
     } catch (err) {
       console.error('Failed to load packages:', err);
     } finally {
@@ -99,7 +101,8 @@ export const QuestionBankPage: React.FC = () => {
     setLoadingQuestions(true);
     try {
       const res = await apiClient.get(`/teacher/questions?package_id=${packageId}`);
-      setQuestions(res.data);
+      const qList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setQuestions(qList);
     } catch (err) {
       console.error('Failed to load package questions:', err);
     } finally {
@@ -262,23 +265,28 @@ export const QuestionBankPage: React.FC = () => {
   };
 
   // Filtered packages
-  const filteredPackages = packages.filter(pkg => {
-    const matchSearch = pkg.title.toLowerCase().includes(search.toLowerCase()) || 
-                        pkg.code.toLowerCase().includes(search.toLowerCase()) ||
-                        (pkg.description && pkg.description.toLowerCase().includes(search.toLowerCase()));
-    const matchSubject = subjectFilter ? pkg.subject_id.toString() === subjectFilter : true;
+  const filteredPackages = (Array.isArray(packages) ? packages : []).filter(pkg => {
+    const pkgTitle = pkg.title || (pkg as any).name || '';
+    const pkgCode = pkg.code || '';
+    const pkgDesc = pkg.description || '';
+    const matchSearch = pkgTitle.toLowerCase().includes(search.toLowerCase()) || 
+                        pkgCode.toLowerCase().includes(search.toLowerCase()) ||
+                        pkgDesc.toLowerCase().includes(search.toLowerCase());
+    const matchSubject = subjectFilter ? pkg.subject_id?.toString() === subjectFilter : true;
     return matchSearch && matchSubject;
   });
 
   // Filtered questions inside selected package
-  const filteredQuestions = questions.filter(q => {
-    const matchSearch = q.content.toLowerCase().includes(search.toLowerCase()) || 
-                        q.topic.toLowerCase().includes(search.toLowerCase());
+  const filteredQuestions = (Array.isArray(questions) ? questions : []).filter(q => {
+    const contentText = q.content || (q as any).soal_text || '';
+    const topicText = q.topic || '';
+    const matchSearch = contentText.toLowerCase().includes(search.toLowerCase()) || 
+                        topicText.toLowerCase().includes(search.toLowerCase());
     const matchDifficulty = difficultyFilter ? q.difficulty === difficultyFilter : true;
     return matchSearch && matchDifficulty;
   });
 
-  const totalAllQuestions = packages.reduce((acc, p) => acc + (p.questions_count ?? p.total_questions ?? 0), 0);
+  const totalAllQuestions = (Array.isArray(packages) ? packages : []).reduce((acc, p) => acc + (p.questions_count ?? p.total_questions ?? 0), 0);
 
   return (
     <div className="space-y-6">

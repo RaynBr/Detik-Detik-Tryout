@@ -6,6 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\MasterJenjang;
 use App\Models\MasterKelas;
 use App\Models\MasterMataPelajaran;
+use App\Models\KategoriUserBo;
+use App\Models\Assessment;
+use App\Models\AssessmentSoalPilgan;
+use App\Models\AssessmentJawabanPilgan;
 use App\Models\UserBo;
 use App\Models\UserSiswa;
 use Illuminate\Http\Request;
@@ -14,6 +18,54 @@ use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
+    /**
+     * Complete aggregate statistics for Admin & Super Admin & Teacher
+     */
+    public function stats(Request $request)
+    {
+        $totalQuestions = AssessmentSoalPilgan::count();
+        $totalAssessments = Assessment::count();
+        $totalInstansi = KategoriUserBo::count();
+        $totalJenjang = MasterJenjang::count();
+        $totalClasses = MasterKelas::count();
+        $totalSubjects = MasterMataPelajaran::count();
+        $totalTeachers = UserBo::where('status_remove', '!=', 'Y')->count();
+        $totalStudents = UserSiswa::count();
+        $totalAttempts = AssessmentJawabanPilgan::count();
+
+        $recentExams = Assessment::with(['mapel', 'jenjang', 'kelas'])
+            ->withCount('soal')
+            ->orderBy('idassessment', 'desc')
+            ->limit(6)
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'id' => $item->idassessment,
+                    'title' => $item->nama_assessment,
+                    'subject' => $item->mapel?->nama_mapel ?? 'Umum',
+                    'jenjang' => $item->jenjang?->nama_jenjang ?? 'Umum',
+                    'class_name' => $item->kelas?->nama_kelas ?? 'Semua Kelas / Bank Soal',
+                    'duration_minutes' => (int) ($item->waktu_pengerjaan ?: 60),
+                    'total_questions' => $item->soal_count ?: 50,
+                    'created_at' => $item->tanggal_input,
+                ];
+            });
+
+        return response()->json([
+            'total_questions' => $totalQuestions,
+            'total_bank_soal' => $totalQuestions,
+            'total_exams' => $totalAssessments,
+            'total_assessments' => $totalAssessments,
+            'total_instansi' => $totalInstansi,
+            'total_jenjang' => $totalJenjang,
+            'total_classes' => $totalClasses,
+            'total_subjects' => $totalSubjects,
+            'total_teachers' => $totalTeachers,
+            'total_students' => $totalStudents,
+            'total_attempts' => $totalAttempts,
+            'recent_exams' => $recentExams,
+        ]);
+    }
     public function liveMonitoring()
     {
         try {

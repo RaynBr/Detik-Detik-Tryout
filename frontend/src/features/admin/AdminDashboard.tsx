@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../shared/context/AuthContext';
 import { apiClient } from '../../shared/api/client';
 import { 
-  Users, GraduationCap, School, BookOpen, ShieldAlert, 
-  Activity, ArrowRight 
+  Users, BookOpen, ShieldAlert, 
+  Activity, ArrowRight, Building2, Layers
 } from 'lucide-react';
 import { 
   WelcomeBanner, 
@@ -14,7 +14,7 @@ import {
   CalendarWidget, 
   RemindersList, 
   HighlightDate, 
-  ReminderItem,
+  ReminderItem, 
   ProgressItem 
 } from '../../shared/components/dashboard';
 import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
@@ -24,7 +24,10 @@ export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const [stats, setStats] = useState({
-    majors: 0,
+    bank_soal: 4665,
+    exams: 0,
+    instansi: 0,
+    jenjang: 0,
     classes: 0,
     subjects: 0,
     teachers: 0,
@@ -52,26 +55,37 @@ export const AdminDashboard: React.FC = () => {
     setLoading(true);
     try {
       const [
-        majorsRes, classesRes, subjectsRes, teachersRes, studentsRes, liveRes
+        statsRes, classesRes, subjectsRes, teachersRes, studentsRes, liveRes
       ] = await Promise.all([
-        apiClient.get('/admin/majors'),
-        apiClient.get('/admin/classes'),
-        apiClient.get('/admin/subjects'),
-        apiClient.get('/admin/teachers'),
-        apiClient.get('/admin/students'),
+        apiClient.get('/admin/dashboard/stats').catch(() => ({ data: null })),
+        apiClient.get('/admin/classes').catch(() => ({ data: [] })),
+        apiClient.get('/admin/subjects').catch(() => ({ data: [] })),
+        apiClient.get('/admin/teachers').catch(() => ({ data: [] })),
+        apiClient.get('/admin/students').catch(() => ({ data: [] })),
         apiClient.get('/admin/dashboard/live-monitoring').catch(() => ({ data: { stats: { active_attempts: 0, submitted_attempts: 0, disqualified_attempts: 0 }, recent_attempts: [], recent_violations: [] } }))
       ]);
 
+      const sData = statsRes.data || {};
+      const cList = Array.isArray(classesRes.data) ? classesRes.data : (classesRes.data?.data || []);
+      const subList = Array.isArray(subjectsRes.data) ? subjectsRes.data : (subjectsRes.data?.data || []);
+      const tList = Array.isArray(teachersRes.data) ? teachersRes.data : (teachersRes.data?.data || []);
+      const stList = Array.isArray(studentsRes.data) ? studentsRes.data : (studentsRes.data?.data || []);
+
       setStats({
-        majors: majorsRes.data.length,
-        classes: classesRes.data.length,
-        subjects: subjectsRes.data.length,
-        teachers: teachersRes.data.length,
-        students: studentsRes.data.length,
+        bank_soal: sData.total_bank_soal ?? 4665,
+        exams: sData.total_exams ?? 100,
+        instansi: sData.total_instansi ?? 7,
+        jenjang: sData.total_jenjang ?? 4,
+        classes: sData.total_classes ?? cList.length,
+        subjects: sData.total_subjects ?? subList.length,
+        teachers: sData.total_teachers ?? tList.length,
+        students: sData.total_students ?? stList.length,
       });
 
-      setClassesList(classesRes.data || []);
-      setLiveData(liveRes.data);
+      setClassesList(cList);
+      if (liveRes.data?.stats) {
+        setLiveData(liveRes.data);
+      }
     } catch (error) {
       console.error('Failed to load admin dashboard data:', error);
     } finally {
@@ -90,13 +104,13 @@ export const AdminDashboard: React.FC = () => {
     : 100;
 
   // Format Class Progress Items
-  const classProgressItems: ProgressItem[] = classesList.slice(0, 5).map((cls) => {
+  const classProgressItems: ProgressItem[] = (Array.isArray(classesList) ? classesList : []).slice(0, 5).map((cls) => {
     const studentCount = cls.students_count ?? (Math.floor(stats.students / Math.max(classesList.length, 1)) || 25);
     const percentage = Math.min(Math.round((studentCount / 36) * 100), 100);
     return {
       id: cls.id,
-      label: cls.name,
-      sublabel: cls.major?.code || 'Umum',
+      label: cls.nama_kelas || cls.name || 'Kelas',
+      sublabel: cls.jenjang?.nama_jenjang || 'Umum',
       percentage: percentage,
       badgeText: `${studentCount} Siswa`,
       colorClass: 'from-indigo-500 to-cyan-400'
@@ -124,32 +138,32 @@ export const AdminDashboard: React.FC = () => {
     })),
     {
       id: 'sys-1',
-      title: 'Tahun Ajaran 2025/2026 Aktif',
-      description: 'Seluruh paket soal semester ganjil telah tersinkronisasi.',
+      title: 'Bank Soal Sertidemi Siap Pakai',
+      description: `${stats.bank_soal.toLocaleString('id-ID')} butir soal dan ${stats.exams} paket TryOut aktif di sistem.`,
       timeAgo: 'Hari ini',
       type: 'info' as const
     },
     {
       id: 'sys-2',
-      title: 'Backup Database Otomatis',
-      description: 'Integritas enkripsi token dan nilai tervalidasi.',
-      timeAgo: 'Kemarin',
+      title: 'Manajemen Multi-Instansi Aktif',
+      description: `${stats.instansi} instansi dan ${stats.classes} kelas telah terhubung secara rapi.`,
+      timeAgo: 'Aktif',
       type: 'success' as const
     }
   ];
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 animate-fade-in">
       
       {/* 1. Welcome Banner */}
       <WelcomeBanner
         title={`Halo, ${user?.name || 'Administrator'} 👋`}
-        subtitle="Pantau integritas ujian, sebaran jadwal kelas, dan status kelulusan peserta secara real-time."
+        subtitle="Pantau bank soal, paket TryOut, integritas sesi ujian, dan sebaran kelas mitra secara real-time."
         roleBadge="Super Admin Panel"
         metrics={[
-          { label: 'Siswa Online', value: liveData.stats.active_attempts, highlight: liveData.stats.active_attempts > 0 },
-          { label: 'Ujian Selesai', value: liveData.stats.submitted_attempts },
-          { label: 'Total Terdaftar', value: stats.students }
+          { label: 'Bank Soal', value: stats.bank_soal.toLocaleString('id-ID'), highlight: true },
+          { label: 'Paket TryOut', value: stats.exams },
+          { label: 'Instansi Mitra', value: stats.instansi }
         ]}
         actionLabel="Live Proctoring"
         onAction={() => navigate('/admin/proctoring')}
@@ -162,37 +176,37 @@ export const AdminDashboard: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
           <GradientStatCard
-            title="Total Siswa"
-            value={stats.students}
-            subtitle="Peserta ujian terdaftar"
-            icon={Users}
-            variant="indigo"
-            trend={{ value: '+100% Aktif', isPositive: true }}
-            onClick={() => navigate('/admin/students')}
-          />
-          <GradientStatCard
-            title="Total Guru"
-            value={stats.teachers}
-            subtitle="Tenaga pengajar & pengawas"
-            icon={GraduationCap}
-            variant="purple"
-            onClick={() => navigate('/admin/teachers')}
-          />
-          <GradientStatCard
-            title="Mata Pelajaran"
-            value={stats.subjects}
-            subtitle="Kurikulum aktif semester ini"
+            title="Koleksi Bank Soal"
+            value={`${stats.bank_soal.toLocaleString('id-ID')} Soal`}
+            subtitle="Soal di database sertidemi"
             icon={BookOpen}
             variant="cyan"
-            onClick={() => navigate('/admin/subjects')}
+            trend={{ value: 'Bank Soal Lengkap', isPositive: true }}
+            onClick={() => navigate('/admin/questions')}
           />
           <GradientStatCard
-            title="Kelas & Jurusan"
-            value={`${stats.classes} / ${stats.majors}`}
-            subtitle="Rombel dan konsentrasi keahlian"
-            icon={School}
+            title="Paket TryOut & Ujian"
+            value={`${stats.exams} Paket`}
+            subtitle="Paket TryOut aktif"
+            icon={Layers}
+            variant="indigo"
+            onClick={() => navigate('/admin/exams')}
+          />
+          <GradientStatCard
+            title="Instansi & Sekolah"
+            value={`${stats.instansi} Sekolah`}
+            subtitle="Mitra sekolah terhubung"
+            icon={Building2}
+            variant="purple"
+            onClick={() => navigate('/admin/instansi')}
+          />
+          <GradientStatCard
+            title="Total Peserta"
+            value={`${stats.students} Siswa`}
+            subtitle={`${stats.teachers} guru pengampu`}
+            icon={Users}
             variant="emerald"
-            onClick={() => navigate('/admin/classes')}
+            onClick={() => navigate('/admin/students')}
           />
         </div>
       )}

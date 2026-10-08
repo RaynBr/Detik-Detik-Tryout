@@ -28,6 +28,7 @@ const SubjectsPage = lazy(() => import('./features/admin/SubjectsPage').then(m =
 const AcademicYearsPage = lazy(() => import('./features/admin/AcademicYearsPage').then(m => ({ default: m.AcademicYearsPage })));
 const TeachersPage = lazy(() => import('./features/admin/TeachersPage').then(m => ({ default: m.TeachersPage })));
 const StudentsPage = lazy(() => import('./features/admin/StudentsPage').then(m => ({ default: m.StudentsPage })));
+const InstansiPage = lazy(() => import('./features/admin/InstansiPage').then(m => ({ default: m.InstansiPage })));
 
 const PageLoader = () => (
   <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#070a13] text-slate-800 dark:text-white space-y-4 p-4 transition-colors">
@@ -68,7 +69,7 @@ export const App: React.FC = () => {
               </Route>
 
               {/* Teacher routes */}
-              <Route element={<ProtectedRoute allowedRoles={['guru']} />}>
+              <Route element={<ProtectedRoute allowedRoles={['guru', 'super_admin', 'admin']} />}>
                 <Route element={<TeacherLayout />}>
                   <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
                   <Route path="/teacher/questions" element={<QuestionBankPage />} />
@@ -82,6 +83,9 @@ export const App: React.FC = () => {
               <Route element={<ProtectedRoute allowedRoles={['super_admin', 'admin']} />}>
                 <Route element={<AdminLayout />}>
                   <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                  <Route path="/admin/questions" element={<QuestionBankPage />} />
+                  <Route path="/admin/exams" element={<ExamsPage />} />
+                  <Route path="/admin/instansi" element={<InstansiPage />} />
                   <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
                   <Route path="/admin/reports" element={<ExamReportPage />} />
                   <Route path="/admin/jenjang" element={<JenjangPage />} />
