@@ -11,6 +11,7 @@ import { ToastProvider } from './shared/context/ToastContext';
 // Code-splitting via React.lazy for high-performance loading
 const LoginPage = lazy(() => import('./features/auth/components/LoginPage').then(m => ({ default: m.LoginPage })));
 const StudentExamsPage = lazy(() => import('./features/student/StudentExamsPage').then(m => ({ default: m.StudentExamsPage })));
+const StudentProfilePage = lazy(() => import('./features/student/StudentProfilePage').then(m => ({ default: m.StudentProfilePage })));
 const ExamSessionPage = lazy(() => import('./features/student/ExamSessionPage').then(m => ({ default: m.ExamSessionPage })));
 const TeacherDashboard = lazy(() => import('./features/teacher/TeacherDashboard').then(m => ({ default: m.TeacherDashboard })));
 const TeacherLayout = lazy(() => import('./features/teacher/TeacherLayout').then(m => ({ default: m.TeacherLayout })));
@@ -65,6 +66,7 @@ export const App: React.FC = () => {
               {/* Student routes */}
               <Route element={<ProtectedRoute allowedRoles={['siswa']} />}>
                 <Route path="/student/dashboard" element={<StudentExamsPage />} />
+                <Route path="/student/profile" element={<StudentProfilePage />} />
                 <Route path="/student/session/:attemptId" element={<ExamSessionPage />} />
               </Route>
 

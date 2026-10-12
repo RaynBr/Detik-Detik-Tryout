@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../shared/api/client';
 import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
@@ -7,7 +7,7 @@ import {
   Clock, Calendar, AlertCircle, CheckCircle, GraduationCap, 
   Play, RefreshCw, LogOut, BookOpen, ShieldCheck, User,
   Ban, AlertTriangle, X, CheckCircle2, XCircle, Lightbulb,
-  Building
+  Building, Search, ChevronDown, Bell
 } from 'lucide-react';
 import { useAuth } from '../../shared/context/AuthContext';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
@@ -50,6 +50,26 @@ export const StudentExamsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [startingExamGroupId, setStartingExamGroupId] = useState<number | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unstarted' | 'completed'>('all');
+
+  // Header Dropdown State
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Review & Pembahasan Modal State
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -138,23 +158,70 @@ export const StudentExamsPage: React.FC = () => {
     type: 'exam'
   }));
 
-  // Reminders for student
+  // Dynamic Reminders for student computed from exam schedules
+  const activeOrUpcomingExams = exams
+    .filter(e => !e.attempt || e.attempt.status === 'not_started' || e.attempt.status === 'in_progress')
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+  const dynamicExamReminders: ReminderItem[] = activeOrUpcomingExams.slice(0, 3).map((ex) => {
+    const isInProgress = ex.attempt?.status === 'in_progress';
+    const examDate = ex.start_time 
+      ? new Date(ex.start_time).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : 'Jadwal Aktif';
+
+    return {
+      id: `rem-exam-${ex.exam_group_id}`,
+      title: ex.title,
+      description: isInProgress 
+        ? `${ex.subject_name} • Sesi sedang aktif! Lanjutkan pengerjaan sebelum waktu habis.`
+        : `${ex.subject_name} • Mulai: ${examDate} (${ex.duration_minutes} Menit)`,
+      timeAgo: isInProgress ? 'Sedang Aktif' : 'Mendatang',
+      type: isInProgress ? ('warning' as const) : ('info' as const)
+    };
+  });
+
   const studentReminders: ReminderItem[] = [
+    ...dynamicExamReminders,
     {
-      id: 'rem-s1',
+      id: 'rem-integrity',
       title: 'Integritas & Anti-Cheat Aktif',
       description: 'Layar penuh wajib saat ujian. Batas perpindahan tab dipantau secara otomatis.',
       timeAgo: 'Penting',
       type: 'warning' as const
     },
-    {
-      id: 'rem-s2',
-      title: 'Simpan Jawaban Otomatis',
-      description: 'Seluruh jawaban pilihan ganda, essay & menjodohkan tersimpan di server secara real-time.',
-      timeAgo: 'Info',
-      type: 'info' as const
-    }
+    ...(activeOrUpcomingExams.length === 0 && exams.length > 0 ? [{
+      id: 'rem-completed-all',
+      title: 'Semua Jadwal Ujian Selesai',
+      description: 'Seluruh sesi ujian yang ditugaskan telah berhasil Anda kerjakan.',
+      timeAgo: 'Tuntas',
+      type: 'success' as const
+    }] : [])
   ];
+
+  // Filtering Logic for Exams List (Search query & Status tabs)
+  const filteredExams = exams.filter(exam => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch = q === '' ||
+      exam.title.toLowerCase().includes(q) ||
+      exam.subject_name.toLowerCase().includes(q) ||
+      exam.subject_code.toLowerCase().includes(q);
+
+    if (!matchesSearch) return false;
+
+    const isFinished = exam.attempt?.status === 'submitted' || exam.attempt?.status === 'auto_submitted';
+    const isUnstarted = !exam.attempt || exam.attempt.status === 'not_started' || exam.attempt.status === 'in_progress';
+
+    if (statusFilter === 'unstarted') {
+      return isUnstarted;
+    }
+    if (statusFilter === 'completed') {
+      return isFinished;
+    }
+    return true;
+  });
+
+  const unstartedCount = exams.filter(e => !e.attempt || e.attempt.status === 'not_started' || e.attempt.status === 'in_progress').length;
+  const finishedCount = finishedExams.length;
 
   return (
     <div className="min-h-screen bg-slate-100/70 dark:bg-[#070a13] text-slate-800 dark:text-gray-100 flex flex-col transition-colors duration-200">
@@ -176,17 +243,83 @@ export const StudentExamsPage: React.FC = () => {
         <div className="flex items-center gap-3 md:gap-4">
           <ThemeToggle compact />
 
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-200/60 dark:bg-white/5 border border-slate-300/60 dark:border-white/5 rounded-xl text-xs">
-            <User className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-            <span className="text-slate-700 dark:text-gray-300 font-semibold">{user?.name}</span>
+          {/* Student Profile Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="flex items-center gap-2.5 px-3 py-1.5 bg-slate-200/60 hover:bg-slate-200/90 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-300/60 dark:border-white/10 rounded-2xl text-xs transition duration-150 cursor-pointer shadow-xs active:scale-95"
+              aria-expanded={dropdownOpen}
+              aria-haspopup="true"
+            >
+              <div className="h-6 w-6 rounded-lg bg-indigo-600/10 dark:bg-indigo-600/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
+                {user?.name ? user.name.charAt(0).toUpperCase() : 'S'}
+              </div>
+              <span className="text-slate-800 dark:text-gray-200 font-bold max-w-[130px] truncate hidden sm:inline">
+                {user?.name || 'Siswa'}
+              </span>
+              <ChevronDown className={`h-3.5 w-3.5 text-slate-500 dark:text-gray-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu Modal */}
+            {dropdownOpen && (
+              <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-[#0e1322] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl py-2 z-50 animate-fade-in">
+                {/* User Info Header in Dropdown */}
+                <div className="px-4 py-2.5 border-b border-slate-100 dark:border-white/5">
+                  <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user?.name}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-gray-400 font-mono truncate mt-0.5">
+                    {user?.profile?.nisn ? `NISN: ${user.profile.nisn}` : (user?.email || 'Siswa CBT')}
+                  </p>
+                  <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[9px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/40">
+                    {user?.profile?.class_name || user?.profile?.institution || 'Peserta CBT'}
+                  </span>
+                </div>
+
+                {/* Menu Items */}
+                <div className="py-1">
+                  {/* Menu 1: Profil Saya */}
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      navigate('/student/profile');
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5 transition text-left cursor-pointer"
+                  >
+                    <User className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>Profil Saya</span>
+                  </button>
+
+                  {/* Menu 2: Pengingat Jadwal (Scroll to Widget) */}
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      document.getElementById('student-reminders')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5 transition text-left cursor-pointer"
+                  >
+                    <Bell className="h-4 w-4 text-amber-500" />
+                    <span>Pengingat Jadwal</span>
+                  </button>
+                </div>
+
+                {/* Divider */}
+                <div className="border-t border-slate-100 dark:border-white/5 my-1"></div>
+
+                {/* Menu 3: Keluar (Instant Logout on click) */}
+                <div className="px-1.5 py-0.5">
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      logout(); // Langsung keluar seketika tombol diklik tanpa dialog
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition text-left cursor-pointer"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Keluar Akun</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-50 dark:bg-red-600/10 hover:bg-red-100 dark:hover:bg-red-600/20 border border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold transition"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Keluar</span>
-          </button>
         </div>
       </header>
 
@@ -274,19 +407,127 @@ export const StudentExamsPage: React.FC = () => {
 
             {/* All Exams List / History Card Grid */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                  <BookOpen className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
-                  <span>Daftar Seluruh Jadwal Ujian</span>
-                </h3>
-                <span className="text-xs text-slate-500 dark:text-gray-400 font-mono">{exams.length} Total Jadwal</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                    <BookOpen className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Daftar Seluruh Jadwal Ujian</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
+                    Ikuti ujian terjadwal sesuai mata pelajaran dan instruksi pengawas
+                  </p>
+                </div>
+                <span className="text-xs text-slate-500 dark:text-gray-400 font-mono self-start sm:self-auto bg-slate-200/60 dark:bg-white/5 px-2.5 py-1 rounded-xl">
+                  {filteredExams.length} dari {exams.length} Jadwal
+                </span>
+              </div>
+
+              {/* Search Bar & Status Filter Tabs */}
+              <div className="flex flex-col md:flex-row gap-3 pt-1 pb-1">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-gray-500 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Cari nama ujian, mata pelajaran, atau kode mapel..."
+                    className="w-full pl-10 pr-9 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition shadow-xs"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-gray-200 p-0.5 cursor-pointer"
+                      title="Hapus pencarian"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Tabs: Semua, Belum Dikerjakan, Selesai */}
+                <div className="flex items-center p-1 bg-slate-200/60 dark:bg-slate-900/60 border border-slate-300/60 dark:border-white/10 rounded-2xl shrink-0 gap-1 overflow-x-auto">
+                  <button
+                    onClick={() => setStatusFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      statusFilter === 'all'
+                        ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>Semua</span>
+                    <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono ${
+                      statusFilter === 'all' ? 'bg-indigo-100 text-indigo-700 dark:bg-white/20 dark:text-white' : 'bg-slate-300/60 dark:bg-white/10 text-slate-600 dark:text-gray-400'
+                    }`}>
+                      {exams.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setStatusFilter('unstarted')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      statusFilter === 'unstarted'
+                        ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>Belum Dikerjakan</span>
+                    <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono ${
+                      statusFilter === 'unstarted' ? 'bg-amber-100 text-amber-800 dark:bg-white/20 dark:text-white' : 'bg-slate-300/60 dark:bg-white/10 text-slate-600 dark:text-gray-400'
+                    }`}>
+                      {unstartedCount}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setStatusFilter('completed')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      statusFilter === 'completed'
+                        ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>Selesai</span>
+                    <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono ${
+                      statusFilter === 'completed' ? 'bg-emerald-100 text-emerald-800 dark:bg-white/20 dark:text-white' : 'bg-slate-300/60 dark:bg-white/10 text-slate-600 dark:text-gray-400'
+                    }`}>
+                      {finishedCount}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {loading ? (
                 <CardGridSkeleton count={2} cols="grid-cols-1 md:grid-cols-2" />
-              ) : exams.length > 0 ? (
+              ) : exams.length === 0 ? (
+                <div className="glass-panel text-center py-12 text-slate-500 dark:text-gray-400 rounded-3xl border border-slate-200/80 dark:border-white/5">
+                  <GraduationCap className="h-10 w-10 text-slate-400 dark:text-gray-600 mx-auto mb-2" />
+                  <p className="text-xs font-medium">Belum ada ujian terjadwal untuk akun Anda saat ini.</p>
+                </div>
+              ) : filteredExams.length === 0 ? (
+                <div className="glass-panel text-center py-10 px-4 text-slate-500 dark:text-gray-400 rounded-3xl border border-slate-200/80 dark:border-white/5 space-y-3">
+                  <div className="p-3 bg-slate-100 dark:bg-white/5 rounded-2xl w-fit mx-auto text-slate-400">
+                    <Search className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800 dark:text-gray-200">Tidak ada jadwal ujian yang sesuai</p>
+                    <p className="text-xs text-slate-500 dark:text-gray-400 mt-1">Coba sesuaikan kata kunci pencarian atau ubah tab status ujian.</p>
+                  </div>
+                  {(searchQuery || statusFilter !== 'all') && (
+                    <button
+                      onClick={() => {
+                        setSearchQuery('');
+                        setStatusFilter('all');
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-600/20 dark:hover:bg-indigo-600/30 dark:text-indigo-400 transition cursor-pointer"
+                    >
+                      Reset Pencarian & Filter
+                    </button>
+                  )}
+                </div>
+              ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in">
-                  {exams.map((exam) => {
+                  {filteredExams.map((exam) => {
                     const attempt = exam.attempt;
                     const isFinished = attempt?.status === 'submitted' || attempt?.status === 'auto_submitted';
                     const isDisqualified = attempt?.status === 'disqualified';
@@ -368,7 +609,7 @@ export const StudentExamsPage: React.FC = () => {
                               </div>
                               <button
                                 onClick={() => fetchReview(attempt?.id)}
-                                className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-center rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center gap-1.5 transition active:scale-95 shadow-xs"
+                                className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-center rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center gap-1.5 transition active:scale-95 shadow-xs cursor-pointer"
                               >
                                 <BookOpen className="h-3.5 w-3.5" />
                                 <span>Lihat Kunci & Pembahasan</span>
@@ -378,7 +619,7 @@ export const StudentExamsPage: React.FC = () => {
                             <button
                               onClick={() => handleStartOrResumeExam(exam)}
                               disabled={isStarting}
-                              className={`w-full py-2.5 rounded-xl text-xs font-bold tracking-wide transition flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 btn-press ${
+                              className={`w-full py-2.5 rounded-xl text-xs font-bold tracking-wide transition flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 btn-press cursor-pointer ${
                                 attempt?.status === 'in_progress'
                                   ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
                                   : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20'
@@ -401,11 +642,6 @@ export const StudentExamsPage: React.FC = () => {
                       </div>
                     );
                   })}
-                </div>
-              ) : (
-                <div className="glass-panel text-center py-12 text-slate-500 dark:text-gray-400 rounded-3xl border border-slate-200/80 dark:border-white/5">
-                  <GraduationCap className="h-10 w-10 text-slate-400 dark:text-gray-600 mx-auto mb-2" />
-                  <p className="text-xs font-medium">Belum ada ujian terjadwal untuk akun Anda saat ini.</p>
                 </div>
               )}
             </div>
@@ -456,11 +692,13 @@ export const StudentExamsPage: React.FC = () => {
             {/* Calendar */}
             <CalendarWidget highlights={calendarHighlights} />
 
-            {/* Reminders */}
-            <RemindersList
-              title="Informasi & Pengingat"
-              reminders={studentReminders}
-            />
+            {/* Reminders with id for smooth auto-scroll from header dropdown */}
+            <div id="student-reminders" className="scroll-mt-20">
+              <RemindersList
+                title="Informasi & Pengingat"
+                reminders={studentReminders}
+              />
+            </div>
 
           </div>
 

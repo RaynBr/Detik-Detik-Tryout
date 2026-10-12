@@ -74,7 +74,7 @@ class LoginController extends Controller
         }
 
         // 2. Attempt to authenticate as Student (Siswa from `user` table)
-        $userSiswa = UserSiswa::with('kelas.jenjang')
+        $userSiswa = UserSiswa::with(['kelas.jenjang', 'kelas.kategori', 'kategori'])
             ->where(function ($q) use ($loginInput) {
                 $q->where('login_email', $loginInput)
                   ->orWhere('nisn', $loginInput)
@@ -99,6 +99,10 @@ class LoginController extends Controller
             $userSiswa->tokens()->delete();
             $apiToken = $userSiswa->createToken('cbt_auth_token')->plainTextToken;
 
+            $institutionName = $userSiswa->kategori?->nama_kategori 
+                ?? $userSiswa->kelas?->kategori?->nama_kategori 
+                ?? 'Sekolah Mitra';
+
             return response()->json([
                 'token' => $apiToken,
                 'session_token' => $sessionToken,
@@ -111,12 +115,17 @@ class LoginController extends Controller
                     'profile' => [
                         'id' => $userSiswa->iduser,
                         'nisn' => $userSiswa->nisn,
+                        'institution' => $institutionName,
+                        'idkategori' => $userSiswa->idkategori ?? $userSiswa->kelas?->idkategori,
+                        'jenjang' => $userSiswa->kelas?->jenjang?->nama_jenjang ?? 'Umum',
                         'class_id' => $userSiswa->idkelas,
+                        'class_name' => $userSiswa->kelas?->nama_kelas ?? 'Belum Ditentukan',
                         'class_room' => $userSiswa->kelas ? [
                             'id' => $userSiswa->kelas->id,
                             'name' => $userSiswa->kelas->nama_kelas,
                             'level' => $userSiswa->kelas->tingkat,
                             'jenjang' => $userSiswa->kelas->jenjang?->nama_jenjang,
+                            'institution' => $institutionName,
                         ] : null,
                     ]
                 ]
