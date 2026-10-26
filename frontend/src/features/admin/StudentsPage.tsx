@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../shared/api/client';
 import { TableSkeleton } from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../shared/context/ToastContext';
-import { Plus, Edit2, Trash2, X, Users, Search, Upload, Download, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Users, Search, Upload, KeyRound } from 'lucide-react';
+import { StudentImportModal } from './components/StudentImportModal';
 
 interface Major {
   id: number;
@@ -60,12 +61,6 @@ export const StudentsPage: React.FC = () => {
   const [majorId, setMajorId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // Import states
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importRowErrors, setImportRowErrors] = useState<string[]>([]);
-  const [importLoading, setImportLoading] = useState(false);
 
   const fetchData = async () => {
     setLoadingData(true);
@@ -168,60 +163,14 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
-  // CSV Drag and Drop
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setImportFile(e.target.files[0]);
-      setImportError(null);
-      setImportRowErrors([]);
-    }
-  };
-
-  const handleImportSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!importFile) return;
-
-    setImportLoading(true);
-    setImportError(null);
-    setImportRowErrors([]);
-
-    const formData = new FormData();
-    formData.append('file', importFile);
-
+  const handleResetPassword = async (student: StudentUser) => {
+    if (!confirm(`Apakah Anda yakin ingin mereset password akun siswa "${student.name}"? Password baru yang aman akan dibuat secara otomatis.`)) return;
     try {
-      await apiClient.post('/admin/students/import', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      fetchData();
-      setImportModalOpen(false);
-      setImportFile(null);
-      toast.success('Berhasil mengimpor data siswa!');
+      const res = await apiClient.post(`/admin/students/${student.id}/reset-password`);
+      toast.success(`Password siswa berhasil direset! Password baru: ${res.data.new_password}`);
     } catch (err: any) {
-      const data = err.response?.data;
-      setImportError(data?.message || 'Gagal mengimpor file.');
-      if (data?.errors && Array.isArray(data.errors)) {
-        setImportRowErrors(data.errors);
-      }
-    } finally {
-      setImportLoading(false);
+      toast.error(err.response?.data?.message || 'Gagal mereset password siswa.');
     }
-  };
-
-  const downloadCSVTemplate = () => {
-    const csvContent = 
-      "name,email,username,password,nisn,nis,class_name,major_code\n" +
-      "\"Izul Fitra\",izul@cbt.com,1234567890,password,1234567890,10245,\"XII RPL 1\",RPL\n" +
-      "\"Budi Santoso\",budi@cbt.com,1234567891,password123,1234567891,10246,\"XII RPL 1\",RPL\n";
-    
-    const encodedUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\uFEFF' + csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'template_import_siswa.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   // Filter students logic
@@ -255,16 +204,11 @@ export const StudentsPage: React.FC = () => {
         </div>
         <div className="flex flex-wrap gap-2.5">
           <button
-            onClick={() => {
-              setImportFile(null);
-              setImportError(null);
-              setImportRowErrors([]);
-              setImportModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-white/5 hover:bg-slate-200/80 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl text-sm font-bold transition active:scale-95 shadow-xs"
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 rounded-xl text-sm font-bold transition active:scale-95 shadow-xs"
           >
             <Upload className="h-4 w-4" />
-            <span>Impor CSV</span>
+            <span>Impor Siswa (Excel/CSV)</span>
           </button>
           <button
             onClick={openAddModal}
@@ -372,6 +316,13 @@ export const StudentsPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right space-x-1">
+                      <button
+                        onClick={() => handleResetPassword(std)}
+                        className="inline-flex p-2 hover:bg-amber-50 dark:hover:bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl transition"
+                        title="Reset Password Siswa"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </button>
                       <button
                         onClick={() => openEditModal(std)}
                         className="inline-flex p-2 hover:bg-indigo-50 dark:hover:bg-white/5 text-indigo-600 dark:text-indigo-400 rounded-xl transition"
@@ -573,102 +524,12 @@ export const StudentsPage: React.FC = () => {
         </div>
       )}
 
-      {/* CSV Import Modal */}
-      {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-[#070a13]/80 backdrop-blur-md">
-          <div className="w-full max-w-lg glass-panel rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[85vh] flex flex-col">
-            <button
-              onClick={() => setImportModalOpen(false)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-xl"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-1 flex items-center gap-2">
-              <Upload className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-              <span>Impor Data Siswa CSV</span>
-            </h2>
-            <p className="text-slate-500 dark:text-gray-400 text-xs mb-4 font-medium">
-              Gunakan file CSV untuk mengunggah ratusan akun siswa sekaligus.
-            </p>
-
-            {importError && (
-              <div className="mb-4 p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 rounded-xl text-xs shrink-0 flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold">{importError}</span>
-                  {importRowErrors.length > 0 && (
-                    <ul className="list-disc pl-4 mt-1.5 space-y-1 max-h-24 overflow-y-auto font-medium">
-                      {importRowErrors.map((err, idx) => (
-                        <li key={idx}>{err}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <form onSubmit={handleImportSubmit} className="space-y-4 flex-1 flex flex-col min-h-0">
-              
-              {/* Drag & Drop File Container */}
-              <div className="border-2 border-dashed border-slate-300 dark:border-white/10 hover:border-indigo-500/50 transition-colors bg-slate-50 dark:bg-white/[0.01] rounded-3xl p-8 text-center flex flex-col items-center justify-center cursor-pointer relative">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  required
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                />
-                <Upload className="h-10 w-10 text-indigo-600 dark:text-indigo-400 mb-3 animate-pulse-subtle" />
-                {importFile ? (
-                  <div>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-xs">{importFile.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-gray-500 mt-1 font-mono">{(importFile.size / 1024).toFixed(2)} KB</p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-sm text-slate-700 dark:text-gray-300 font-bold">Klik atau seret file CSV ke sini</p>
-                    <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">Hanya file ekstensi .csv dengan batas ukuran 4 MB</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Template Download Option */}
-              <div className="flex justify-between items-center bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 p-3.5 rounded-2xl">
-                <span className="text-xs text-slate-600 dark:text-gray-400 font-medium">Unduh template CSV default kami</span>
-                <button
-                  type="button"
-                  onClick={downloadCSVTemplate}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold text-slate-800 dark:text-white transition shadow-xs"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Unduh Template</span>
-                </button>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-white/5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setImportModalOpen(false)}
-                  className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={importLoading || !importFile}
-                  className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition flex justify-center items-center shadow-lg shadow-indigo-600/30 disabled:opacity-50"
-                >
-                  {importLoading ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  ) : (
-                    <span>Unggah & Impor</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Student Import Modal (XLSX / CSV) */}
+      <StudentImportModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onSuccess={fetchData}
+      />
     </div>
   );
 };

@@ -11,6 +11,7 @@ use App\Models\ExamGroup;
 use App\Models\MasterJenjang;
 use App\Models\MasterMataPelajaran;
 use App\Models\MasterKelas;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -23,7 +24,7 @@ class TeacherExamController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Assessment::with(['jenjang', 'kelas', 'mapel', 'pembuat', 'kategori', 'examGroups'])
+        $query = Assessment::with(['jenjang', 'kelas', 'mapel', 'pembuat', 'kategori', 'examGroups', 'academicYear'])
             ->withCount(['soal', 'attempts']);
 
         if ($user && $user->role === 'guru') {
@@ -91,7 +92,13 @@ class TeacherExamController extends Controller
                 'jenjang_name' => $item->jenjang?->nama_jenjang ?? 'Umum',
                 'class_id' => $item->idkelas,
                 'class_name' => $item->kelas?->nama_kelas ?? 'Semua Kelas / Bank Soal',
-                'duration_minutes' => (int) ($item->waktu_pengerjaan ?: 60),
+                'id_tahun_ajaran' => $item->id_tahun_ajaran,
+                'academic_year' => $item->academicYear ? [
+                    'id' => $item->academicYear->id,
+                    'name' => $item->academicYear->name,
+                    'semester' => $item->academicYear->semester,
+                ] : null,
+                'duration_minutes' => $item->waktu_pengerjaan !== null ? (int) $item->waktu_pengerjaan : null,
                 'total_questions' => $item->soal_count ?: $item->tampil_assessment_pilgan ?: 50,
                 'questions_count' => $item->soal_count ?: $item->tampil_assessment_pilgan ?: 50,
                 'tampil_assessment_pilgan' => $item->tampil_assessment_pilgan ?: 50,
@@ -101,7 +108,7 @@ class TeacherExamController extends Controller
                 'attempts_count' => $item->attempts_count,
                 'created_by' => $item->pembuat?->nama ?? 'Guru',
                 'institution' => $item->kategori?->nama_kategori ?? 'Umum',
-                'kkm_score' => 75,
+                'kkm_score' => $item->mapel?->kkm ?? 75,
                 'settings' => [
                     'allow_backtrack' => true,
                     'allow_flag' => true,
@@ -142,7 +149,10 @@ class TeacherExamController extends Controller
         $idmapel = $request->input('idmapel') ?: $request->input('subject_id') ?: 1;
         $idjenjang = $request->input('idjenjang') ?: 1;
         $idkelas = $request->input('idkelas') ?: null;
-        $duration = (int) ($request->input('duration_minutes') ?: $request->input('waktu_pengerjaan') ?: 60);
+        $duration = $request->filled('duration_minutes')
+            ? (int) $request->input('duration_minutes')
+            : ($request->filled('waktu_pengerjaan') ? (int) $request->input('waktu_pengerjaan') : null);
+        $idTahunAjaran = $request->input('id_tahun_ajaran') ?: $request->input('academic_year_id') ?: null;
         $startTime = $request->input('start_time') ?: $request->input('tanggal_mulai_assessment') ?: now();
         $endTime = $request->input('end_time') ?: $request->input('tanggal_batas_assessment') ?: now()->addDays(7);
         $packageId = $request->input('package_id') ?: $request->input('idassessment_sumber');
@@ -158,6 +168,7 @@ class TeacherExamController extends Controller
             'idjenjang' => $idjenjang,
             'idmapel' => $idmapel,
             'idkelas' => $idkelas,
+            'id_tahun_ajaran' => $idTahunAjaran,
             'iduser_bo' => $user ? $user->iduser_bo : null,
             'idkategori' => $user ? $user->idkategori : null,
             'waktu_pengerjaan' => $duration,
@@ -239,11 +250,87 @@ class TeacherExamController extends Controller
 
     /**
      * Update existing exam package
+     * Flow Rule:
+     * - Belum Ada Siswa Mulai -> Bebas edit seluruh parameter
+     * - Minimal 1 Siswa Mulai -> Seluruh butir soal, jumlah soal, dan durasi DIKUNCI (`mod-edit-paket-pengecualian`). Hanya tanggal pelaksanaan yang boleh diubah.
      */
     public function update(Request $request, $idassessment)
     {
-        $item = Assessment::findOrFail($idassessment);
+        $user = $request->user();
+        $item = Assessment::withCount('attempts')->findOrFail($idassessment);
 
+        $hasAttempts = ($item->attempts_count > 0) || AssessmentJawabanPilgan::where('idassessment', $idassessment)->exists();
+
+        // Enforce Flow rule: If at least 1 student has started, questions/count/duration/subject/grade are locked!
+        if ($hasAttempts) {
+            $tryingToChangeLockedFields = false;
+            $lockedFields = ['title', 'nama_assessment', 'deskripsi_assessment', 'description', 'subject_id', 'idmapel', 'idjenjang', 'idkelas', 'duration_minutes', 'waktu_pengerjaan', 'tampil_assessment_pilgan', 'total_soal'];
+            
+            foreach ($lockedFields as $field) {
+                if ($request->filled($field)) {
+                    if ($field === 'duration_minutes' || $field === 'waktu_pengerjaan') {
+                        if ((int)$request->input($field) !== (int)$item->waktu_pengerjaan) {
+                            $tryingToChangeLockedFields = true;
+                            break;
+                        }
+                    } elseif ($field === 'title' || $field === 'nama_assessment') {
+                        if ($request->input($field) !== $item->nama_assessment) {
+                            $tryingToChangeLockedFields = true;
+                            break;
+                        }
+                    } elseif ($field === 'idmapel' || $field === 'subject_id') {
+                        if ((int)$request->input($field) !== (int)$item->idmapel) {
+                            $tryingToChangeLockedFields = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if ($tryingToChangeLockedFields) {
+                return response()->json([
+                    'message' => 'Peringatan Integritas: Minimal 1 siswa telah mulai mengerjakan paket ini. Seluruh butir soal, jumlah soal, mapel, dan durasi pengerjaan telah dikunci permanen. Hanya jadwal pelaksanaan (tanggal mulai & batas akhir) yang dapat disesuaikan.',
+                    'error_code' => 'EXAM_LOCKED_ATTEMPTS_EXIST',
+                    'attempts_count' => $item->attempts_count
+                ], 422);
+            }
+
+            // Only update exam schedule dates
+            $updates = [];
+            if ($request->filled('start_time') || $request->filled('tanggal_mulai_assessment')) {
+                $val = $request->input('start_time') ?: $request->input('tanggal_mulai_assessment');
+                $updates['tanggal_mulai_assessment'] = \Carbon\Carbon::parse($val)->toDateTimeString();
+            }
+            if ($request->filled('end_time') || $request->filled('tanggal_batas_assessment')) {
+                $val = $request->input('end_time') ?: $request->input('tanggal_batas_assessment');
+                $updates['tanggal_batas_assessment'] = \Carbon\Carbon::parse($val)->toDateTimeString();
+            }
+
+            if (!empty($updates)) {
+                $item->update($updates);
+            }
+
+            AuditLog::record(
+                'EDIT_PAKET_PENGECEUALIAN',
+                'assessment',
+                $idassessment,
+                $item->nama_assessment,
+                [
+                    'reason' => 'Attempts exist; only exam dates updated',
+                    'attempts_count' => $item->attempts_count,
+                    'updated_by' => $user?->name ?? 'Staff',
+                    'role' => $user?->role ?? 'guru'
+                ]
+            );
+
+            return response()->json([
+                'message' => 'Jadwal pelaksanaan paket TryOut berhasil disesuaikan (Mod Pengecualian).',
+                'data' => $item,
+                'is_locked' => true
+            ]);
+        }
+
+        // No attempts yet: Free full edit
         $updates = [];
         if ($request->filled('title') || $request->filled('nama_assessment')) {
             $updates['nama_assessment'] = $request->input('title') ?: $request->input('nama_assessment');
@@ -276,9 +363,18 @@ class TeacherExamController extends Controller
             $item->update($updates);
         }
 
+        AuditLog::record(
+            'EDIT_PAKET_TRYOUT',
+            'assessment',
+            $idassessment,
+            $item->nama_assessment,
+            ['updated_by' => $user?->name ?? 'Staff', 'role' => $user?->role ?? 'guru']
+        );
+
         return response()->json([
             'message' => 'Paket TryOut berhasil diperbarui',
-            'data' => $item
+            'data' => $item,
+            'is_locked' => false
         ]);
     }
 
@@ -294,39 +390,36 @@ class TeacherExamController extends Controller
             'idjenjang' => 'required|integer',
             'idmapel' => 'required|integer',
             'idkelas' => 'nullable|integer',
-            'total_soal' => 'nullable|integer|min:5|max:100',
-            'waktu_pengerjaan' => 'nullable|integer|min:10|max:300',
+            'id_tahun_ajaran' => 'nullable|integer',
+            'total_soal' => 'nullable|integer|min:1|max:200',
+            'waktu_pengerjaan' => 'nullable|integer|min:1|max:300',
             'tanggal_mulai_assessment' => 'nullable|date',
             'tanggal_batas_assessment' => 'nullable|date',
         ]);
 
         $totalSoal = (int) ($validated['total_soal'] ?? 50);
-        $durasi = (int) ($validated['waktu_pengerjaan'] ?? 60);
+        $durasi = $request->filled('waktu_pengerjaan') ? (int) $validated['waktu_pengerjaan'] : null;
 
-        // 1. Fetch random questions from Bank Soal
-        $soalPool = AssessmentSoalPilgan::where(function ($q) use ($validated) {
-            $q->where('idjenjang', $validated['idjenjang'])
-              ->where('idmapel', $validated['idmapel']);
-        })->inRandomOrder()->limit($totalSoal)->get();
+        // 1. Validate availability in Bank Soal for specific jenjang and mapel
+        $availableCount = AssessmentSoalPilgan::where('idjenjang', $validated['idjenjang'])
+            ->where('idmapel', $validated['idmapel'])
+            ->count();
 
-        // If pool is less than requested, take any available questions from the bank
-        if ($soalPool->count() < $totalSoal) {
-            $needed = $totalSoal - $soalPool->count();
-            $existingIds = $soalPool->pluck('idassessment_soal_pilgan')->toArray();
-            
-            $additional = AssessmentSoalPilgan::whereNotIn('idassessment_soal_pilgan', $existingIds)
-                ->inRandomOrder()
-                ->limit($needed)
-                ->get();
-                
-            $soalPool = $soalPool->merge($additional);
-        }
-
-        if ($soalPool->isEmpty()) {
+        if ($availableCount === 0) {
             return response()->json([
-                'message' => 'Bank Soal belum memiliki pertanyaan yang tersedia untuk digenerate.'
+                'message' => 'Bank soal untuk jenjang dan mata pelajaran tersebut belum tersedia. Silakan upload bank soal terlebih dahulu.',
+                'error_code' => 'EMPTY_QUESTION_BANK',
+                'idjenjang' => $validated['idjenjang'],
+                'idmapel' => $validated['idmapel'],
             ], 422);
         }
+
+        // 2. Fetch random questions strictly for the requested jenjang & mapel
+        $soalPool = AssessmentSoalPilgan::where('idjenjang', $validated['idjenjang'])
+            ->where('idmapel', $validated['idmapel'])
+            ->inRandomOrder()
+            ->limit($totalSoal)
+            ->get();
 
         $user = $request->user();
         $newAssessmentId = (string) (time() . rand(1000000, 9999999));
@@ -339,6 +432,7 @@ class TeacherExamController extends Controller
             'idjenjang' => $validated['idjenjang'],
             'idmapel' => $validated['idmapel'],
             'idkelas' => $validated['idkelas'] ?? null,
+            'id_tahun_ajaran' => $validated['id_tahun_ajaran'] ?? null,
             'iduser_bo' => $user ? $user->iduser_bo : null,
             'idkategori' => $user ? $user->idkategori : null,
             'waktu_pengerjaan' => $durasi,
@@ -386,6 +480,20 @@ class TeacherExamController extends Controller
             ]);
         }
 
+        AuditLog::record(
+            'GENERATE_SOAL',
+            'assessment',
+            $newAssessmentId,
+            "Guru mengenerate {$soalPool->count()} butir soal acak dari Bank Soal ke paket: {$validated['nama_assessment']}",
+            [
+                'idjenjang' => $validated['idjenjang'],
+                'idmapel' => $validated['idmapel'],
+                'idkelas' => $validated['idkelas'] ?? null,
+                'total_soal' => $soalPool->count(),
+                'duration' => $durasi,
+            ]
+        );
+
         return response()->json([
             'message' => "Berhasil mengenerate {$soalPool->count()} soal acak dari Bank Soal ke dalam paket TryOut!",
             'data' => [
@@ -409,6 +517,14 @@ class TeacherExamController extends Controller
         $assessment->update([
             'idkelas' => $request->idkelas
         ]);
+
+        AuditLog::record(
+            'ASSIGN_KELAS',
+            'assessment',
+            $idassessment,
+            "Paket TryOut {$assessment->nama_assessment} ditugaskan ke kelas ID {$request->idkelas}",
+            ['idkelas' => $request->idkelas]
+        );
 
         return response()->json([
             'message' => 'Paket TryOut berhasil ditugaskan ke kelas',
@@ -503,7 +619,8 @@ class TeacherExamController extends Controller
             ->with(['siswa.kelas', 'details'])
             ->get();
 
-        $kkm = 75;
+        // Requirement 2: KKM Dinamis per Jenjang & Mapel
+        $kkm = (float) ($assessment->mapel?->kkm ?: 75);
         $completed = $attempts->where('komentar', 'submitted');
         $inProgress = $attempts->where('komentar', '!=', 'submitted');
 
@@ -563,12 +680,56 @@ class TeacherExamController extends Controller
                 'status' => $att->komentar === 'submitted' ? 'completed' : 'in_progress',
                 'total_score' => $score,
                 'is_passed' => $isPassed,
+                'kkm' => $kkm,
                 'started_at' => $att->tgl_input_time,
                 'submitted_at' => $att->komentar === 'submitted' ? $att->tgl_input_time : null,
                 'duration_minutes' => $att->lama_dikerjakan ?: '-',
                 'correct_count' => $correct,
                 'incorrect_count' => $incorrect,
                 'unanswered_count' => $unanswered,
+                'violation_count' => 0,
+            ];
+        }
+
+        // Requirement 8: Siswa terdaftar yang belum ujian TETAP DITAMPILKAN
+        $attemptedUserIds = $attempts->pluck('iduser')->filter()->toArray();
+        $targetClassId = $assessment->idkelas;
+        $enrolledStudents = collect();
+
+        if ($targetClassId) {
+            $enrolledStudents = \App\Models\UserSiswa::where('idkelas', $targetClassId)
+                ->where('status_aktif', '!=', 'N')
+                ->whereNotIn('iduser', $attemptedUserIds)
+                ->get();
+        } elseif ($assessment->idkategori) {
+            $enrolledStudents = \App\Models\UserSiswa::where('idkategori', $assessment->idkategori)
+                ->where('status_aktif', '!=', 'N')
+                ->whereNotIn('iduser', $attemptedUserIds)
+                ->limit(50)
+                ->get();
+        }
+
+        foreach ($enrolledStudents as $st) {
+            $studentsReport[] = [
+                'rank' => $rank++,
+                'attempt_id' => null,
+                'student_id' => $st->iduser,
+                'name' => $st->nama,
+                'username' => $st->login_email ?? $st->nisn ?? 'siswa',
+                'nisn' => $st->nisn ?? '-',
+                'nis' => $st->nisn ?? '-',
+                'class_name' => $st->kelas?->nama_kelas ?? $assessment->kelas?->nama_kelas ?? 'Umum',
+                'major_name' => $assessment->jenjang?->nama_jenjang ?? 'Umum',
+                'status' => 'unattempted', // Belum Mengerjakan (Requirement 8)
+                'total_score' => 0,
+                'is_passed' => false,
+                'kkm' => $kkm,
+                'started_at' => null,
+                'submitted_at' => null,
+                'duration_minutes' => '-',
+                'correct_count' => 0,
+                'incorrect_count' => 0,
+                'unanswered_count' => $totalQuestions,
                 'violation_count' => 0,
             ];
         }

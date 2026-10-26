@@ -23,6 +23,8 @@ class UserSiswa extends Authenticatable
         'iduser',
         'nama',
         'nisn',
+        'nis',
+        'jenis_kelamin',
         'idkelas',
         'idkategori',
         'telp',

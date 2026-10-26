@@ -21,35 +21,88 @@ class DashboardController extends Controller
     /**
      * Complete aggregate statistics for Admin & Super Admin & Teacher
      */
+    /**
+     * Complete aggregate statistics for Admin & Super Admin & Teacher
+     */
     public function stats(Request $request)
     {
-        $totalQuestions = AssessmentSoalPilgan::count();
-        $totalAssessments = Assessment::count();
-        $totalInstansi = KategoriUserBo::count();
-        $totalJenjang = MasterJenjang::count();
-        $totalClasses = MasterKelas::count();
-        $totalSubjects = MasterMataPelajaran::count();
-        $totalTeachers = UserBo::where('status_remove', '!=', 'Y')->count();
-        $totalStudents = UserSiswa::count();
-        $totalAttempts = AssessmentJawabanPilgan::count();
+        $user = $request->user();
+        $isInstansiAdmin = $user && $user->role === 'admin' && !empty($user->idkategori);
+        $idkategori = $isInstansiAdmin ? $user->idkategori : null;
 
-        $recentExams = Assessment::with(['mapel', 'jenjang', 'kelas'])
-            ->withCount('soal')
-            ->orderBy('idassessment', 'desc')
-            ->limit(6)
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'id' => $item->idassessment,
-                    'title' => $item->nama_assessment,
-                    'subject' => $item->mapel?->nama_mapel ?? 'Umum',
-                    'jenjang' => $item->jenjang?->nama_jenjang ?? 'Umum',
-                    'class_name' => $item->kelas?->nama_kelas ?? 'Semua Kelas / Bank Soal',
-                    'duration_minutes' => (int) ($item->waktu_pengerjaan ?: 60),
-                    'total_questions' => $item->soal_count ?: 50,
-                    'created_at' => $item->tanggal_input,
-                ];
-            });
+        if ($isInstansiAdmin) {
+            $totalTeachers = UserBo::where('idkategori', $idkategori)
+                ->where('status_remove', '!=', 'Y')
+                ->where(function ($q) {
+                    $q->where('role_type', 'guru')
+                      ->orWhere('status_admin', '2')
+                      ->orWhereNull('role_type');
+                })->count();
+
+            $totalStudents = UserSiswa::where('idkategori', $idkategori)->count();
+            $totalClasses = MasterKelas::where('idkategori', $idkategori)->count();
+            $totalAssessments = Assessment::where('idkategori', $idkategori)->count();
+            
+            $jenjangIds = MasterKelas::where('idkategori', $idkategori)
+                ->pluck('idjenjang')->unique()->filter()->values();
+            $totalQuestions = AssessmentSoalPilgan::when($jenjangIds->isNotEmpty(), function ($q) use ($jenjangIds) {
+                $q->whereIn('idjenjang', $jenjangIds);
+            })->count();
+
+            $totalInstansi = 1;
+            $totalJenjang = $jenjangIds->count();
+            $totalSubjects = MasterMataPelajaran::count();
+            
+            $examIds = Assessment::where('idkategori', $idkategori)->pluck('idassessment');
+            $totalAttempts = AssessmentJawabanPilgan::whereIn('idassessment', $examIds)->count();
+
+            $recentExams = Assessment::where('idkategori', $idkategori)
+                ->with(['mapel', 'jenjang', 'kelas'])
+                ->withCount('soal')
+                ->orderBy('idassessment', 'desc')
+                ->limit(6)
+                ->get()
+                ->map(function ($item) {
+                    return [
+                        'id' => $item->idassessment,
+                        'title' => $item->nama_assessment,
+                        'subject' => $item->mapel?->nama_mapel ?? 'Umum',
+                        'jenjang' => $item->jenjang?->nama_jenjang ?? 'Umum',
+                        'class_name' => $item->kelas?->nama_kelas ?? 'Semua Kelas',
+                        'duration_minutes' => (int) ($item->waktu_pengerjaan ?: 60),
+                        'total_questions' => $item->soal_count ?: 50,
+                        'created_at' => $item->tanggal_input,
+                    ];
+                });
+        } else {
+            $totalQuestions = AssessmentSoalPilgan::count();
+            $totalAssessments = Assessment::count();
+            $totalInstansi = KategoriUserBo::count();
+            $totalJenjang = MasterJenjang::count();
+            $totalClasses = MasterKelas::count();
+            $totalSubjects = MasterMataPelajaran::count();
+            $totalTeachers = UserBo::where('status_remove', '!=', 'Y')->count();
+            $totalStudents = UserSiswa::count();
+            $totalAttempts = AssessmentJawabanPilgan::count();
+
+            $recentExams = Assessment::with(['mapel', 'jenjang', 'kelas'])
+                ->withCount('soal')
+                ->orderBy('idassessment', 'desc')
+                ->limit(6)
+                ->get()
+                ->map(function ($item) {
+                    return [
+                        'id' => $item->idassessment,
+                        'title' => $item->nama_assessment,
+                        'subject' => $item->mapel?->nama_mapel ?? 'Umum',
+                        'jenjang' => $item->jenjang?->nama_jenjang ?? 'Umum',
+                        'class_name' => $item->kelas?->nama_kelas ?? 'Semua Kelas / Bank Soal',
+                        'duration_minutes' => (int) ($item->waktu_pengerjaan ?: 60),
+                        'total_questions' => $item->soal_count ?: 50,
+                        'created_at' => $item->tanggal_input,
+                    ];
+                });
+        }
 
         return response()->json([
             'total_questions' => $totalQuestions,
@@ -64,6 +117,174 @@ class DashboardController extends Controller
             'total_students' => $totalStudents,
             'total_attempts' => $totalAttempts,
             'recent_exams' => $recentExams,
+        ]);
+    }
+
+    /**
+     * Comprehensive School Reports for Admin Instansi:
+     * 1. Guru mengajar kelas apa (Wali Kelas & Guru Pengampu Mapel)
+     * 2. Daftar siswa per kelas
+     * 3. Nilai siswa berdasarkan Paket Ujian & Rekap/Statistik nilai
+     */
+    public function reports(Request $request)
+    {
+        $user = $request->user();
+        $idkategori = ($user && $user->role === 'admin' && !empty($user->idkategori))
+            ? $user->idkategori
+            : ($request->idkategori ?? $user?->idkategori);
+
+        // 1. Guru Mengajar Kelas Apa (Wali Kelas & Pengampu)
+        $classesQuery = MasterKelas::with(['jenjang', 'waliKelas', 'guruMataPelajaran.guru', 'guruMataPelajaran.mataPelajaran'])
+            ->withCount('siswa');
+        if (!empty($idkategori)) {
+            $classesQuery->where('idkategori', $idkategori);
+        }
+        $classes = $classesQuery->orderBy('tingkat', 'asc')->orderBy('nama_kelas', 'asc')->get();
+
+        $guruMengajar = $classes->map(function ($c) {
+            $wali = $c->waliKelas ? [
+                'id' => $c->waliKelas->iduser_bo,
+                'nama' => $c->waliKelas->name,
+                'name' => $c->waliKelas->name,
+                'nip' => $c->waliKelas->login_username ?? '-',
+                'phone' => $c->waliKelas->telp,
+                'email' => $c->waliKelas->email,
+            ] : null;
+
+            $pengampu = $c->guruMataPelajaran->map(function ($gmp) {
+                return [
+                    'idguru' => $gmp->guru?->iduser_bo,
+                    'guru_id' => $gmp->guru?->iduser_bo,
+                    'nama_guru' => $gmp->guru?->name ?? 'Belum Ditentukan',
+                    'guru_name' => $gmp->guru?->name ?? 'Belum Ditentukan',
+                    'nip' => $gmp->guru?->login_username ?? '-',
+                    'guru_email' => $gmp->guru?->email,
+                    'idmapel' => $gmp->mataPelajaran?->id,
+                    'mapel_id' => $gmp->mataPelajaran?->id,
+                    'nama_mapel' => $gmp->mataPelajaran?->nama_mapel ?? 'Mata Pelajaran',
+                    'mapel_name' => $gmp->mataPelajaran?->nama_mapel ?? 'Mata Pelajaran',
+                    'tahun_ajaran' => $gmp->tahun_ajaran,
+                ];
+            })->values();
+
+            return [
+                'id' => $c->id,
+                'class_id' => $c->id,
+                'nama_kelas' => $c->nama_kelas,
+                'class_name' => $c->nama_kelas,
+                'tingkat' => $c->tingkat,
+                'jenjang' => $c->jenjang?->nama_jenjang ?? $c->jurusan,
+                'kapasitas' => $c->kapasitas,
+                'total_siswa' => $c->siswa_count,
+                'wali_kelas' => $wali,
+                'guru_pengampu' => $pengampu,
+            ];
+        });
+
+        // 2. Daftar Siswa per Kelas
+        $siswaPerKelas = $classes->map(function ($c) {
+            $students = UserSiswa::where('idkelas', $c->id)
+                ->orderBy('nama', 'asc')
+                ->get()
+                ->map(function ($s) {
+                    return [
+                        'id' => $s->iduser,
+                        'nama' => $s->name,
+                        'name' => $s->name,
+                        'nisn' => $s->nisn,
+                        'nis' => $s->nisn,
+                        'email' => $s->email,
+                        'username' => $s->login_username ?? $s->nisn ?? 'siswa',
+                        'phone' => $s->telp,
+                        'status' => $s->status_aktif === 'Y' ? 'Aktif' : 'Non-aktif',
+                    ];
+                });
+
+            return [
+                'id' => $c->id,
+                'class_id' => $c->id,
+                'nama_kelas' => $c->nama_kelas,
+                'class_name' => $c->nama_kelas,
+                'jenjang' => $c->jenjang?->nama_jenjang ?? $c->jurusan,
+                'total_siswa' => $students->count(),
+                'siswa' => $students,
+                'students' => $students,
+            ];
+        });
+
+        // 3. Nilai Siswa per Paket Ujian & Rekapitulasi Statistik
+        $assessmentsQuery = Assessment::with(['mapel', 'jenjang', 'kelas']);
+        if (!empty($idkategori)) {
+            $assessmentsQuery->where('idkategori', $idkategori);
+        }
+        $assessments = $assessmentsQuery->orderBy('idassessment', 'desc')->limit(20)->get();
+
+        $rekapNilaiUjian = $assessments->map(function ($exam) {
+            $attempts = AssessmentJawabanPilgan::with('siswa.kelas')
+                ->where('idassessment', $exam->idassessment)
+                ->where(function ($q) {
+                    $q->where('komentar', 'submitted')
+                      ->orWhereNotNull('nilai');
+                })
+                ->get();
+
+            $scores = $attempts->pluck('nilai')->filter(fn($v) => is_numeric($v))->map(fn($v) => (float)$v);
+            $totalPeserta = $scores->count();
+            $avgScore = $totalPeserta > 0 ? round($scores->average(), 2) : 0;
+            $maxScore = $totalPeserta > 0 ? (float)$scores->max() : 0;
+            $minScore = $totalPeserta > 0 ? (float)$scores->min() : 0;
+            $tuntasCount = $scores->filter(fn($v) => $v >= 75.0)->count();
+            $remedialCount = $totalPeserta - $tuntasCount;
+
+            $daftarSiswa = $attempts->map(function ($att) {
+                return [
+                    'id' => $att->idassessment_jawaban_pilgan,
+                    'attempt_id' => $att->idassessment_jawaban_pilgan,
+                    'student_id' => $att->iduser,
+                    'nama_siswa' => $att->siswa?->name ?? 'Siswa',
+                    'student_name' => $att->siswa?->name ?? 'Siswa',
+                    'nisn' => $att->siswa?->nisn ?? '-',
+                    'kelas' => $att->siswa?->kelas?->nama_kelas ?? 'Kelas Siswa',
+                    'class_name' => $att->siswa?->kelas?->nama_kelas ?? 'Kelas Siswa',
+                    'nilai' => (float)($att->nilai ?? 0),
+                    'score' => (float)($att->nilai ?? 0),
+                    'status' => (float)($att->nilai ?? 0) >= 75.0 ? 'Tuntas' : 'Remedial',
+                    'status_kkm' => (float)($att->nilai ?? 0) >= 75.0 ? 'Tuntas' : 'Remedial',
+                    'duration' => $att->lama_dikerjakan ?: '00:00:00',
+                    'submit_time' => $att->tgl_input_time,
+                ];
+            })->sortByDesc('nilai')->values();
+
+            return [
+                'id' => $exam->idassessment,
+                'idassessment' => $exam->idassessment,
+                'judul_ujian' => $exam->nama_assessment,
+                'nama_assessment' => $exam->nama_assessment,
+                'mapel' => $exam->mapel?->nama_mapel ?? 'Umum',
+                'jenjang' => $exam->jenjang?->nama_jenjang ?? 'Umum',
+                'class_target' => $exam->kelas?->nama_kelas ?? 'Semua Kelas',
+                'total_soal' => (int)($exam->tampil_assessment_pilgan ?: 50),
+                'total_peserta' => $totalPeserta,
+                'nilai_rata_rata' => $avgScore,
+                'nilai_tertinggi' => $maxScore,
+                'nilai_terendah' => $minScore,
+                'jumlah_tuntas' => $tuntasCount,
+                'jumlah_remedial' => $remedialCount,
+                'persentase_kelulusan' => $totalPeserta > 0 ? round(($tuntasCount / $totalPeserta) * 100, 1) : 0,
+                'peserta' => $daftarSiswa,
+                'siswa' => $daftarSiswa,
+            ];
+        });
+
+        return response()->json([
+            'reports' => [
+                'guru_mengajar' => $guruMengajar,
+                'siswa_per_kelas' => $siswaPerKelas,
+                'rekap_nilai_ujian' => $rekapNilaiUjian,
+            ],
+            'guru_mengajar' => $guruMengajar,
+            'siswa_per_kelas' => $siswaPerKelas,
+            'rekap_nilai_ujian' => $rekapNilaiUjian,
         ]);
     }
     public function liveMonitoring()
@@ -190,6 +411,109 @@ class DashboardController extends Controller
                 'active_published_exams' => $totalAssessments,
                 'active_attempts' => 0,
             ]
+        ]);
+    }
+
+    /**
+     * Data guru mengajar di kelas apa saja dan siapa saja muridnya
+     */
+    public function teacherTeachingClasses(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['classes' => [], 'profile' => null]);
+        }
+
+        $teacherId = $user->iduser_bo ?? $user->id;
+        $idkategori = $user->idkategori;
+
+        // 1. Classes where teacher is Wali Kelas
+        $waliClasses = MasterKelas::where('wali_kelas_id', $teacherId)
+            ->with(['jenjang'])
+            ->withCount('siswa')
+            ->get();
+
+        // 2. Classes where teacher is Guru Pengampu Mapel
+        $gmpClassIds = \App\Models\GuruMataPelajaran::where('iduser_bo', $teacherId)
+            ->pluck('idkelas')
+            ->filter()
+            ->unique()
+            ->toArray();
+
+        $mapelClasses = MasterKelas::whereIn('id', $gmpClassIds)
+            ->where('wali_kelas_id', '!=', $teacherId)
+            ->with(['jenjang'])
+            ->withCount('siswa')
+            ->get();
+
+        // If teacher doesn't have explicit assignments yet, fallback to classes in their school
+        $allAssignedClasses = $waliClasses->concat($mapelClasses);
+        if ($allAssignedClasses->isEmpty() && !empty($idkategori)) {
+            $allAssignedClasses = MasterKelas::where('idkategori', $idkategori)
+                ->with(['jenjang'])
+                ->withCount('siswa')
+                ->limit(6)
+                ->get();
+        }
+
+        // Get student list for each class
+        $classesData = $allAssignedClasses->map(function ($c) use ($teacherId) {
+            $isWali = ((string)$c->wali_kelas_id === (string)$teacherId);
+
+            $mapelTaught = \App\Models\GuruMataPelajaran::where('iduser_bo', $teacherId)
+                ->where('idkelas', $c->id)
+                ->with('mataPelajaran')
+                ->get()
+                ->map(fn($g) => $g->mataPelajaran?->nama_mapel)
+                ->filter()
+                ->values()
+                ->toArray();
+
+            $students = UserSiswa::where('idkelas', $c->id)
+                ->where('status_aktif', '!=', 'N')
+                ->orderBy('nama', 'asc')
+                ->get()
+                ->map(function ($s, $idx) {
+                    return [
+                        'no' => $idx + 1,
+                        'id' => $s->iduser,
+                        'name' => $s->name,
+                        'nama' => $s->name,
+                        'nisn' => $s->nisn ?: '-',
+                        'nis' => $s->nisn ?: '-',
+                        'gender' => $s->jenis_kelamin ?: '-',
+                        'email' => $s->email,
+                        'phone' => $s->telp ?: '-',
+                        'status' => $s->status_aktif === 'Y' ? 'Aktif' : 'Non-aktif',
+                    ];
+                });
+
+            return [
+                'id' => $c->id,
+                'nama_kelas' => $c->nama_kelas,
+                'tingkat' => $c->tingkat,
+                'jenjang' => $c->jenjang?->nama_jenjang ?? $c->jurusan,
+                'role' => $isWali ? 'Wali Kelas' : 'Guru Pengampu',
+                'is_wali_kelas' => $isWali,
+                'mapel_list' => $mapelTaught,
+                'total_siswa' => $students->count(),
+                'students' => $students,
+            ];
+        });
+
+        return response()->json([
+            'profile' => [
+                'id' => $user->iduser_bo ?? $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->telp ?: '-',
+                'nuptk' => $user->nuptk ?: ($user->login_username ?? '-'),
+                'institution' => $user->kategori?->nama_kategori ?? 'Detik Detik TryOut',
+                'role' => 'Guru Pengajar',
+                'total_classes_taught' => $classesData->count(),
+                'total_students_taught' => $classesData->sum('total_siswa'),
+            ],
+            'classes' => $classesData,
         ]);
     }
 }

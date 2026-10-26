@@ -193,4 +193,221 @@ class StudentController extends Controller
             'message' => 'Siswa berhasil dinonaktifkan/dihapus.'
         ]);
     }
+
+    /**
+     * Download template spreadsheet untuk import siswa
+     */
+    public function downloadTemplate(\App\Services\SimpleSpreadsheetService $spreadsheetService)
+    {
+        $headers = [
+            'Nama Lengkap Siswa',
+            'NISN',
+            'Email Siswa',
+            'Password',
+            'Nama Kelas',
+            'No Telepon Siswa'
+        ];
+
+        $sampleRows = [
+            ['Ahmad Pratama', '0081234567', 'ahmad.pratama@siswa.sch.id', 'Siswa1234!', '10 RPL 1', '081234567891'],
+            ['Bunga Citra Lestari', '0081234568', 'bunga.citra@siswa.sch.id', 'Siswa1234!', '10 RPL 1', '081234567892'],
+            ['Dimas Anggara Putra', '0081234569', 'dimas.anggara@siswa.sch.id', 'Siswa1234!', '10 TKJ 2', '081234567893'],
+        ];
+
+        return $spreadsheetService->downloadCsv($headers, $sampleRows, 'template_import_siswa.csv');
+    }
+
+    /**
+     * Import data siswa via Excel (.xlsx) atau CSV (.csv)
+     */
+    public function import(Request $request, \App\Services\SimpleSpreadsheetService $spreadsheetService)
+    {
+        $request->validate([
+            'file' => 'required|file|max:10240',
+        ]);
+
+        $authUser = $request->user();
+        $idkategori = ($authUser && $authUser->role === 'admin' && !empty($authUser->idkategori))
+            ? $authUser->idkategori
+            : ($request->idkategori ?? $authUser?->idkategori);
+
+        if (empty($idkategori)) {
+            $idkategori = '27830150842287772';
+        }
+
+        $file = $request->file('file');
+
+        try {
+            $rows = $spreadsheetService->parse($file->getRealPath(), $file->getClientOriginalName());
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Gagal membaca berkas: ' . $e->getMessage()
+            ], 422);
+        }
+
+        if (count($rows) <= 1) {
+            return response()->json([
+                'message' => 'Berkas kosong atau hanya berisi baris judul.'
+            ], 422);
+        }
+
+        // Remove header row
+        array_shift($rows);
+
+        $imported = 0;
+        $errors = [];
+
+        // Pre-fetch classes in this instansi for fast lookup
+        $classes = MasterKelas::where('idkategori', $idkategori)->get();
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            foreach ($rows as $index => $row) {
+                $rowNum = $index + 2;
+
+                $name = trim($row[0] ?? '');
+                $nisn = trim($row[1] ?? '');
+                $email = trim($row[2] ?? '');
+                $password = trim($row[3] ?? 'Siswa1234!');
+                $className = trim($row[4] ?? '');
+                $phone = trim($row[5] ?? '');
+
+                if (empty($name)) {
+                    $errors[] = "Baris {$rowNum}: Nama Siswa tidak boleh kosong.";
+                    continue;
+                }
+
+                if (empty($nisn)) {
+                    $errors[] = "Baris {$rowNum}: NISN untuk '{$name}' tidak boleh kosong.";
+                    continue;
+                }
+
+                if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = "Baris {$rowNum}: Format email '{$email}' tidak valid.";
+                    continue;
+                }
+
+                // Check duplicate NISN or Email in user table
+                $exists = UserSiswa::where('status_aktif', 'Y')
+                    ->where(function ($q) use ($nisn, $email) {
+                        $q->where('nisn', $nisn)
+                          ->orWhere('login_email', $email);
+                    })->first();
+
+                if ($exists) {
+                    $errors[] = "Baris {$rowNum}: NISN '{$nisn}' atau email '{$email}' sudah terdaftar.";
+                    continue;
+                }
+
+                // Match class
+                $matchedClass = null;
+                if (!empty($className)) {
+                    $matchedClass = $classes->first(function ($c) use ($className) {
+                        return strtolower($c->nama_kelas) === strtolower($className)
+                            || (string)$c->id === (string)$className;
+                    });
+
+                    if (!$matchedClass) {
+                        // Create class if not found
+                        $matchedClass = MasterKelas::create([
+                            'nama_kelas' => $className,
+                            'idjenjang' => 1,
+                            'idkategori' => $idkategori,
+                            'tingkat' => 10,
+                            'jurusan' => 'Umum',
+                            'kapasitas' => 36,
+                            'status_aktif' => 'Y',
+                        ]);
+                        $classes->push($matchedClass);
+                    }
+                }
+
+                $newId = 'US' . date('Ymd') . str_pad((string)rand(100000, 999999), 10, '0', STR_PAD_LEFT);
+
+                $newStudent = UserSiswa::create([
+                    'iduser' => $newId,
+                    'nama' => $name,
+                    'nisn' => $nisn,
+                    'idkelas' => $matchedClass?->id ?? null,
+                    'idkategori' => $idkategori,
+                    'login_email' => $email,
+                    'login_password' => Hash::make($password),
+                    'telp' => $phone ?: null,
+                    'status_aktif' => 'Y',
+                    'tanggal_input' => now(),
+                ]);
+
+                if ($matchedClass) {
+                    SiswaKelas::create([
+                        'iduser' => $newId,
+                        'idkelas' => $matchedClass->id,
+                        'nisn' => $nisn,
+                        'tahun_ajaran' => '2026/2027',
+                        'status' => 'aktif',
+                    ]);
+                }
+
+                $imported++;
+            }
+
+            if ($imported === 0 && !empty($errors)) {
+                \Illuminate\Support\Facades\DB::rollBack();
+                return response()->json([
+                    'message' => 'Tidak ada data siswa yang berhasil diimpor.',
+                    'errors' => $errors
+                ], 422);
+            }
+
+            \Illuminate\Support\Facades\DB::commit();
+
+            return response()->json([
+                'message' => "Berhasil mengimpor {$imported} data siswa.",
+                'imported_count' => $imported,
+                'errors' => $errors,
+            ]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return response()->json([
+                'message' => 'Terjadi kesalahan sistem saat menyimpan data siswa: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Reset password akun Siswa oleh Admin / Super Admin (Requirement 11)
+     */
+    public function resetPassword(Request $request, $id)
+    {
+        $admin = $request->user();
+        $student = UserSiswa::where('iduser', $id)->firstOrFail();
+
+        if ($admin && $admin->role === 'admin' && !empty($admin->idkategori)) {
+            if ((string)$student->idkategori !== (string)$admin->idkategori) {
+                return response()->json([
+                    'message' => 'Akses ditolak: Anda hanya dapat mereset akun siswa di instansi Anda.'
+                ], 403);
+            }
+        }
+
+        $newPassword = $request->input('new_password') ?: ('Siswa' . rand(1000, 9999) . '!');
+        $student->update(['login_password' => Hash::make($newPassword)]);
+
+        \App\Models\AuditLog::record(
+            'RESET_PASSWORD_SISWA',
+            'user',
+            $student->iduser,
+            $student->nama,
+            [
+                'reset_by' => $admin->name ?? 'Admin',
+                'role' => $admin->role ?? 'admin',
+                'nisn' => $student->nisn,
+            ]
+        );
+
+        return response()->json([
+            'message' => "Password siswa {$student->nama} berhasil direset.",
+            'new_password' => $newPassword
+        ]);
+    }
 }
+

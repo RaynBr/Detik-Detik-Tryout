@@ -35,6 +35,9 @@ class AssessmentSoalPilgan extends Model
         'pilihan_e_gambar',
         'jawaban',
         'penjelasan_jawaban',
+        'tahun_soal_id',
+        'status_aktif',
+        'iduser_bo',
         'tanggal_input',
     ];
 
@@ -51,5 +54,15 @@ class AssessmentSoalPilgan extends Model
     public function mapel(): BelongsTo
     {
         return $this->belongsTo(MasterMataPelajaran::class, 'idmapel', 'id');
+    }
+
+    public function tahunSoal(): BelongsTo
+    {
+        return $this->belongsTo(MasterTahunSoal::class, 'tahun_soal_id', 'id');
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(UserBo::class, 'iduser_bo', 'iduser_bo');
     }
 }

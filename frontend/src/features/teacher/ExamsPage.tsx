@@ -6,7 +6,7 @@ import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../shared/context/ToastContext';
 import { 
   Sparkles, Plus, Edit2, Trash2, Calendar, Clock, Settings, Users, 
-  BookOpen, AlertCircle, X, Search, Folder, CheckCircle, ChevronDown, ChevronUp, BarChart3
+  BookOpen, AlertCircle, X, Search, Folder, CheckCircle, ChevronDown, ChevronUp, BarChart3, Upload
 } from 'lucide-react';
 
 interface Subject {
@@ -41,12 +41,25 @@ export interface ExamGroup {
   end_time: string;
 }
 
+export interface AcademicYear {
+  id: number;
+  name: string;
+  semester: string;
+  is_active: boolean;
+}
+
 interface Exam {
   id: number;
   title: string;
   package_id?: number | null;
   subject_id: number;
-  duration_minutes: number;
+  duration_minutes: number | null;
+  id_tahun_ajaran?: number | null;
+  academic_year?: {
+    id: number;
+    name: string;
+    semester: string;
+  } | null;
   start_time: string;
   end_time: string;
   settings: {
@@ -64,6 +77,7 @@ interface Exam {
   questions?: any[];
   questions_count?: number;
   total_questions?: number;
+  attempts_count?: number;
   exam_groups?: ExamGroup[];
 }
 
@@ -87,7 +101,9 @@ export const ExamsPage: React.FC = () => {
   const [title, setTitle] = useState('');
   const [packageId, setPackageId] = useState('');
   const [subjectId, setSubjectId] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState(90);
+  const [durationMinutes, setDurationMinutes] = useState<number | ''>(90);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [academicYearId, setAcademicYearId] = useState<string>('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [kkmScore, setKkmScore] = useState(75);
@@ -122,19 +138,33 @@ export const ExamsPage: React.FC = () => {
     idjenjang: 1,
     idmapel: 1,
     idkelas: '',
+    id_tahun_ajaran: '',
     total_soal: 50,
-    waktu_pengerjaan: 60,
+    waktu_pengerjaan: '' as number | '',
     tanggal_mulai_assessment: '',
     tanggal_batas_assessment: '',
   });
 
+  const [emptyBankPrompt, setEmptyBankPrompt] = useState<{
+    show: boolean;
+    message: string;
+    mapelName: string;
+    jenjangName: string;
+  }>({
+    show: false,
+    message: '',
+    mapelName: '',
+    jenjangName: ''
+  });
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const isExamLocked = !!(editingExam && (editingExam.attempts_count ?? 0) > 0);
 
   const fetchData = async () => {
     setLoadingExams(true);
     try {
-      const [examsRes, packagesRes, subjectsRes, questionsRes, studentsRes, classesRes, jenjangRes] = await Promise.all([
+      const [examsRes, packagesRes, subjectsRes, questionsRes, studentsRes, classesRes, jenjangRes, academicYearsRes] = await Promise.all([
         apiClient.get('/teacher/exams'),
         apiClient.get('/teacher/packages'),
         apiClient.get('/teacher/subjects'),
@@ -142,6 +172,7 @@ export const ExamsPage: React.FC = () => {
         apiClient.get('/teacher/students'),
         apiClient.get('/teacher/classes'),
         apiClient.get('/teacher/jenjang').catch(() => ({ data: [] })),
+        apiClient.get('/teacher/academic-years').catch(() => ({ data: [] })),
       ]);
       setExams(Array.isArray(examsRes.data) ? examsRes.data : (examsRes.data?.data || []));
       setPackages(Array.isArray(packagesRes.data) ? packagesRes.data : (packagesRes.data?.data || []));
@@ -150,11 +181,20 @@ export const ExamsPage: React.FC = () => {
       setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : (studentsRes.data?.data || []));
       setClasses(Array.isArray(classesRes.data) ? classesRes.data : (classesRes.data?.data || []));
       setJenjangList(Array.isArray(jenjangRes.data) ? jenjangRes.data : (jenjangRes.data?.data || []));
+      
+      const ayList = Array.isArray(academicYearsRes.data) ? academicYearsRes.data : (academicYearsRes.data?.data || []);
+      setAcademicYears(ayList);
+      const activeAy = ayList.find((a: any) => a.is_active) || ayList[0];
+
       if (subjectsRes.data?.[0]?.id) {
         setGenerateForm(prev => ({ ...prev, idmapel: subjectsRes.data[0].id }));
       }
       if (jenjangRes.data?.[0]?.id) {
         setGenerateForm(prev => ({ ...prev, idjenjang: jenjangRes.data[0].id }));
+      }
+      if (activeAy) {
+        setAcademicYearId(prev => prev || activeAy.id.toString());
+        setGenerateForm(prev => ({ ...prev, id_tahun_ajaran: prev.id_tahun_ajaran || activeAy.id.toString() }));
       }
     } catch (err) {
       console.error('Failed to load exams data:', err);
@@ -174,24 +214,40 @@ export const ExamsPage: React.FC = () => {
       const payload: any = {
         ...generateForm,
         idkelas: generateForm.idkelas ? parseInt(generateForm.idkelas) : null,
+        id_tahun_ajaran: generateForm.id_tahun_ajaran ? parseInt(generateForm.id_tahun_ajaran) : null,
+        waktu_pengerjaan: generateForm.waktu_pengerjaan !== '' ? parseInt(generateForm.waktu_pengerjaan as any) : null,
       };
       const res = await apiClient.post('/teacher/exams/generate-random', payload);
       toast.success(res.data?.message || 'Berhasil mengenerate 50 soal acak dari Bank Soal!');
       setShowGenerateModal(false);
+      const activeAy = academicYears.find(a => a.is_active) || academicYears[0];
       setGenerateForm({
         nama_assessment: '',
         deskripsi_assessment: '',
         idjenjang: jenjangList[0]?.id || 1,
         idmapel: subjects[0]?.id || 1,
         idkelas: '',
+        id_tahun_ajaran: activeAy ? activeAy.id.toString() : '',
         total_soal: 50,
-        waktu_pengerjaan: 60,
+        waktu_pengerjaan: '',
         tanggal_mulai_assessment: '',
         tanggal_batas_assessment: '',
       });
       fetchData();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Gagal mengenerate soal dari Bank Soal.');
+      if (err.response?.data?.error === 'EMPTY_QUESTION_BANK' || err.response?.status === 422) {
+        const foundMapel = subjects.find(s => s.id === generateForm.idmapel)?.name || 'Mata Pelajaran';
+        const foundJenjang = jenjangList.find(j => j.id === generateForm.idjenjang)?.nama_jenjang || 'Jenjang';
+        setEmptyBankPrompt({
+          show: true,
+          message: err.response?.data?.message || 'Bank Soal belum memiliki butir soal untuk mata pelajaran dan jenjang yang Anda pilih.',
+          mapelName: foundMapel,
+          jenjangName: foundJenjang
+        });
+        setShowGenerateModal(false);
+      } else {
+        toast.error(err.response?.data?.message || 'Gagal mengenerate soal dari Bank Soal.');
+      }
     } finally {
       setLoading(false);
     }
@@ -220,6 +276,8 @@ export const ExamsPage: React.FC = () => {
       setSubjectId(subjects[0]?.id.toString() || '');
       setSelectedQuestions([]);
     }
+    const activeAy = academicYears.find(a => a.is_active) || academicYears[0];
+    setAcademicYearId(activeAy ? activeAy.id.toString() : '');
     setDurationMinutes(90);
     setStartTime('');
     setEndTime('');
@@ -241,7 +299,8 @@ export const ExamsPage: React.FC = () => {
     setTitle(exam.title);
     setPackageId(exam.package_id ? exam.package_id.toString() : '');
     setSubjectId(exam.subject_id.toString());
-    setDurationMinutes(exam.duration_minutes || 60);
+    setAcademicYearId(exam.id_tahun_ajaran ? exam.id_tahun_ajaran.toString() : (exam.academic_year?.id ? exam.academic_year.id.toString() : ''));
+    setDurationMinutes(exam.duration_minutes !== null && exam.duration_minutes !== undefined ? exam.duration_minutes : '');
     setStartTime(exam.start_time ? new Date(exam.start_time).toISOString().substring(0, 16) : '');
     setEndTime(exam.end_time ? new Date(exam.end_time).toISOString().substring(0, 16) : '');
     setKkmScore(exam.kkm_score || 75);
@@ -319,25 +378,32 @@ export const ExamsPage: React.FC = () => {
     setError(null);
     setLoading(true);
 
-    const payload = {
-      title,
-      package_id: packageId ? Number(packageId) : null,
-      subject_id: Number(subjectId),
-      duration_minutes: durationMinutes,
-      start_time: startTime,
-      end_time: endTime,
-      kkm_score: kkmScore,
-      status,
-      settings: {
-        allow_backtrack: allowBacktrack,
-        allow_flag: allowFlag,
-        shuffle_questions: shuffleQuestions,
-        shuffle_options: shuffleOptions,
-        show_result_immediately: showResultImmediately,
-        max_tab_switches: maxTabSwitches
-      },
-      questions: selectedQuestions
-    };
+    const payload = isExamLocked
+      ? {
+          start_time: startTime,
+          end_time: endTime,
+        }
+      : {
+          title,
+          package_id: packageId ? Number(packageId) : null,
+          subject_id: Number(subjectId),
+          id_tahun_ajaran: academicYearId ? Number(academicYearId) : null,
+          academic_year_id: academicYearId ? Number(academicYearId) : null,
+          duration_minutes: durationMinutes !== '' ? Number(durationMinutes) : null,
+          start_time: startTime,
+          end_time: endTime,
+          kkm_score: kkmScore,
+          status,
+          settings: {
+            allow_backtrack: allowBacktrack,
+            allow_flag: allowFlag,
+            shuffle_questions: shuffleQuestions,
+            shuffle_options: shuffleOptions,
+            show_result_immediately: showResultImmediately,
+            max_tab_switches: maxTabSwitches
+          },
+          questions: selectedQuestions
+        };
 
     try {
       if (editingExam) {
@@ -514,6 +580,11 @@ export const ExamsPage: React.FC = () => {
                     <span className="px-2.5 py-1 bg-cyan-100 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20 text-xs font-bold rounded-lg">
                       {exam.subject?.name || 'Umum'}
                     </span>
+                    {exam.academic_year && (
+                      <span className="px-2.5 py-1 bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20 text-xs font-bold rounded-lg">
+                        TA: {exam.academic_year.name} ({exam.academic_year.semester === 'odd' ? 'Ganjil' : 'Genap'})
+                      </span>
+                    )}
                     {exam.package && (
                       <span className="px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 dark:bg-white/5 dark:text-gray-300 dark:border-white/5 text-[11px] font-bold rounded-md flex items-center gap-1">
                         <Folder className="h-3 w-3 text-cyan-600 dark:text-cyan-400" />
@@ -522,15 +593,22 @@ export const ExamsPage: React.FC = () => {
                     )}
                   </div>
                   
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    exam.status === 'published' 
-                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/30' 
-                      : exam.status === 'closed'
-                      ? 'bg-rose-100 text-rose-700 border border-rose-300 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30'
-                      : 'bg-amber-100 text-amber-700 border border-amber-300 dark:bg-yellow-500/10 dark:text-yellow-400 dark:border-yellow-500/30'
-                  }`}>
-                    {exam.status}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      exam.status === 'published' 
+                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/30' 
+                        : exam.status === 'closed'
+                        ? 'bg-rose-100 text-rose-700 border border-rose-300 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30'
+                        : 'bg-amber-100 text-amber-700 border border-amber-300 dark:bg-yellow-500/10 dark:text-yellow-400 dark:border-yellow-500/30'
+                    }`}>
+                      {exam.status}
+                    </span>
+                    {(exam.attempts_count ?? 0) > 0 && (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 text-[10px] font-bold rounded-full">
+                        🔒 Terkunci ({exam.attempts_count} Peserta)
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <h2 className="text-lg font-black text-slate-900 dark:text-white mb-2">{exam.title}</h2>
@@ -539,7 +617,7 @@ export const ExamsPage: React.FC = () => {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3 border-y border-slate-200 dark:border-white/5 mb-4 text-xs text-slate-600 dark:text-gray-400 font-medium">
                   <div className="flex items-center gap-1.5">
                     <Clock className="h-4 w-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                    <span>{exam.duration_minutes} Menit</span>
+                    <span>{exam.duration_minutes ? `${exam.duration_minutes} Menit` : 'Tanpa Batas'}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <BookOpen className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
@@ -650,7 +728,7 @@ export const ExamsPage: React.FC = () => {
               <div className="p-2 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-200 dark:border-cyan-500/20">
                 <Calendar className="h-5 w-5" />
               </div>
-              <span>{editingExam ? 'Edit Jadwal Ujian' : 'Buat Jadwal Ujian Baru'}</span>
+              <span>{editingExam ? 'Edit Form Terpadu Paket Soal & Ujian' : 'Form Terpadu Paket Soal & Ujian'}</span>
             </h2>
 
             {error && (
@@ -662,20 +740,33 @@ export const ExamsPage: React.FC = () => {
 
             <form onSubmit={handleExamSubmit} className="space-y-6 overflow-y-auto pr-1 flex-1 flex flex-col min-h-0">
               
+              {isExamLocked && (
+                <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-600/40 rounded-2xl flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200 font-semibold mb-2">
+                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-sm">Mode Pengecualian: Paket Dikunci ({editingExam?.attempts_count} Siswa Telah Mengerjakan)</p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                      Minimal 1 siswa telah memulai ujian pada paket ini. Demi integritas nilai CBT, seluruh butir soal, mata pelajaran, dan durasi pengerjaan telah dikunci permanen. <strong>Hanya jadwal tanggal pelaksanaan (Mulai & Batas Akses) yang dapat diubah.</strong>
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* STEP 1: PILIH BERKAS PAKET SOAL (1-KLIK) */}
               <div className="p-4 bg-cyan-50 dark:bg-indigo-950/20 border border-cyan-200 dark:border-indigo-500/30 rounded-2xl space-y-3">
                 <div className="flex items-center gap-2">
                   <Folder className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
                   <label className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">
-                    Pilih Berkas / Paket Soal Ujian *
+                    Pilih Berkas / Paket Soal Ujian <span className="text-rose-500">*</span>
                   </label>
                 </div>
 
                 <select
                   value={packageId}
+                  disabled={isExamLocked}
                   required={!editingExam && selectedQuestions.length === 0}
                   onChange={(e) => handlePackageChange(e.target.value)}
-                  className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm bg-white dark:bg-[#0f172a] font-medium"
+                  className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm bg-white dark:bg-[#0f172a] font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">-- Pilih Berkas Paket Soal --</option>
                   {packages.map((pkg) => (
@@ -697,25 +788,51 @@ export const ExamsPage: React.FC = () => {
 
               {/* Core Parameters */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
-                <div className="col-span-1 md:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">Judul Jadwal Ujian *</label>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Judul Jadwal / Paket Ujian <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     required
+                    disabled={isExamLocked}
                     placeholder="Contoh: Penilaian Harian Matematika Aljabar"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
+                    className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">Mata Pelajaran *</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Tahun Ajaran <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={academicYearId}
+                    required
+                    disabled={isExamLocked}
+                    onChange={(e) => setAcademicYearId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm bg-white dark:bg-[#0f172a] font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <option value="">-- Pilih Tahun Ajaran --</option>
+                    {academicYears.map((ay) => (
+                      <option key={ay.id} value={ay.id}>
+                        {ay.name} ({ay.semester === 'odd' ? 'Ganjil' : 'Genap'}){ay.is_active ? ' — Aktif' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Mata Pelajaran <span className="text-rose-500">*</span>
+                  </label>
                   <select
                     value={subjectId}
                     required
+                    disabled={isExamLocked}
                     onChange={(e) => setSubjectId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm bg-white dark:bg-[#0f172a] font-medium"
+                    className="w-full px-3.5 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm bg-white dark:bg-[#0f172a] font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {subjects.map((sub) => (
                       <option key={sub.id} value={sub.id}>
@@ -729,19 +846,27 @@ export const ExamsPage: React.FC = () => {
               {/* Timings and KKM */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">Durasi (Menit) *</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Durasi (Menit)
+                  </label>
+                  <p className="text-[10px] text-slate-500 dark:text-gray-400 mb-1.5">
+                    (Opsional — Kosongkan jika tanpa batas waktu)
+                  </p>
                   <input
                     type="number"
-                    required
                     min={1}
+                    disabled={isExamLocked}
+                    placeholder="Contoh: 90 (atau kosongkan)"
                     value={durationMinutes}
-                    onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
+                    onChange={(e) => setDurationMinutes(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">Mulai Akses *</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Mulai Akses <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="datetime-local"
                     required
@@ -752,7 +877,9 @@ export const ExamsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">Batas Akses *</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Batas Akses <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="datetime-local"
                     required
@@ -1166,10 +1293,10 @@ export const ExamsPage: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-lg font-black text-slate-900 dark:text-white">
-                    Generate 50 Soal Acak
+                    Generate 50 Soal Acak (Form Terpadu)
                   </h2>
                   <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                    Otomatis mengambil 50 butir soal dari Bank Soal sesuai kurikulum
+                    Otomatis mengambil butir soal dari Bank Soal sesuai kurikulum dan tahun ajaran
                   </p>
                 </div>
               </div>
@@ -1184,7 +1311,7 @@ export const ExamsPage: React.FC = () => {
             <form onSubmit={handleGenerateRandomSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                  Judul Paket TryOut
+                  Judul Paket TryOut <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1196,15 +1323,34 @@ export const ExamsPage: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                  Tahun Ajaran <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={generateForm.id_tahun_ajaran}
+                  onChange={(e) => setGenerateForm({ ...generateForm, id_tahun_ajaran: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
+                >
+                  <option value="">-- Pilih Tahun Ajaran --</option>
+                  {academicYears.map((ay) => (
+                    <option key={ay.id} value={ay.id}>
+                      {ay.name} ({ay.semester === 'odd' ? 'Ganjil' : 'Genap'}){ay.is_active ? ' — Aktif' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                    Jenjang Pendidikan
+                    Jenjang Pendidikan <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={generateForm.idjenjang}
                     onChange={(e) => setGenerateForm({ ...generateForm, idjenjang: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
                   >
                     {jenjangList.map((j) => (
                       <option key={j.id} value={j.id}>{j.kode_jenjang} - {j.nama_jenjang}</option>
@@ -1214,12 +1360,12 @@ export const ExamsPage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                    Mata Pelajaran
+                    Mata Pelajaran <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={generateForm.idmapel}
                     onChange={(e) => setGenerateForm({ ...generateForm, idmapel: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
                   >
                     {subjects.map((s) => (
                       <option key={s.id} value={s.id}>{s.name}</option>
@@ -1254,8 +1400,8 @@ export const ExamsPage: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    min="5"
-                    max="100"
+                    min="1"
+                    max="200"
                     value={generateForm.total_soal}
                     onChange={(e) => setGenerateForm({ ...generateForm, total_soal: parseInt(e.target.value) || 50 })}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
@@ -1264,21 +1410,22 @@ export const ExamsPage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                    Durasi Pengerjaan (Menit)
+                    Durasi Pengerjaan (Menit) <span className="text-[10px] text-slate-400 font-normal lowercase">(opsional)</span>
                   </label>
                   <input
                     type="number"
-                    min="10"
+                    min="1"
                     max="300"
+                    placeholder="Kosongkan jika tanpa batas"
                     value={generateForm.waktu_pengerjaan}
-                    onChange={(e) => setGenerateForm({ ...generateForm, waktu_pengerjaan: parseInt(e.target.value) || 60 })}
+                    onChange={(e) => setGenerateForm({ ...generateForm, waktu_pengerjaan: e.target.value === '' ? '' : parseInt(e.target.value) })}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
                   />
                 </div>
               </div>
 
               <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl text-[11px] text-indigo-900 dark:text-indigo-200 font-medium">
-                💡 <strong>Catatan Sistem:</strong> Seluruh murid di kelas ini akan mendapatkan <strong>50 butir soal yang sama</strong>, namun sistem secara otomatis akan <strong>mengacak urutan opsi pilihan jawaban (A, B, C, D, E)</strong> secara unik per siswa.
+                💡 <strong>Catatan Sistem:</strong> Seluruh murid di kelas ini akan mendapatkan <strong>{generateForm.total_soal || 50} butir soal yang sama</strong>, namun sistem secara otomatis akan <strong>mengacak urutan nomor soal dan urutan opsi jawaban (A, B, C, D, E)</strong> secara unik per siswa.
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-white/5">
@@ -1299,6 +1446,51 @@ export const ExamsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Validasi: Bank Soal Kosong */}
+      {emptyBankPrompt.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-[#0c101d] rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-rose-200 dark:border-rose-500/20 animate-scale-up">
+            <div className="text-center space-y-4">
+              <div className="inline-flex items-center justify-center p-4 bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-3xl border border-rose-200 dark:border-rose-500/30 shadow-md">
+                <AlertCircle className="h-8 w-8" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  Bank Soal Belum Tersedia
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-gray-400 mt-2 font-medium leading-relaxed">
+                  Paket ujian tidak dapat digenerate karena Bank Soal untuk jenjang <strong className="text-slate-900 dark:text-white">{emptyBankPrompt.jenjangName}</strong> dan mata pelajaran <strong className="text-slate-900 dark:text-white">{emptyBankPrompt.mapelName}</strong> belum memiliki butir soal (0 butir soal).
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-gray-500 mt-1">
+                  Silakan unggah dokumen soal (Excel .xlsx / .csv / Word .docx) atau input manual ke Bank Soal terlebih dahulu.
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmptyBankPrompt(prev => ({ ...prev, show: false }));
+                    navigate('/teacher/questions?action=upload');
+                  }}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>Upload Soal ke Bank Soal Sekarang</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmptyBankPrompt(prev => ({ ...prev, show: false }))}
+                  className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300 font-bold text-xs rounded-xl transition"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

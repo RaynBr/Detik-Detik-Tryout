@@ -18,7 +18,7 @@ import {
   Clock, AlertTriangle, Shield, CheckSquare, 
   ChevronLeft, ChevronRight, HelpCircle, Send, Maximize,
   CheckCircle, X, RefreshCw, Check, Ban, WifiOff, HardDrive,
-  BookOpen, CheckCircle2, XCircle, AlertCircle, Lightbulb
+  BookOpen, CheckCircle2, XCircle, AlertCircle, Lightbulb, Lock
 } from 'lucide-react';
 
 interface QuestionOption {
@@ -84,7 +84,13 @@ export const ExamSessionPage: React.FC = () => {
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submissionResult, setSubmissionResult] = useState<{ score: number | null; status: string; message: string } | null>(null);
+  const [submissionResult, setSubmissionResult] = useState<{
+    score: number | null;
+    status: string;
+    message: string;
+    is_session_ended?: boolean;
+    session_end_time?: string | null;
+  } | null>(null);
 
   // Responsive & Accessibility State (Mobile Sheet & Font Scaling)
   const [showMobileNavSheet, setShowMobileNavSheet] = useState(false);
@@ -707,7 +713,11 @@ export const ExamSessionPage: React.FC = () => {
       setSubmissionResult({
         score: res.data.attempt?.total_score ?? null,
         status: res.data.attempt?.status ?? 'auto_submitted',
-        message: 'Waktu ujian telah berakhir. Seluruh lembar jawaban Anda telah dikumpulkan secara otomatis.'
+        message: res.data.is_session_ended === false
+          ? 'Waktu pengerjaan Anda telah selesai. Seluruh jawaban Anda telah tersimpan dengan aman di server. Skor dan pembahasan akan diumumkan setelah seluruh sesi ujian ditutup resmi.'
+          : 'Waktu ujian telah berakhir. Seluruh lembar jawaban Anda telah dikumpulkan secara otomatis.',
+        is_session_ended: res.data.is_session_ended,
+        session_end_time: res.data.session_end_time,
       });
     } catch (err) {
       console.error('Auto submit error:', err);
@@ -747,7 +757,11 @@ export const ExamSessionPage: React.FC = () => {
       setSubmissionResult({
         score: res.data.attempt?.total_score ?? null,
         status: res.data.attempt?.status ?? 'submitted',
-        message: 'Selamat! Ujian Anda telah berhasil dikumpulkan dan tersimpan dengan aman di server.'
+        message: res.data.is_session_ended === false
+          ? 'Selamat! Ujian Anda telah berhasil dikumpulkan dan tersimpan aman di server. Skor dan pembahasan soal akan diumumkan setelah seluruh sesi ujian ditutup resmi.'
+          : 'Selamat! Ujian Anda telah berhasil dikumpulkan dan tersimpan dengan aman di server.',
+        is_session_ended: res.data.is_session_ended,
+        session_end_time: res.data.session_end_time,
       });
     } catch (err: any) {
       console.error('Submit exam error:', err);
@@ -828,21 +842,46 @@ export const ExamSessionPage: React.FC = () => {
             )}
             <div className="flex justify-between items-center pt-2 border-t border-slate-200/80 dark:border-white/5 text-sm font-bold">
               <span className="text-slate-700 dark:text-gray-300">Nilai / Skor Akhir</span>
-              <span className={`text-lg font-mono ${isDisq ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-indigo-600 dark:text-indigo-400'}`}>
-                {isDisq ? '0' : (submissionResult.score ?? '-')}
-              </span>
+              {isDisq ? (
+                <span className="text-lg font-mono text-rose-600 dark:text-rose-400 font-black">0</span>
+              ) : submissionResult.is_session_ended === false ? (
+                <span className="text-xs font-semibold px-2 py-1 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+                  Menunggu Tutup Sesi
+                </span>
+              ) : (
+                <span className="text-lg font-mono text-indigo-600 dark:text-indigo-400">
+                  {submissionResult.score ?? '-'}
+                </span>
+              )}
             </div>
           </div>
 
+          {/* Banner notification if session still active */}
+          {!isDisq && submissionResult.is_session_ended === false && (
+            <div className="p-3 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/30 rounded-2xl text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed text-left flex items-start gap-2">
+              <Clock className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <div>
+                <strong>Sesi Masih Berlangsung:</strong> Skor dan pembahasan belum dapat diakses. Menunggu jadwal sesi ujian ditutup resmi.
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2.5">
             {!isDisq && (
-              <button
-                onClick={fetchSessionReview}
-                className="w-full py-3.5 px-4 font-bold text-sm rounded-xl shadow-md transition active:scale-95 text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center gap-2"
-              >
-                <BookOpen className="h-4 w-4" />
-                <span>Lihat Kunci & Pembahasan Ujian</span>
-              </button>
+              submissionResult.is_session_ended === false ? (
+                <div className="w-full py-3 px-4 font-semibold text-xs rounded-xl text-slate-400 dark:text-gray-500 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center justify-center gap-2 cursor-not-allowed">
+                  <Lock className="h-4 w-4" />
+                  <span>Pembahasan Belum Dibuka (Menunggu Tutup Sesi)</span>
+                </div>
+              ) : (
+                <button
+                  onClick={fetchSessionReview}
+                  className="w-full py-3.5 px-4 font-bold text-sm rounded-xl shadow-md transition active:scale-95 text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center gap-2"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  <span>Lihat Kunci & Pembahasan Ujian</span>
+                </button>
+              )
             )}
 
             <button
@@ -891,6 +930,26 @@ export const ExamSessionPage: React.FC = () => {
                   <div className="py-20 text-center space-y-3">
                     <RefreshCw className="h-8 w-8 text-indigo-600 animate-spin mx-auto" />
                     <p className="text-xs text-slate-500 font-semibold">Memuat pembahasan lengkap...</p>
+                  </div>
+                ) : (reviewData?.is_session_ended === false || reviewData?.results_hidden === true) ? (
+                  <div className="py-14 text-center space-y-4 bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-500/20 rounded-3xl p-6">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+                      <Clock className="h-7 w-7" />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                        Sesi Ujian Masih Berlangsung
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-gray-300 max-w-md mx-auto mt-2 leading-relaxed font-medium">
+                        {reviewData.message || 'Skor dan pembahasan soal belum dapat diakses. Menunggu jadwal sesi ujian ditutup resmi.'}
+                      </p>
+                    </div>
+                    <div className="pt-2">
+                      <span className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 inline-flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5" />
+                        Akses Terkunci Sementara
+                      </span>
+                    </div>
                   </div>
                 ) : reviewData ? (
                   <>
@@ -1730,12 +1789,28 @@ export const ExamSessionPage: React.FC = () => {
               </div>
             </div>
 
-            {questions.some(q => !q.answer_content || Object.keys(q.answer_content).length === 0) && (
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/20 rounded-2xl text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-                <span>Peringatan: Masih terdapat soal yang belum dijawab. Lembar soal yang kosong akan bernilai 0.</span>
-              </div>
-            )}
+            {(() => {
+              const emptyCount = questions.filter(q => !q.answer_content || Object.keys(q.answer_content).length === 0).length;
+              if (emptyCount > 0) {
+                return (
+                  <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/30 rounded-2xl text-rose-800 dark:text-rose-300 text-xs flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-sm">Masih ada {emptyCount} soal yang belum dijawab.</p>
+                      <p className="text-[11px] text-rose-700 dark:text-rose-400 mt-0.5">
+                        Apakah yakin ingin mengumpulkan? Lembar soal yang kosong akan bernilai 0.
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span>Semua soal ({questions.length}) telah Anda jawab dengan lengkap!</span>
+                </div>
+              );
+            })()}
 
             {submitError && (
               <div className="p-3 bg-rose-50 dark:bg-red-950/40 border border-rose-200 dark:border-red-500/30 text-rose-700 dark:text-red-300 rounded-2xl text-xs flex items-start gap-2">
@@ -1749,15 +1824,15 @@ export const ExamSessionPage: React.FC = () => {
                 type="button"
                 onClick={() => setShowSubmitConfirmModal(false)}
                 disabled={isSubmitting}
-                className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+                className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
               >
-                Batal / Cek Lagi
+                Kembali ke Soal
               </button>
               <button
                 type="button"
                 onClick={handleConfirmFinalSubmit}
                 disabled={isSubmitting}
-                className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
+                className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
@@ -1767,7 +1842,7 @@ export const ExamSessionPage: React.FC = () => {
                 ) : (
                   <>
                     <Check className="h-4 w-4" />
-                    <span>Ya, Kumpulkan</span>
+                    <span>Tetap Kumpulkan</span>
                   </>
                 )}
               </button>

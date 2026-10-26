@@ -104,8 +104,12 @@ class MasterKelasController extends Controller
         ], 201);
     }
 
-    public function show(MasterKelas $masterKela)
+    public function show($masterKela)
     {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
         $user = request()->user();
         if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki akses ke kelas instansi lain.'], 403);
@@ -131,8 +135,12 @@ class MasterKelasController extends Controller
         return response()->json($masterKela);
     }
 
-    public function update(Request $request, MasterKelas $masterKela)
+    public function update(Request $request, $masterKela)
     {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
         $user = $request->user();
         if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah kelas instansi lain.'], 403);
@@ -179,8 +187,12 @@ class MasterKelasController extends Controller
         ]);
     }
 
-    public function destroy(MasterKelas $masterKela)
+    public function destroy($masterKela)
     {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
         $user = request()->user();
         if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses menghapus kelas instansi lain.'], 403);
@@ -196,8 +208,12 @@ class MasterKelasController extends Controller
     /**
      * Assign student to this class
      */
-    public function addStudent(Request $request, MasterKelas $masterKela)
+    public function addStudent(Request $request, $masterKela)
     {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
         $request->validate([
             'iduser' => 'required|exists:user,iduser',
             'nisn' => 'nullable|string|max:30',
@@ -227,8 +243,12 @@ class MasterKelasController extends Controller
     /**
      * Remove student from this class
      */
-    public function removeStudent(MasterKelas $masterKela, $iduser)
+    public function removeStudent($masterKela, $iduser)
     {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
         SiswaKelas::where('iduser', $iduser)->where('idkelas', $masterKela->id)->delete();
         UserSiswa::where('iduser', $iduser)->where('idkelas', $masterKela->id)->update([
             'idkelas' => null

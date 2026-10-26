@@ -44,6 +44,7 @@ class Assessment extends Model
         'idjenjang',
         'idkelas',
         'idmapel',
+        'id_tahun_ajaran',
     ];
 
     protected $attributes = [
@@ -62,6 +63,11 @@ class Assessment extends Model
         'point_assessment' => 0,
         'point_assessment_nama' => 'JPtest',
     ];
+
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'id_tahun_ajaran', 'id');
+    }
 
     public function jenjang(): BelongsTo
     {

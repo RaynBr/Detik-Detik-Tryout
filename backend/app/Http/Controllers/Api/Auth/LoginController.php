@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\UserBo;
 use App\Models\UserSiswa;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -20,13 +21,23 @@ class LoginController extends Controller
 
         $loginInput = trim($request->login);
         $password = (string) $request->password;
+        $expectedRole = $request->input('expected_role');
 
-        // 1. Attempt to authenticate as Back Office User (Super Admin IP, Admin Sekolah, Guru)
+        // Enforce credential rule from flow: Email is strictly for profile info, NOT for login
+        if (str_contains($loginInput, '@')) {
+            return response()->json([
+                'message' => 'Sesuai ketentuan sistem, Email hanya digunakan untuk informasi profil akun (tidak dapat digunakan untuk login). Silakan masuk menggunakan Username atau Nomor Induk (NUPTK / NISN / NIS) Anda.',
+            ], 422);
+        }
+
+        // 1. Attempt to authenticate as Back Office User (Super Admin IP, Admin Instansi, Guru)
         $userBo = UserBo::with('kategori')
             ->where(function ($q) use ($loginInput) {
-                $q->where('login_email', $loginInput)
-                  ->orWhere('login_username', $loginInput)
+                $q->where('login_username', $loginInput)
                   ->orWhere('iduser_bo', $loginInput);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_bo', 'nuptk')) {
+                    $q->orWhere('nuptk', $loginInput);
+                }
             })
             ->where('status_remove', '!=', 'Y')
             ->first();
@@ -36,6 +47,32 @@ class LoginController extends Controller
                 return response()->json([
                     'message' => 'Akun staff/guru Anda sedang dinonaktifkan. Silakan hubungi super administrator.',
                 ], 403);
+            }
+
+            $role = $userBo->role; // 'super_admin' | 'admin' | 'guru'
+
+            // Enforce expected role if passed from UI
+            if ($expectedRole) {
+                if ($expectedRole === 'siswa') {
+                    return response()->json([
+                        'message' => 'Kredensial ini bukan akun siswa. Silakan gunakan portal login Staf/Guru/Admin.'
+                    ], 403);
+                }
+                if ($expectedRole === 'super_admin' && $role !== 'super_admin') {
+                    return response()->json([
+                        'message' => 'Akun ini bukan akun Super Administrator.'
+                    ], 403);
+                }
+                if ($expectedRole === 'admin' && $role !== 'admin') {
+                    return response()->json([
+                        'message' => 'Akun ini bukan akun Admin Instansi / Sekolah.'
+                    ], 403);
+                }
+                if ($expectedRole === 'guru' && $role !== 'guru') {
+                    return response()->json([
+                        'message' => 'Akun ini bukan akun Guru pengajar.'
+                    ], 403);
+                }
             }
 
             $sessionToken = Str::random(40);
@@ -48,7 +85,16 @@ class LoginController extends Controller
             $userBo->tokens()->delete();
             $apiToken = $userBo->createToken('cbt_auth_token')->plainTextToken;
 
-            $role = $userBo->role; // 'super_admin' | 'admin' | 'guru'
+            AuditLog::record(
+                'LOGIN',
+                'user_bo',
+                $userBo->iduser_bo,
+                "Staff {$userBo->name} berhasil login ({$role})",
+                ['username' => $userBo->username, 'role' => $role, 'idkategori' => $userBo->idkategori],
+                $userBo->iduser_bo,
+                $userBo->name,
+                $role
+            );
 
             return response()->json([
                 'token' => $apiToken,
@@ -76,10 +122,11 @@ class LoginController extends Controller
         // 2. Attempt to authenticate as Student (Siswa from `user` table)
         $userSiswa = UserSiswa::with(['kelas.jenjang', 'kelas.kategori', 'kategori'])
             ->where(function ($q) use ($loginInput) {
-                $q->where('login_email', $loginInput)
-                  ->orWhere('nisn', $loginInput)
-                  ->orWhere('iduser', $loginInput)
-                  ->orWhere('telp', $loginInput);
+                $q->where('nisn', $loginInput)
+                  ->orWhere('iduser', $loginInput);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user', 'nis')) {
+                    $q->orWhere('nis', $loginInput);
+                }
             })
             ->first();
 
@@ -87,6 +134,13 @@ class LoginController extends Controller
             if ($userSiswa->status_aktif !== 'Y') {
                 return response()->json([
                     'message' => 'Akun siswa Anda belum aktif atau telah dinonaktifkan.',
+                ], 403);
+            }
+
+            // Enforce expected role if passed
+            if ($expectedRole && $expectedRole !== 'siswa') {
+                return response()->json([
+                    'message' => 'Kredensial ini adalah akun Siswa. Silakan gunakan portal Login Siswa.'
                 ], 403);
             }
 
@@ -98,6 +152,17 @@ class LoginController extends Controller
 
             $userSiswa->tokens()->delete();
             $apiToken = $userSiswa->createToken('cbt_auth_token')->plainTextToken;
+
+            AuditLog::record(
+                'LOGIN',
+                'user',
+                $userSiswa->iduser,
+                "Siswa {$userSiswa->name} berhasil login",
+                ['nisn' => $userSiswa->nisn, 'idkelas' => $userSiswa->idkelas, 'idkategori' => $userSiswa->idkategori],
+                $userSiswa->iduser,
+                $userSiswa->name,
+                'siswa'
+            );
 
             $institutionName = $userSiswa->kategori?->nama_kategori 
                 ?? $userSiswa->kelas?->kategori?->nama_kategori 
@@ -142,6 +207,14 @@ class LoginController extends Controller
         $user = $request->user();
 
         if ($user) {
+            AuditLog::record(
+                'LOGOUT',
+                $user instanceof UserBo ? 'user_bo' : 'user',
+                $user->getAuthIdentifier(),
+                "Pengguna {$user->name} berhasil keluar sistem",
+                ['role' => $user->role]
+            );
+
             $user->update(['active_session_token' => null]);
             $user->currentAccessToken()?->delete();
         }

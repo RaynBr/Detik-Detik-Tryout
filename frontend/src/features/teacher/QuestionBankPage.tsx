@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../shared/api/client';
+import { useAuth } from '../../shared/context/AuthContext';
 import { QuestionForm } from './components/QuestionForm';
 import { QuestionImportModal } from './components/QuestionImportModal';
 import { LaTeXRenderer } from '../../shared/components/LaTeXRenderer';
@@ -7,7 +8,8 @@ import { CardGridSkeleton, QuestionListSkeleton } from '../../shared/components/
 import { useToast } from '../../shared/context/ToastContext';
 import { 
   Plus, Edit2, Trash2, Search, Upload, Eye, 
-  X, Folder, FolderPlus, Copy, ArrowLeft, Layers, CheckCircle, FileText, ChevronRight
+  X, Folder, FolderPlus, Copy, ArrowLeft, Layers, CheckCircle, FileText, ChevronRight,
+  ShieldAlert, ToggleLeft, ToggleRight
 } from 'lucide-react';
 
 interface Subject {
@@ -42,10 +44,19 @@ interface Question {
   subject: Subject;
   options: Array<{ id: number; content: string; is_correct: boolean; media_url: string | null }>;
   matching_pairs: Array<{ id: number; left_item: string; right_item: string }>;
+  status_aktif?: 'Y' | 'N';
+  tahun_soal_id?: number | null;
+  tahun_soal?: string | null;
+  creator_id?: string | null;
+  creator_name?: string | null;
 }
 
 export const QuestionBankPage: React.FC = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
+
+  // Mode Read-Only for Admin Instansi per diagram rule
+  const isReadOnly = user?.role === 'admin';
 
   // Navigation level: 'packages' (Folder list) or 'package_detail' (Questions inside selected package)
   const [currentView, setCurrentView] = useState<'packages' | 'package_detail'>('packages');
@@ -55,12 +66,19 @@ export const QuestionBankPage: React.FC = () => {
   const [packages, setPackages] = useState<QuestionPackage[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [jenjangList, setJenjangList] = useState<any[]>([]);
+  const [kelasList, setKelasList] = useState<any[]>([]);
+  const [tahunSoalList, setTahunSoalList] = useState<any[]>([]);
   const [loadingPackages, setLoadingPackages] = useState(true);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
 
-  // Filter & Search states
+  // 4-Dimensional Filters: Jenjang, Kelas, Mapel, Tahun Soal
   const [search, setSearch] = useState('');
+  const [jenjangFilter, setJenjangFilter] = useState('');
+  const [kelasFilter, setKelasFilter] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('');
+  const [tahunSoalFilter, setTahunSoalFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('');
 
   // Modals
@@ -77,30 +95,48 @@ export const QuestionBankPage: React.FC = () => {
   const [targetImportPackageId, setTargetImportPackageId] = useState<number | null>(null);
   const [previewingQuestion, setPreviewingQuestion] = useState<Question | null>(null);
 
-  // Fetch Packages & Subjects
+  // Fetch Packages, Subjects, Jenjang, Classes, and Tahun Soal
   const fetchPackages = async () => {
     setLoadingPackages(true);
     try {
-      const [packagesRes, subjectsRes] = await Promise.all([
+      const [packagesRes, subjectsRes, jenjangRes, kelasRes, tahunRes] = await Promise.all([
         apiClient.get('/teacher/packages').catch(() => ({ data: [] })),
-        apiClient.get('/teacher/subjects').catch(() => ({ data: [] }))
+        apiClient.get('/teacher/subjects').catch(() => ({ data: [] })),
+        apiClient.get('/teacher/jenjang').catch(() => ({ data: [] })),
+        apiClient.get('/teacher/classes').catch(() => ({ data: [] })),
+        apiClient.get('/admin/tahun-soal').catch(() => ({ data: [] }))
       ]);
       const pList = Array.isArray(packagesRes.data) ? packagesRes.data : (packagesRes.data?.data || []);
       const sList = Array.isArray(subjectsRes.data) ? subjectsRes.data : (subjectsRes.data?.data || []);
+      const jList = Array.isArray(jenjangRes.data) ? jenjangRes.data : (jenjangRes.data?.data || []);
+      const kList = Array.isArray(kelasRes.data) ? kelasRes.data : (kelasRes.data?.data || []);
+      const tList = Array.isArray(tahunRes.data) ? tahunRes.data : (tahunRes.data?.data || []);
       setPackages(pList);
       setSubjects(sList);
+      setJenjangList(jList);
+      setKelasList(kList);
+      setTahunSoalList(tList);
     } catch (err) {
-      console.error('Failed to load packages:', err);
+      console.error('Failed to load packages & master data:', err);
     } finally {
       setLoadingPackages(false);
     }
   };
 
-  // Fetch questions for selected package
+  // Fetch questions for selected package with 4D filters
   const fetchPackageQuestions = async (packageId: number) => {
     setLoadingQuestions(true);
     try {
-      const res = await apiClient.get(`/teacher/questions?package_id=${packageId}`);
+      const res = await apiClient.get('/teacher/questions', {
+        params: {
+          package_id: packageId,
+          idjenjang: jenjangFilter || undefined,
+          idkelas: kelasFilter || undefined,
+          idmapel: subjectFilter || undefined,
+          tahun_soal_id: tahunSoalFilter || undefined,
+          status_aktif: statusFilter || undefined,
+        }
+      });
       const qList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
       setQuestions(qList);
     } catch (err) {
@@ -112,7 +148,17 @@ export const QuestionBankPage: React.FC = () => {
 
   useEffect(() => {
     fetchPackages();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'upload') {
+      setImportOpen(true);
+    }
   }, []);
+
+  useEffect(() => {
+    if (selectedPackage) {
+      fetchPackageQuestions(selectedPackage.id);
+    }
+  }, [jenjangFilter, kelasFilter, subjectFilter, tahunSoalFilter, statusFilter]);
 
   // Open a specific package
   const handleOpenPackage = (pkg: QuestionPackage) => {
@@ -234,6 +280,16 @@ export const QuestionBankPage: React.FC = () => {
     }
   };
 
+  const handleToggleStatus = async (qId: number) => {
+    try {
+      const res = await apiClient.patch(`/teacher/questions/${qId}/status`);
+      toast.success(res.data?.message || 'Status soal berhasil diubah!');
+      if (selectedPackage) fetchPackageQuestions(selectedPackage.id);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Gagal mengubah status soal.');
+    }
+  };
+
   const getDifficultyBadge = (difficulty: string) => {
     switch (difficulty) {
       case 'easy':
@@ -336,7 +392,12 @@ export const QuestionBankPage: React.FC = () => {
 
         {/* Top Action Buttons */}
         <div className="flex items-center gap-2.5">
-          {currentView === 'packages' ? (
+          {isReadOnly ? (
+            <span className="px-3.5 py-2 bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 rounded-xl text-xs font-bold border border-amber-300 dark:border-amber-600/30 flex items-center gap-1.5">
+              <ShieldAlert className="h-4 w-4" />
+              Mode Baca Saja (Admin Instansi)
+            </span>
+          ) : currentView === 'packages' ? (
             <>
               <button
                 onClick={() => {
@@ -382,6 +443,18 @@ export const QuestionBankPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {isReadOnly && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/30 flex items-center gap-3 text-amber-800 dark:text-amber-300 text-xs font-semibold">
+          <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600" />
+          <div>
+            <p className="font-bold">Mode Akses Read-Only (Admin Instansi)</p>
+            <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
+              Sesuai aturan hak akses, Admin Instansi hanya memiliki hak pantau. Penambahan, pengeditan, atau penghapusan butir soal hanya dapat dilakukan oleh Guru pembuat atau Super Administrator.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* VIEW 1: DAFTAR BERKAS / PAKET SOAL (FOLDER VIEW)                          */}
@@ -488,29 +561,33 @@ export const QuestionBankPage: React.FC = () => {
                         <span>Buka Berkas</span>
                       </button>
 
-                      <button
-                        onClick={() => handleDuplicatePackage(pkg.id)}
-                        className="p-2.5 bg-slate-100 hover:bg-cyan-100 dark:bg-white/5 dark:hover:bg-cyan-600/20 text-slate-600 hover:text-cyan-700 dark:text-gray-400 dark:hover:text-cyan-400 border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
-                        title="Duplikasi Berkas Paket"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </button>
+                      {!isReadOnly && (
+                        <>
+                          <button
+                            onClick={() => handleDuplicatePackage(pkg.id)}
+                            className="p-2.5 bg-slate-100 hover:bg-cyan-100 dark:bg-white/5 dark:hover:bg-cyan-600/20 text-slate-600 hover:text-cyan-700 dark:text-gray-400 dark:hover:text-cyan-400 border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
+                            title="Duplikasi Berkas Paket"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
 
-                      <button
-                        onClick={() => handleOpenEditPackage(pkg)}
-                        className="p-2.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
-                        title="Edit Berkas"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
+                          <button
+                            onClick={() => handleOpenEditPackage(pkg)}
+                            className="p-2.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
+                            title="Edit Berkas"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
 
-                      <button
-                        onClick={() => handleDeletePackage(pkg.id)}
-                        className="p-2.5 bg-slate-100 hover:bg-rose-100 dark:bg-white/5 dark:hover:bg-rose-600/20 text-slate-600 hover:text-rose-700 dark:text-gray-400 dark:hover:text-rose-400 border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
-                        title="Hapus Berkas"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                          <button
+                            onClick={() => handleDeletePackage(pkg.id)}
+                            className="p-2.5 bg-slate-100 hover:bg-rose-100 dark:bg-white/5 dark:hover:bg-rose-600/20 text-slate-600 hover:text-rose-700 dark:text-gray-400 dark:hover:text-rose-400 border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
+                            title="Hapus Berkas"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -568,22 +645,81 @@ export const QuestionBankPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="relative w-64">
-                    <Search className="h-4 w-4 text-slate-400 dark:text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative w-44">
+                    <Search className="h-4 w-4 text-slate-400 dark:text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Cari konten atau topik..."
+                      placeholder="Cari konten/topik..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 glass-input rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
+                      className="w-full pl-9 pr-3 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
                     />
                   </div>
+
+                  {/* 4D Filter: Jenjang */}
+                  <select
+                    value={jenjangFilter}
+                    onChange={(e) => setJenjangFilter(e.target.value)}
+                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
+                  >
+                    <option value="">Semua Jenjang</option>
+                    {jenjangList.map(j => (
+                      <option key={j.id} value={j.id}>{j.nama_jenjang}</option>
+                    ))}
+                  </select>
+
+                  {/* 4D Filter: Kelas */}
+                  <select
+                    value={kelasFilter}
+                    onChange={(e) => setKelasFilter(e.target.value)}
+                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
+                  >
+                    <option value="">Semua Kelas</option>
+                    {kelasList.map(k => (
+                      <option key={k.id} value={k.id}>{k.nama_kelas}</option>
+                    ))}
+                  </select>
+
+                  {/* 4D Filter: Mapel */}
+                  <select
+                    value={subjectFilter}
+                    onChange={(e) => setSubjectFilter(e.target.value)}
+                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
+                  >
+                    <option value="">Semua Mapel</option>
+                    {subjects.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+
+                  {/* 4D Filter: Tahun Soal */}
+                  <select
+                    value={tahunSoalFilter}
+                    onChange={(e) => setTahunSoalFilter(e.target.value)}
+                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
+                  >
+                    <option value="">Semua Tahun Soal</option>
+                    {tahunSoalList.map(t => (
+                      <option key={t.id} value={t.id}>{t.tahun}</option>
+                    ))}
+                  </select>
+
+                  {/* Status Soal */}
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
+                  >
+                    <option value="">Semua Status</option>
+                    <option value="Y">Aktif</option>
+                    <option value="N">Hidden</option>
+                  </select>
 
                   <select
                     value={difficultyFilter}
                     onChange={(e) => setDifficultyFilter(e.target.value)}
-                    className="px-3.5 py-2 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
+                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
                   >
                     <option value="">Semua Tingkat</option>
                     <option value="easy">Mudah</option>
@@ -613,6 +749,18 @@ export const QuestionBankPage: React.FC = () => {
                             {getTypeLabel(q.type)}
                           </span>
                           {getDifficultyBadge(q.difficulty)}
+                          <span className={`px-2 py-0.5 text-xs font-bold rounded-lg border ${
+                            q.status_aktif === 'N'
+                              ? 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+                              : 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+                          }`}>
+                            {q.status_aktif === 'N' ? 'Hidden' : 'Aktif'}
+                          </span>
+                          {q.tahun_soal && (
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20 text-xs font-bold rounded-lg">
+                              Tahun: {q.tahun_soal}
+                            </span>
+                          )}
                           <span className="text-xs text-slate-500 dark:text-gray-400 font-medium">
                             Topik: <strong className="text-slate-800 dark:text-gray-200 font-bold">{q.topic}</strong>
                           </span>
@@ -683,20 +831,35 @@ export const QuestionBankPage: React.FC = () => {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => handleEditQuestion(q.id)}
-                          className="p-2 hover:bg-cyan-50 dark:hover:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl transition"
-                          title="Edit Soal"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteQuestion(q.id)}
-                          className="p-2 hover:bg-rose-50 dark:hover:bg-rose-600/20 text-rose-600 dark:text-rose-400 rounded-xl transition"
-                          title="Hapus Soal"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {!isReadOnly && (
+                          <>
+                            <button
+                              onClick={() => handleToggleStatus(q.id)}
+                              className={`p-2 rounded-xl transition ${
+                                q.status_aktif === 'N'
+                                  ? 'hover:bg-amber-50 dark:hover:bg-amber-600/20 text-amber-600 dark:text-amber-400'
+                                  : 'hover:bg-emerald-50 dark:hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400'
+                              }`}
+                              title={q.status_aktif === 'N' ? 'Aktifkan Soal (Saat ini Hidden)' : 'Sembunyikan Soal (Saat ini Aktif)'}
+                            >
+                              {q.status_aktif === 'N' ? <ToggleLeft className="h-4 w-4" /> : <ToggleRight className="h-4 w-4" />}
+                            </button>
+                            <button
+                              onClick={() => handleEditQuestion(q.id)}
+                              className="p-2 hover:bg-cyan-50 dark:hover:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl transition"
+                              title="Edit Soal"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteQuestion(q.id)}
+                              className="p-2 hover:bg-rose-50 dark:hover:bg-rose-600/20 text-rose-600 dark:text-rose-400 rounded-xl transition"
+                              title="Hapus Soal"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}

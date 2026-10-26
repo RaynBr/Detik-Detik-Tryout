@@ -9,6 +9,7 @@ import { RefreshCw } from 'lucide-react';
 import { ToastProvider } from './shared/context/ToastContext';
 
 // Code-splitting via React.lazy for high-performance loading
+const LandingPage = lazy(() => import('./features/landing/LandingPage').then(m => ({ default: m.LandingPage })));
 const LoginPage = lazy(() => import('./features/auth/components/LoginPage').then(m => ({ default: m.LoginPage })));
 const StudentExamsPage = lazy(() => import('./features/student/StudentExamsPage').then(m => ({ default: m.StudentExamsPage })));
 const StudentProfilePage = lazy(() => import('./features/student/StudentProfilePage').then(m => ({ default: m.StudentProfilePage })));
@@ -21,6 +22,7 @@ const GradingPage = lazy(() => import('./features/teacher/GradingPage').then(m =
 const ExamReportPage = lazy(() => import('./features/teacher/ExamReportPage').then(m => ({ default: m.ExamReportPage })));
 const AdminLayout = lazy(() => import('./features/admin/AdminLayout').then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import('./features/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const SuperAdminDashboard = lazy(() => import('./features/admin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
 const LiveMonitoringPage = lazy(() => import('./features/admin/LiveMonitoringPage').then(m => ({ default: m.LiveMonitoringPage })));
 const JenjangPage = lazy(() => import('./features/admin/JenjangPage').then(m => ({ default: m.JenjangPage })));
 const MajorsPage = lazy(() => import('./features/admin/MajorsPage').then(m => ({ default: m.MajorsPage })));
@@ -30,6 +32,11 @@ const AcademicYearsPage = lazy(() => import('./features/admin/AcademicYearsPage'
 const TeachersPage = lazy(() => import('./features/admin/TeachersPage').then(m => ({ default: m.TeachersPage })));
 const StudentsPage = lazy(() => import('./features/admin/StudentsPage').then(m => ({ default: m.StudentsPage })));
 const InstansiPage = lazy(() => import('./features/admin/InstansiPage').then(m => ({ default: m.InstansiPage })));
+const UsersManagementPage = lazy(() => import('./features/admin/UsersManagementPage').then(m => ({ default: m.UsersManagementPage })));
+const AuditTrailPage = lazy(() => import('./features/admin/AuditTrailPage').then(m => ({ default: m.AuditTrailPage })));
+const AdminProfilePage = lazy(() => import('./features/admin/AdminProfilePage').then(m => ({ default: m.AdminProfilePage })));
+const MasterTahunSoalPage = lazy(() => import('./features/admin/MasterTahunSoalPage').then(m => ({ default: m.MasterTahunSoalPage })));
+const TestTaskManagerPage = lazy(() => import('./features/admin/TestTaskManagerPage').then(m => ({ default: m.TestTaskManagerPage })));
 
 const PageLoader = () => (
   <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#070a13] text-slate-800 dark:text-white space-y-4 p-4 transition-colors">
@@ -55,6 +62,9 @@ export const App: React.FC = () => {
           <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
             <Routes>
+              {/* Public Landing Page */}
+              <Route path="/" element={<LandingPage />} />
+
               {/* Unified Guest routes (Redirect to respective dashboard if already logged in) */}
               <Route element={<GuestRoute />}>
                 <Route path="/login" element={<LoginPage />} />
@@ -78,6 +88,7 @@ export const App: React.FC = () => {
                   <Route path="/teacher/exams" element={<ExamsPage />} />
                   <Route path="/teacher/grading" element={<GradingPage />} />
                   <Route path="/teacher/reports" element={<ExamReportPage />} />
+                  <Route path="/teacher/profile" element={<AdminProfilePage />} />
                 </Route>
               </Route>
 
@@ -95,8 +106,20 @@ export const App: React.FC = () => {
                   <Route path="/admin/classes" element={<ClassesPage />} />
                   <Route path="/admin/subjects" element={<SubjectsPage />} />
                   <Route path="/admin/academic-years" element={<AcademicYearsPage />} />
+                  <Route path="/admin/tahun-soal" element={<MasterTahunSoalPage />} />
                   <Route path="/admin/teachers" element={<TeachersPage />} />
                   <Route path="/admin/students" element={<StudentsPage />} />
+                  <Route path="/admin/users" element={<UsersManagementPage />} />
+                  <Route path="/admin/audit-logs" element={<AuditTrailPage />} />
+                  <Route path="/admin/test-tasks" element={<TestTaskManagerPage />} />
+                  <Route path="/admin/profile" element={<AdminProfilePage />} />
+                </Route>
+              </Route>
+
+              {/* Super Admin routes */}
+              <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
+                <Route element={<AdminLayout />}>
+                  <Route path="/admin/super-dashboard" element={<SuperAdminDashboard />} />
                 </Route>
               </Route>
 
@@ -104,8 +127,7 @@ export const App: React.FC = () => {
               <Route path="/unauthorized" element={<Unauthorized />} />
 
               {/* Default fallbacks */}
-              <Route path="/" element={<Navigate to="/login" replace />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
         </BrowserRouter>

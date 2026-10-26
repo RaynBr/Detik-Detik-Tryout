@@ -1,0 +1,219 @@
+flowchart TD
+    %% =====================================================
+    %% LOGIN & AUTH
+    %% =====================================================
+    Landing([Landing / Login]) --> Login[Login]
+    Login --> AuthCheck{Credential Type}
+    AuthCheck -->|Super Admin| SA_LOGIN[Username<br/>dibuat oleh Super Admin]
+    AuthCheck -->|Admin Instansi| AI_LOGIN[Username<br/>dibuat oleh Super Admin]
+    AuthCheck -->|Guru| G_LOGIN[Nomor Induk / NUPTK<br/>diupload Admin Instansi]
+    AuthCheck -->|Siswa| S_LOGIN[Nomor Induk / NISN<br/>diupload Admin Instansi]
+    SA_LOGIN --> AuthValid
+    AI_LOGIN --> AuthValid
+    G_LOGIN --> AuthValid
+    S_LOGIN --> AuthValid
+    AuthValid[Validasi Akun] -->|Invalid| AuthErr[HTTP 401 / 403]
+    AuthValid -->|Valid| Session[Single Session<br/>X-Session-Token]
+    Session --> RouteRole[Pilih Dashboard per Role]
+    AuthErr --> Landing
+
+    %% =====================================================
+    %% SUPER ADMIN
+    %% =====================================================
+    subgraph SA[Super Admin]
+        SA_DASH[Dashboard Super Admin]
+        SA_INST[Menu Instansi]
+        SA_ID[Encrypted ID<br/>di URL Detail]
+        SA_CODE[Kode Unik Instansi 4 Digit<br/>manual input Super Admin]
+        SA_PERIOD[Masa Berlaku Instansi<br/>start / end / status]
+        SA_LIST[Detail & Monitoring Instansi]
+        SA_USER[Menu Kelola Pengguna]
+        SA_USER_FIELDS[Field Pengguna<br/>username, kode instansi, password set/reset,<br/>alamat, telp, jenis kelamin, status aktif,<br/>history login terakhir]
+        SA_MASTER[Menu Master Data Akademik]
+        SA_FASE[Mapping Fase A-F]
+        SA_KKTP[Standar KKTP]
+        SA_BANK[Menu Bank Soal]
+        SA_HEADER[Header Detail Bank Soal]
+        SA_EXPLAIN[Detail Soal + Pembahasan]
+        SA_DB_CHART[Data Soal / DB Chart]
+        SA_AUDIT[Menu Audit Trail]
+        SA_PROFILE[Profil & Keamanan]
+    end
+
+    %% =====================================================
+    %% ADMIN INSTANSI
+    %% =====================================================
+    subgraph AI[Admin Instansi]
+        AI_DASH[Dashboard Admin Instansi]
+        AI_ACCOUNT[Kelola Guru & Admin Sekolah<br/>tanpa akses buat soal]
+        AI_UPLOAD[Upload Nomor Induk & NISN<br/>Guru dan Siswa]
+        AI_SETUP[Set / Reset Password Default<br/>wajib ganti login pertama]
+        AI_PROFILE[Pengelolaan Profil Guru/Siswa<br/>kelas & wali/guru kelas]
+        AI_TEACHER_Q[Soal Buatan Guru<br/>read-only]
+        AI_REPORTS[Laporan & Rekap<br/>view-only]
+    end
+
+    %% =====================================================
+    %% GURU
+    %% =====================================================
+    subgraph G[Guru]
+        G_DASH[Dashboard Guru]
+        G_BANK[Pilih Bank Soal]
+        G_CREATE[Tambah Soal Sendiri]
+        G_PKG[Paket Ujian]
+        G_METHOD{Metode Isi Soal}
+        G_GEN[Generate Soal<br/>jumlah custom, contoh 50]
+        G_REGEN[Regenerate dari soal yang sudah ada<br/>atau random 10]
+        G_MANUAL[Pilih Manual dari Bank Soal]
+        G_SCHEDULE[Set Jadwal, Kelas, Token<br/>tanggal masih bisa diedit]
+        G_REPORTS[Laporan Nilai<br/>view-only]
+        G_LOCK{Sudah ada attempt siswa?}
+        G_NO_EDIT[Edit soal tidak diizinkan]
+    end
+
+    %% =====================================================
+    %% SISWA
+    %% =====================================================
+    subgraph S[Siswa]
+        S_DASH[Dashboard Siswa]
+        S_PROFILE[Profil Siswa<br/>NISN, kelas, wali/guru kelas]
+        S_LIST[Daftar Ujian<br/>Belum Dimulai, Sedang Berlangsung, Selesai]
+        S_SELECT[Pilih Ujian]
+        S_VALID{Jadwal dan token valid?}
+        S_WAIT[Akses Ditolak]
+        S_START[Mulai Attempt]
+        S_ROOM[Ruang Ujian Fullscreen]
+        S_AUTO[Autosave Jawaban]
+        S_PROTECT{Anti-cheat pas?}
+        S_DISQ[Diskualifikasi]
+        S_SUBMIT[Submit Ujian]
+        S_WAIT_END[Tunggu Sesi Berakhir]
+        S_RELEASE{Sesi sudah berakhir / tidak bisa dikerjakan lagi?}
+        S_END_NO_ATTEMPT[Belum mengerjakan<br/>lihat detail ujian saja]
+        S_END_ATTEMPT[Sudah mengerjakan<br/>lihat detail soal dan pembahasan]
+        S_RESULT[Tampilkan Skor dan Pembahasan]
+        S_PASSWORD[Reset Password di Profil<br/>wajib password lama]
+    end
+
+    %% =====================================================
+    %% BACKEND / DB
+    %% =====================================================
+    subgraph BE[Backend dan Database]
+        DB[(Database sertidemi)]
+        AUTH_LOCK[Single Session Engine]
+        GRADE[Auto Grading]
+        KKTP_EXE[Evaluasi KKTP]
+        SCORE_GATE[Score Reveal Gate<br/>setelah sesi berakhir]
+        REPORT_ENGINE[Report Engine]
+        AUDIT[Audit Trail]
+    end
+
+    %% =====================================================
+    %% AUTH ROUTING
+    %% =====================================================
+    RouteRole -->|super_admin| SA_DASH
+    RouteRole -->|admin_sekolah| AI_DASH
+    RouteRole -->|guru| G_DASH
+    RouteRole -->|siswa| S_DASH
+    AUTH_LOCK -.->|setiap request| RouteRole
+
+    %% =====================================================
+    %% SUPER ADMIN FLOW
+    %% =====================================================
+    SA_DASH --> SA_INST
+    SA_DASH --> SA_USER
+    SA_DASH --> SA_MASTER
+    SA_DASH --> SA_BANK
+    SA_DASH --> SA_AUDIT
+    SA_DASH --> SA_PROFILE
+    SA_INST --> SA_ID
+    SA_INST --> SA_CODE
+    SA_INST --> SA_PERIOD
+    SA_INST --> SA_LIST
+    SA_LIST --> AI_ACCOUNT
+    SA_USER --> SA_USER_FIELDS
+    SA_MASTER --> SA_FASE
+    SA_MASTER --> SA_KKTP
+    SA_BANK --> SA_HEADER
+    SA_HEADER --> SA_EXPLAIN
+    SA_EXPLAIN --> SA_DB_CHART
+    SA_AUDIT -.-> AUDIT
+
+    %% =====================================================
+    %% ADMIN INSTANSI FLOW
+    %% =====================================================
+    AI_DASH --> AI_ACCOUNT
+    AI_DASH --> AI_UPLOAD
+    AI_DASH --> AI_PROFILE
+    AI_DASH --> AI_TEACHER_Q
+    AI_DASH --> AI_REPORTS
+    AI_ACCOUNT --> AI_SETUP
+    AI_ACCOUNT -.->|Akun Guru| G_DASH
+    AI_UPLOAD -.->|Nomor induk siswa| S_DASH
+    AI_PROFILE -.->|Kelas dan wali/guru kelas| S_PROFILE
+    AI_REPORTS -.-> REPORT_ENGINE
+
+    %% =====================================================
+    %% GURU FLOW
+    %% =====================================================
+    G_DASH --> G_BANK
+    G_DASH --> G_CREATE
+    G_DASH --> G_PKG
+    G_BANK --> G_PKG
+    G_CREATE --> G_PKG
+    G_PKG --> G_METHOD
+    G_METHOD -->|Generate| G_GEN
+    G_METHOD -->|Regenerate / Random 10| G_REGEN
+    G_METHOD -->|Manual| G_MANUAL
+    G_GEN --> G_LOCK
+    G_REGEN --> G_LOCK
+    G_MANUAL --> G_LOCK
+    G_DASH --> G_REPORTS
+    G_LOCK -->|Ya| G_NO_EDIT
+    G_LOCK -->|Tidak| G_SCHEDULE
+    G_NO_EDIT --> G_SCHEDULE
+    G_SCHEDULE ==>|Sesi aktif| S_LIST
+    G_REPORTS -.-> REPORT_ENGINE
+
+    %% =====================================================
+    %% SISWA FLOW
+    %% =====================================================
+    S_DASH --> S_PROFILE
+    S_DASH --> S_LIST
+    S_LIST --> S_SELECT
+    S_SELECT --> S_VALID
+    S_VALID -->|Tidak| S_WAIT
+    S_VALID -->|Ya| S_START
+    S_START --> S_ROOM
+    S_ROOM --> S_AUTO
+    S_ROOM --> S_PROTECT
+    S_PROTECT -->|Gagal| S_DISQ
+    S_PROTECT -->|Aman| S_ROOM
+    S_AUTO --> DB
+    S_ROOM --> S_SUBMIT
+    S_SUBMIT --> GRADE
+    S_SUBMIT --> S_WAIT_END
+    S_WAIT_END --> S_RELEASE
+    S_RELEASE -->|Belum berakhir| S_WAIT_END
+    S_RELEASE -->|Sudah berakhir| S_FINISHED
+    S_FINISHED{Ada attempt?}
+    S_FINISHED -->|Tidak| S_END_NO_ATTEMPT
+    S_FINISHED -->|Ya| S_END_ATTEMPT
+    S_END_NO_ATTEMPT --> S_RESULT
+    S_END_ATTEMPT --> S_RESULT
+    S_DISQ --> S_WAIT_END
+    S_DASH --> S_PASSWORD
+
+    %% =====================================================
+    %% BACKEND FLOW
+    %% =====================================================
+    GRADE --> DB
+    GRADE --> KKTP_EXE
+    KKTP_EXE --> SCORE_GATE
+    SCORE_GATE -.->|validasi sesi| S_RELEASE
+    SCORE_GATE --> REPORT_ENGINE
+    DB --> REPORT_ENGINE
+    G_LOCK -.-> DB
+    REPORT_ENGINE -.->|view-only reports| AI_REPORTS
+    REPORT_ENGINE -.->|view-only reports| G_REPORTS
+    AUDIT -.-> DB

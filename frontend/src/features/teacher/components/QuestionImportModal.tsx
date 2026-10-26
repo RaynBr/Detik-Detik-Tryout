@@ -91,24 +91,39 @@ export const QuestionImportModal: React.FC<QuestionImportModalProps> = ({ packag
     }
   };
 
-  const downloadExcelTemplate = () => {
-    const csvContent = 
-      "sep=;\n" +
-      "soal;tipe_soal;tingkat_kesulitan;topik;pilihan_a;pilihan_b;pilihan_c;pilihan_d;pilihan_e;kunci_jawaban;pembahasan;pasangan_menjodohkan_1;pasangan_menjodohkan_2;pasangan_menjodohkan_3;pasangan_menjodohkan_4\n" +
-      "\"Berapakah hasil dari 2 + 2 ?\";pilihan_ganda;mudah;Aritmatika;3;4;5;6;;B;\"2 + 2 = 4\";;;;\n" +
-      "\"Pilihlah semua bilangan prima di bawah 10!\";pilihan_ganda_kompleks;sedang;Bilangan;2;3;4;9;;A,B;\"2 dan 3 adalah bilangan prima\";;;;\n" +
-      "\"Sudut siku-siku memiliki besar 90 derajat.\";benar_salah;mudah;Geometri;;;;;;Benar;\"Sudut siku-siku selalu bernilai 90 derajat\";;;;\n" +
-      "\"Jelaskan proses fotosintesis pada tumbuhan!\";essay;sedang;Biologi;;;;;;\"Proses pembentukan makanan oleh tumbuhan dengan bantuan klorofil dan sinar matahari.\";\"Reaksi terjadi di kloroplas.\";;;;\n" +
-      "\"Jodohkan bahasa pemrograman berikut dengan logonya!\";menjodohkan;mudah;Teknologi;;;;;;;\"Kunci otomatis terpasang sesuai kolom jodohkan\";\"Python : Ular\";\"Java : Secangkir Kopi\";\"PHP : Gajah\";\"JavaScript : Huruf JS\"\n";
-      
-    const encodedUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\uFEFF' + csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'template_import_soal.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Template CSV Excel berhasil diunduh!');
+  const downloadExcelTemplate = async () => {
+    try {
+      const res = await apiClient.get('/teacher/questions/template/excel', { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'template_import_soal.csv';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Template Excel / CSV berhasil diunduh!');
+    } catch (err) {
+      // Fallback client-side generation
+      const csvContent = 
+        "sep=;\n" +
+        "soal;tipe_soal;tingkat_kesulitan;topik;pilihan_a;pilihan_b;pilihan_c;pilihan_d;pilihan_e;kunci_jawaban;pembahasan;pasangan_menjodohkan_1;pasangan_menjodohkan_2;pasangan_menjodohkan_3;pasangan_menjodohkan_4\n" +
+        "\"Berapakah hasil dari 2 + 2 ?\";pilihan_ganda;mudah;Aritmatika;3;4;5;6;;B;\"2 + 2 = 4\";;;;\n" +
+        "\"Pilihlah semua bilangan prima di bawah 10!\";pilihan_ganda_kompleks;sedang;Bilangan;2;3;4;9;;A,B;\"2 dan 3 adalah bilangan prima\";;;;\n" +
+        "\"Sudut siku-siku memiliki besar 90 derajat.\";benar_salah;mudah;Geometri;;;;;;Benar;\"Sudut siku-siku selalu bernilai 90 derajat\";;;;\n" +
+        "\"Jelaskan proses fotosintesis pada tumbuhan!\";essay;sedang;Biologi;;;;;;\"Proses pembentukan makanan oleh tumbuhan dengan bantuan klorofil dan sinar matahari.\";\"Reaksi terjadi di kloroplas.\";;;;\n" +
+        "\"Jodohkan bahasa pemrograman berikut dengan logonya!\";menjodohkan;mudah;Teknologi;;;;;;;\"Kunci otomatis terpasang sesuai kolom jodohkan\";\"Python : Ular\";\"Java : Secangkir Kopi\";\"PHP : Gajah\";\"JavaScript : Huruf JS\"\n";
+        
+      const encodedUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\uFEFF' + csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', 'template_import_soal.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Template CSV Excel berhasil diunduh!');
+    }
   };
 
   const isWordFile = file?.name.endsWith('.docx');

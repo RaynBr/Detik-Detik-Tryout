@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../shared/api/client';
 import { TableSkeleton } from '../../shared/components/LoadingSkeleton';
-import { Plus, Edit2, Trash2, X, Users, Search, BookOpen } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Users, Search, BookOpen, Upload, KeyRound } from 'lucide-react';
+import { TeacherImportModal } from './components/TeacherImportModal';
 
 interface Subject {
   id: number;
@@ -31,6 +32,7 @@ export const TeachersPage: React.FC = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherUser | null>(null);
 
   const [name, setName] = useState('');
@@ -139,6 +141,16 @@ export const TeachersPage: React.FC = () => {
     }
   };
 
+  const handleResetPassword = async (teacher: TeacherUser) => {
+    if (!confirm(`Apakah Anda yakin ingin mereset password akun guru "${teacher.name}"? Password baru yang aman akan dibuat secara otomatis.`)) return;
+    try {
+      const res = await apiClient.post(`/admin/teachers/${teacher.id}/reset-password`);
+      toast.success(`Password guru berhasil direset! Password baru: ${res.data.new_password}`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mereset password guru.');
+    }
+  };
+
   const filteredTeachers = teachers.filter(
     (t) =>
       t.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -162,13 +174,23 @@ export const TeachersPage: React.FC = () => {
             Kelola akun guru beserta penugasan mata pelajaran CBT.
           </p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-indigo-600/30 active:scale-95"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Tambah Guru</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-emerald-600/25 active:scale-95"
+          >
+            <Upload className="h-4 w-4" />
+            <span>Impor Guru (Excel/CSV)</span>
+          </button>
+
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-indigo-600/30 active:scale-95"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Tambah Guru</span>
+          </button>
+        </div>
       </div>
 
       {/* Control Bar */}
@@ -230,6 +252,13 @@ export const TeachersPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right space-x-1">
+                        <button
+                          onClick={() => handleResetPassword(t)}
+                          className="inline-flex p-2 hover:bg-amber-50 dark:hover:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl transition"
+                          title="Reset Password Guru"
+                        >
+                          <KeyRound className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => openEditModal(t)}
                           className="inline-flex p-2 hover:bg-indigo-50 dark:hover:bg-white/5 text-indigo-600 dark:text-indigo-400 rounded-xl transition"
@@ -396,6 +425,12 @@ export const TeachersPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Teacher Import Modal (XLSX / CSV) */}
+      <TeacherImportModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onSuccess={fetchData}
+      />
     </div>
   );
 };

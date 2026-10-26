@@ -7,7 +7,7 @@ import {
   Clock, Calendar, AlertCircle, CheckCircle, GraduationCap, 
   Play, RefreshCw, LogOut, BookOpen, ShieldCheck, User,
   Ban, AlertTriangle, X, CheckCircle2, XCircle, Lightbulb,
-  Building, Search, ChevronDown, Bell
+  Building, Search, ChevronDown, Bell, Lock, KeyRound
 } from 'lucide-react';
 import { useAuth } from '../../shared/context/AuthContext';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
@@ -40,6 +40,7 @@ interface ExamListItem {
     started_at: string;
     submitted_at: string | null;
     total_score: number | null;
+    is_session_ended?: boolean;
   } | null;
 }
 
@@ -286,6 +287,18 @@ export const StudentExamsPage: React.FC = () => {
                   >
                     <User className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                     <span>Profil Saya</span>
+                  </button>
+
+                  {/* Menu: Ganti Password */}
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      navigate('/student/profile');
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5 transition text-left cursor-pointer"
+                  >
+                    <KeyRound className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Ganti Password</span>
                   </button>
 
                   {/* Menu 2: Pengingat Jadwal (Scroll to Widget) */}
@@ -605,15 +618,26 @@ export const StudentExamsPage: React.FC = () => {
                             <div className="space-y-2">
                               <div className="w-full py-2 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 text-center rounded-xl text-xs font-bold border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center gap-1.5">
                                 <CheckCircle className="h-3.5 w-3.5" />
-                                <span>Selesai {attempt?.total_score !== null && `(Nilai: ${attempt.total_score})`}</span>
+                                <span>
+                                  {attempt?.is_session_ended === false
+                                    ? 'Selesai (Menunggu Tutup Sesi)'
+                                    : `Selesai ${attempt?.total_score !== null ? `(Nilai: ${attempt.total_score})` : ''}`}
+                                </span>
                               </div>
-                              <button
-                                onClick={() => fetchReview(attempt?.id)}
-                                className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-center rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center gap-1.5 transition active:scale-95 shadow-xs cursor-pointer"
-                              >
-                                <BookOpen className="h-3.5 w-3.5" />
-                                <span>Lihat Kunci & Pembahasan</span>
-                              </button>
+                              {attempt?.is_session_ended === false ? (
+                                <div className="w-full py-2 bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-gray-500 text-center rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/10 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  <span>Pembahasan Belum Dibuka</span>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => fetchReview(attempt?.id)}
+                                  className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-center rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center gap-1.5 transition active:scale-95 shadow-xs cursor-pointer"
+                                >
+                                  <BookOpen className="h-3.5 w-3.5" />
+                                  <span>Lihat Kunci & Pembahasan</span>
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <button
@@ -741,6 +765,26 @@ export const StudentExamsPage: React.FC = () => {
                 <div className="py-16 text-center space-y-3">
                   <RefreshCw className="h-8 w-8 text-indigo-600 animate-spin mx-auto" />
                   <p className="text-xs text-slate-500 font-medium">Memuat rincian kunci jawaban dan pembahasan...</p>
+                </div>
+              ) : (reviewData?.is_session_ended === false || reviewData?.results_hidden === true) ? (
+                <div className="py-14 text-center space-y-4 bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-500/20 rounded-3xl p-6">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+                    <Clock className="h-7 w-7" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                      Sesi Ujian Masih Berlangsung
+                    </h4>
+                    <p className="text-xs text-slate-600 dark:text-gray-300 max-w-md mx-auto mt-2 leading-relaxed font-medium">
+                      {reviewData.message || 'Skor dan pembahasan soal belum dapat diakses. Menunggu jadwal sesi ujian ditutup resmi.'}
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <span className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 inline-flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5" />
+                      Akses Terkunci Sementara
+                    </span>
+                  </div>
                 </div>
               ) : reviewData ? (
                 <>

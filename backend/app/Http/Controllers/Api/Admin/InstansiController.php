@@ -7,9 +7,13 @@ use App\Models\KategoriUserBo;
 use App\Models\UserBo;
 use App\Models\UserSiswa;
 use App\Models\MasterKelas;
+use App\Models\Assessment;
+use App\Models\AssessmentSoalPilgan;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class InstansiController extends Controller
@@ -118,6 +122,7 @@ class InstansiController extends Controller
     /**
      * Create a new institution.
      * ONLY Super Admin can create institutions.
+     * Supports: Kode/Nama, Email, Telp, Alamat, Status, Masa Berlaku, Encrypt ID, and First Admin creation.
      */
     public function store(Request $request)
     {
@@ -130,20 +135,76 @@ class InstansiController extends Controller
 
         $request->validate([
             'nama_kategori' => 'required|string|max:255',
+            'kode_instansi' => 'nullable|string|max:50',
+            'email' => 'nullable|email|max:100',
+            'telp' => 'nullable|string|max:50',
+            'alamat' => 'nullable|string|max:500',
+            'masa_berlaku' => 'nullable|date',
+            'encrypt_id' => 'nullable|string|max:100',
+            'status' => 'nullable|string|in:aktif,nonaktif',
+            'admin_username' => 'nullable|string|max:100|unique:user_bo,login_username',
+            'admin_password' => 'nullable|string|min:4',
+            'admin_name' => 'nullable|string|max:255',
         ]);
 
-        $idkategori = (string) (time() . rand(1000000, 9999999));
+        $idkategori = $request->input('kode_instansi') ?: (string) (time() . rand(1000000, 9999999));
+        $encryptId = $request->input('encrypt_id') ?: md5($idkategori . '_' . time());
 
-        $item = KategoriUserBo::create([
+        $instansiData = [
             'idkategori' => $idkategori,
             'nama_kategori' => $request->nama_kategori,
             'tgl_input' => now(),
-            'status_remove' => 'N',
-        ]);
+            'status_remove' => ($request->input('status') === 'nonaktif') ? 'Y' : 'N',
+        ];
+
+        if (Schema::hasColumn('kategori_user_bo', 'masa_berlaku') && $request->filled('masa_berlaku')) {
+            $instansiData['masa_berlaku'] = $request->input('masa_berlaku');
+        }
+        if (Schema::hasColumn('kategori_user_bo', 'encrypt_id')) {
+            $instansiData['encrypt_id'] = $encryptId;
+        }
+
+        $item = KategoriUserBo::create($instansiData);
+
+        // Optional first admin creation
+        $createdAdmin = null;
+        if ($request->filled('admin_username') && $request->filled('admin_password')) {
+            $adminId = (string) (time() . rand(1000000, 9999999));
+            $createdAdmin = UserBo::create([
+                'iduser_bo' => $adminId,
+                'idkategori' => $idkategori,
+                'nama' => $request->input('admin_name') ?: ('Admin ' . $request->nama_kategori),
+                'login_username' => $request->admin_username,
+                'login_email' => $request->email ?? '',
+                'login_password' => $this->encodePasswordBo($request->admin_password),
+                'telp' => $request->telp ?? '',
+                'alamat' => $request->alamat ?? '',
+                'status_admin' => '2',
+                'role_type' => 'admin_sekolah',
+                'status_aktif' => 'Y',
+                'status_remove' => 'N',
+                'tanggal_input' => now(),
+            ]);
+        }
+
+        // Audit Trail: CREATE_INSTANSI & ADMIN
+        AuditLog::record(
+            'CREATE_INSTANSI & ADMIN',
+            'kategori_user_bo',
+            $idkategori,
+            $request->nama_kategori,
+            [
+                'created_by' => $user->name,
+                'masa_berlaku' => $request->input('masa_berlaku'),
+                'encrypt_id' => $encryptId,
+                'admin_created' => $createdAdmin ? $createdAdmin->login_username : null,
+            ]
+        );
 
         return response()->json([
-            'message' => 'Instansi berhasil ditambahkan',
-            'data' => $item
+            'message' => 'Instansi berhasil ditambahkan' . ($createdAdmin ? ' beserta akun Admin Instansi pertama' : ''),
+            'data' => $item,
+            'admin' => $createdAdmin,
         ], 201);
     }
 
@@ -166,25 +227,87 @@ class InstansiController extends Controller
             ->where(function ($q) {
                 $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin');
             })
-            ->get(['iduser_bo', 'nama', 'login_username', 'login_email', 'telp', 'alamat', 'status_aktif', 'role_type']);
+            ->get(['iduser_bo', 'nama', 'login_username', 'login_email', 'telp', 'alamat', 'status_aktif', 'role_type'])
+            ->map(function ($a) {
+                return [
+                    'iduser_bo' => $a->iduser_bo,
+                    'nama' => $a->nama,
+                    'login_username' => $a->login_username,
+                    'login_email' => $a->login_email,
+                    'telp' => $a->telp,
+                    'alamat' => $a->alamat,
+                    'status_aktif' => $a->status_aktif,
+                    'role_type' => $a->role_type,
+                    'created_by' => 'Super Admin',
+                ];
+            });
 
         $gurus = UserBo::where('idkategori', $idkategori)
             ->where('status_remove', 'N')
             ->where('role_type', 'guru')
             ->with(['mapelAjar.mataPelajaran'])
-            ->get(['iduser_bo', 'nama', 'login_username', 'login_email', 'telp', 'alamat', 'status_aktif', 'role_type']);
+            ->get(['iduser_bo', 'nama', 'login_username', 'login_email', 'telp', 'alamat', 'status_aktif', 'role_type'])
+            ->map(function ($g) use ($instansi) {
+                return [
+                    'iduser_bo' => $g->iduser_bo,
+                    'nama' => $g->nama,
+                    'login_username' => $g->login_username,
+                    'login_email' => $g->login_email,
+                    'telp' => $g->telp,
+                    'alamat' => $g->alamat,
+                    'status_aktif' => $g->status_aktif,
+                    'role_type' => $g->role_type,
+                    'created_by' => 'Admin ' . $instansi->nama_kategori,
+                    'mapel_ajar' => $g->mapelAjar->map(fn($m) => $m->mataPelajaran?->nama_mapel)->filter()->values(),
+                ];
+            });
 
         $siswas = UserSiswa::where('idkategori', $idkategori)
             ->with(['kelas.jenjang'])
-            ->get(['iduser', 'nama', 'nisn', 'login_email', 'idkelas', 'telp', 'status_aktif']);
+            ->get(['iduser', 'nama', 'nisn', 'login_email', 'idkelas', 'telp', 'status_aktif'])
+            ->map(function ($s) use ($instansi) {
+                return [
+                    'iduser' => $s->iduser,
+                    'nama' => $s->nama,
+                    'nisn' => $s->nisn,
+                    'login_email' => $s->login_email,
+                    'idkelas' => $s->idkelas,
+                    'kelas_name' => $s->kelas?->nama_kelas ?? '-',
+                    'telp' => $s->telp,
+                    'status_aktif' => $s->status_aktif,
+                    'created_by' => 'Admin ' . $instansi->nama_kategori,
+                ];
+            });
 
         $kelas = MasterKelas::where('idkategori', $idkategori)
             ->with(['jenjang', 'waliKelas'])
             ->withCount('siswa')
             ->get();
 
+        // 4 Dimensi Statistik Instansi: Total Guru, Siswa, Bank Soal, Paket Soal
+        $totalGuru = $gurus->count();
+        $totalSiswa = $siswas->count();
+        $totalPaketSoal = Assessment::where('idkategori', $idkategori)->count();
+        $totalBankSoal = AssessmentSoalPilgan::whereHas('assessment', function ($q) use ($idkategori) {
+            $q->where('idkategori', $idkategori);
+        })->count();
+
         return response()->json([
-            'instansi' => $instansi,
+            'instansi' => [
+                'idkategori' => $instansi->idkategori,
+                'nama_kategori' => $instansi->nama_kategori,
+                'masa_berlaku' => $instansi->masa_berlaku ?? null,
+                'encrypt_id' => $instansi->encrypt_id ?? md5($instansi->idkategori),
+                'tgl_input' => $instansi->tgl_input,
+                'status' => ($instansi->status_remove === 'Y') ? 'nonaktif' : 'aktif',
+            ],
+            'statistics' => [
+                'total_guru' => $totalGuru,
+                'total_siswa' => $totalSiswa,
+                'total_bank_soal' => $totalBankSoal,
+                'total_paket_soal' => $totalPaketSoal,
+                'total_kelas' => $kelas->count(),
+            ],
             'admins' => $admins,
             'gurus' => $gurus,
             'siswas' => $siswas,
@@ -195,6 +318,7 @@ class InstansiController extends Controller
     /**
      * Update an institution.
      * ONLY Super Admin can update master institution details.
+     * Supports: Status Aktif/Nonaktif, Masa Berlaku & Encrypt ID.
      */
     public function update(Request $request, $idkategori)
     {
@@ -207,12 +331,41 @@ class InstansiController extends Controller
 
         $request->validate([
             'nama_kategori' => 'required|string|max:255',
+            'status' => 'nullable|string|in:aktif,nonaktif',
+            'masa_berlaku' => 'nullable|date',
+            'encrypt_id' => 'nullable|string|max:100',
         ]);
 
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
-        $instansi->update([
-            'nama_kategori' => $request->nama_kategori
-        ]);
+        $updates = [
+            'nama_kategori' => $request->nama_kategori,
+        ];
+
+        if ($request->has('status')) {
+            $updates['status_remove'] = ($request->status === 'nonaktif') ? 'Y' : 'N';
+        }
+        if (Schema::hasColumn('kategori_user_bo', 'masa_berlaku') && $request->filled('masa_berlaku')) {
+            $updates['masa_berlaku'] = $request->masa_berlaku;
+        }
+        if (Schema::hasColumn('kategori_user_bo', 'encrypt_id') && $request->filled('encrypt_id')) {
+            $updates['encrypt_id'] = $request->encrypt_id;
+        }
+
+        $instansi->update($updates);
+
+        // Audit Trail: EDIT_INSTANSI
+        AuditLog::record(
+            'EDIT_INSTANSI',
+            'kategori_user_bo',
+            $idkategori,
+            $instansi->nama_kategori,
+            [
+                'updated_by' => $user->name,
+                'masa_berlaku' => $instansi->masa_berlaku ?? null,
+                'encrypt_id' => $instansi->encrypt_id ?? null,
+                'status' => ($instansi->status_remove === 'Y') ? 'nonaktif' : 'aktif',
+            ]
+        );
 
         return response()->json([
             'message' => 'Data instansi berhasil diperbarui',
@@ -235,6 +388,14 @@ class InstansiController extends Controller
 
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
         $instansi->update(['status_remove' => 'Y']);
+
+        AuditLog::record(
+            'EDIT_INSTANSI',
+            'kategori_user_bo',
+            $idkategori,
+            $instansi->nama_kategori,
+            ['action' => 'deactivate', 'deactivated_by' => $user->name]
+        );
 
         return response()->json([
             'message' => 'Instansi berhasil dinonaktifkan'
@@ -277,6 +438,14 @@ class InstansiController extends Controller
             'status_remove' => 'N',
             'tanggal_input' => now(),
         ]);
+
+        AuditLog::record(
+            'CREATE_ADMIN_INSTANSI',
+            'user_bo',
+            $iduser_bo,
+            $request->nama,
+            ['username' => $request->login_username, 'idkategori' => $idkategori]
+        );
 
         return response()->json([
             'message' => 'Admin instansi berhasil dibuat',
@@ -323,6 +492,14 @@ class InstansiController extends Controller
 
         $admin->update($updateData);
 
+        AuditLog::record(
+            'EDIT_ADMIN_INSTANSI',
+            'user_bo',
+            $iduser_bo,
+            $admin->nama,
+            ['idkategori' => $idkategori, 'username' => $admin->login_username]
+        );
+
         return response()->json([
             'message' => 'Admin instansi berhasil diperbarui',
             'data' => $admin
@@ -340,6 +517,14 @@ class InstansiController extends Controller
             ->firstOrFail();
 
         $admin->update(['status_remove' => 'Y']);
+
+        AuditLog::record(
+            'DELETE_ADMIN_INSTANSI',
+            'user_bo',
+            $iduser_bo,
+            $admin->nama,
+            ['idkategori' => $idkategori]
+        );
 
         return response()->json([
             'message' => 'Admin instansi berhasil dihapus'
@@ -382,6 +567,14 @@ class InstansiController extends Controller
             'status_remove' => 'N',
             'tanggal_input' => now(),
         ]);
+
+        AuditLog::record(
+            'CREATE_GURU',
+            'user_bo',
+            $iduser_bo,
+            $request->nama,
+            ['login_username' => $request->login_username, 'idkategori' => $idkategori]
+        );
 
         return response()->json([
             'message' => 'Guru berhasil ditambahkan',
@@ -428,6 +621,14 @@ class InstansiController extends Controller
 
         $guru->update($updateData);
 
+        AuditLog::record(
+            'EDIT_GURU',
+            'user_bo',
+            $iduser_bo,
+            $guru->nama,
+            ['login_username' => $guru->login_username, 'idkategori' => $idkategori]
+        );
+
         return response()->json([
             'message' => 'Data guru berhasil diperbarui',
             'data' => $guru
@@ -445,6 +646,14 @@ class InstansiController extends Controller
             ->firstOrFail();
 
         $guru->update(['status_remove' => 'Y']);
+
+        AuditLog::record(
+            'DELETE_GURU',
+            'user_bo',
+            $iduser_bo,
+            $guru->nama,
+            ['idkategori' => $idkategori]
+        );
 
         return response()->json([
             'message' => 'Guru berhasil dihapus'
@@ -484,6 +693,14 @@ class InstansiController extends Controller
             'status_aktif' => 'Y',
             'tanggal_input' => now(),
         ]);
+
+        AuditLog::record(
+            'CREATE_SISWA',
+            'user',
+            $iduser,
+            $request->nama,
+            ['nisn' => $request->nisn, 'idkategori' => $idkategori]
+        );
 
         return response()->json([
             'message' => 'Siswa berhasil ditambahkan',
@@ -530,6 +747,14 @@ class InstansiController extends Controller
 
         $siswa->update($updateData);
 
+        AuditLog::record(
+            'EDIT_SISWA',
+            'user',
+            $iduser,
+            $siswa->nama,
+            ['nisn' => $siswa->nisn, 'idkategori' => $idkategori]
+        );
+
         return response()->json([
             'message' => 'Data siswa berhasil diperbarui',
             'data' => $siswa
@@ -546,6 +771,14 @@ class InstansiController extends Controller
             ->where('idkategori', $idkategori)
             ->firstOrFail();
         $siswa->update(['status_aktif' => 'N']);
+
+        AuditLog::record(
+            'DELETE_SISWA',
+            'user',
+            $iduser,
+            $siswa->nama,
+            ['idkategori' => $idkategori]
+        );
 
         return response()->json([
             'message' => 'Siswa berhasil dinonaktifkan'

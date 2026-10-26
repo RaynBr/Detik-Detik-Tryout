@@ -184,4 +184,211 @@ class TeacherController extends Controller
             'message' => 'Guru berhasil dinonaktifkan/dihapus.'
         ]);
     }
+
+    /**
+     * Download template spreadsheet untuk import guru
+     */
+    public function downloadTemplate(SimpleSpreadsheetService $spreadsheetService)
+    {
+        $headers = [
+            'Nama Lengkap Guru',
+            'Email',
+            'Username',
+            'Password',
+            'No Telepon',
+            'Mata Pelajaran Utama'
+        ];
+
+        $sampleRows = [
+            ['Budi Santoso, M.Pd.', 'budi.santoso@sekolah.sch.id', 'budisantoso', 'Guru1234!', '081234567890', 'Matematika'],
+            ['Siti Nurhaliza, S.Pd.', 'siti.nurhaliza@sekolah.sch.id', 'sitinurhaliza', 'Guru1234!', '081298765432', 'Bahasa Indonesia'],
+            ['Ahmad Fauzi, S.Kom.', 'ahmad.fauzi@sekolah.sch.id', 'ahmadfauzi', 'Guru1234!', '081377889900', 'Informatika'],
+        ];
+
+        return $spreadsheetService->downloadCsv($headers, $sampleRows, 'template_import_guru.csv');
+    }
+
+    /**
+     * Import data guru via Excel (.xlsx) atau CSV (.csv)
+     */
+    public function import(Request $request, SimpleSpreadsheetService $spreadsheetService)
+    {
+        $request->validate([
+            'file' => 'required|file|max:10240',
+        ]);
+
+        $user = $request->user();
+        $idkategori = ($user && $user->role === 'admin' && !empty($user->idkategori))
+            ? $user->idkategori
+            : ($request->idkategori ?? $user?->idkategori);
+
+        if (empty($idkategori)) {
+            $idkategori = '27830150842287772';
+        }
+
+        $file = $request->file('file');
+
+        try {
+            $rows = $spreadsheetService->parse($file->getRealPath(), $file->getClientOriginalName());
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Gagal membaca berkas: ' . $e->getMessage()
+            ], 422);
+        }
+
+        if (count($rows) <= 1) {
+            return response()->json([
+                'message' => 'Berkas kosong atau hanya berisi baris judul.'
+            ], 422);
+        }
+
+        // Remove header row
+        array_shift($rows);
+
+        $imported = 0;
+        $errors = [];
+
+        DB::beginTransaction();
+        try {
+            foreach ($rows as $index => $row) {
+                $rowNum = $index + 2; // 1-indexed Excel row
+
+                $name = trim($row[0] ?? '');
+                $email = trim($row[1] ?? '');
+                $username = trim($row[2] ?? '');
+                $password = trim($row[3] ?? 'Guru1234!');
+                $phone = trim($row[4] ?? '');
+                $mapelName = trim($row[5] ?? '');
+
+                if (empty($name)) {
+                    $errors[] = "Baris {$rowNum}: Nama Guru tidak boleh kosong.";
+                    continue;
+                }
+
+                if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = "Baris {$rowNum}: Format email '{$email}' tidak valid.";
+                    continue;
+                }
+
+                if (empty($username)) {
+                    $username = strtolower(explode('@', $email)[0]);
+                }
+
+                // Check duplicate email or username
+                $exists = UserBo::where('status_remove', '!=', 'Y')
+                    ->where(function ($q) use ($email, $username) {
+                        $q->where('login_email', $email)
+                          ->orWhere('login_username', $username);
+                    })->first();
+
+                if ($exists) {
+                    $errors[] = "Baris {$rowNum}: Email '{$email}' atau username '{$username}' sudah terdaftar.";
+                    continue;
+                }
+
+                // 5x Base64 encoding for user_bo password
+                $pwd = $password;
+                for ($i = 0; $i < 5; $i++) {
+                    $pwd = base64_encode($pwd);
+                }
+
+                $newId = (string) (time() . rand(1000, 9999) . $index);
+
+                $newGuru = UserBo::create([
+                    'iduser_bo' => $newId,
+                    'idkategori' => $idkategori,
+                    'nama' => $name,
+                    'login_email' => $email,
+                    'login_username' => $username,
+                    'login_password' => $pwd,
+                    'telp' => $phone ?: null,
+                    'status_admin' => '2',
+                    'role_type' => 'guru',
+                    'status_aktif' => 'Y',
+                    'status_remove' => 'N',
+                    'tanggal_input' => now(),
+                ]);
+
+                // Mapel association if provided
+                if (!empty($mapelName)) {
+                    $mapel = \App\Models\MasterMataPelajaran::where('nama_mapel', 'like', "%{$mapelName}%")
+                        ->orWhere('kode_mapel', 'like', "%{$mapelName}%")
+                        ->first();
+                    if ($mapel) {
+                        GuruMataPelajaran::create([
+                            'iduser_bo' => $newId,
+                            'idmapel' => $mapel->id,
+                            'tahun_ajaran' => '2026/2027',
+                        ]);
+                    }
+                }
+
+                $imported++;
+            }
+
+            if ($imported === 0 && !empty($errors)) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Tidak ada data guru yang berhasil diimpor.',
+                    'errors' => $errors
+                ], 422);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => "Berhasil mengimpor {$imported} data guru.",
+                'imported_count' => $imported,
+                'errors' => $errors,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Terjadi kesalahan sistem saat menyimpan data guru: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Reset password akun Guru oleh Admin / Super Admin (Requirement 11)
+     */
+    public function resetPassword(Request $request, $iduser_bo)
+    {
+        $admin = $request->user();
+        $teacher = UserBo::findOrFail($iduser_bo);
+
+        if ($admin && $admin->role === 'admin' && !empty($admin->idkategori)) {
+            if ((string)$teacher->idkategori !== (string)$admin->idkategori) {
+                return response()->json([
+                    'message' => 'Akses ditolak: Anda hanya dapat mereset akun guru di instansi Anda.'
+                ], 403);
+            }
+        }
+
+        $newPassword = $request->input('new_password') ?: ('Guru' . rand(1000, 9999) . '!');
+        $pwd = $newPassword;
+        for ($i = 0; $i < 5; $i++) {
+            $pwd = base64_encode($pwd);
+        }
+
+        $teacher->update(['login_password' => $pwd]);
+
+        \App\Models\AuditLog::record(
+            'RESET_PASSWORD_GURU',
+            'user_bo',
+            $teacher->iduser_bo,
+            $teacher->nama,
+            [
+                'reset_by' => $admin->name ?? 'Admin',
+                'role' => $admin->role ?? 'admin',
+                'username' => $teacher->login_username,
+            ]
+        );
+
+        return response()->json([
+            'message' => "Password guru {$teacher->nama} berhasil direset.",
+            'new_password' => $newPassword
+        ]);
+    }
 }
+

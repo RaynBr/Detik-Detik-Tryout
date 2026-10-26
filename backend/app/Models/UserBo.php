@@ -32,6 +32,8 @@ class UserBo extends Authenticatable
         'role_type',
         'status_aktif',
         'status_remove',
+        'jenis_kelamin',
+        'nuptk',
         'kode_referal',
         'sharing_fee_persen',
         'active_session_token',

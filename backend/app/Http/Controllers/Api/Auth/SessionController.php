@@ -37,11 +37,59 @@ class SessionController extends Controller
                 ?? $user->kelas?->kategori?->nama_kategori 
                 ?? 'Sekolah Mitra';
 
+            $instansiId = $user->idkategori ?? $user->kelas?->idkategori;
+
+            // Flow Requirement (mod-siswa-profile):
+            // Informasi Profile Siswa: - Nomor Induk - Kelas - Guru yang Mengajar
+            $teachers = [];
+            if ($user->idkelas) {
+                $teachingAssignments = \App\Models\GuruMataPelajaran::with(['guru', 'mataPelajaran'])
+                    ->where('idkelas', $user->idkelas)
+                    ->get();
+
+                foreach ($teachingAssignments as $asg) {
+                    if ($asg->guru) {
+                        $teachers[] = [
+                            'id' => $asg->guru->iduser_bo,
+                            'name' => $asg->guru->nama,
+                            'nuptk' => $asg->guru->nuptk ?: '-',
+                            'subject' => $asg->mataPelajaran?->nama_mapel ?? 'Mata Pelajaran',
+                            'email' => $asg->guru->login_email,
+                            'phone' => $asg->guru->telp,
+                        ];
+                    }
+                }
+            }
+
+            // Fallback or additional teachers from same institution
+            if (empty($teachers) && $instansiId) {
+                $instansiTeachers = UserBo::where('idkategori', $instansiId)
+                    ->where(function ($q) {
+                        $q->where('status_admin', '2')->orWhere('role_type', 'guru');
+                    })
+                    ->where('status_remove', 'N')
+                    ->limit(20)
+                    ->get();
+
+                foreach ($instansiTeachers as $gt) {
+                    $teachers[] = [
+                        'id' => $gt->iduser_bo,
+                        'name' => $gt->nama,
+                        'nuptk' => $gt->nuptk ?: '-',
+                        'subject' => 'Guru Pengampu',
+                        'email' => $gt->login_email,
+                        'phone' => $gt->telp,
+                    ];
+                }
+            }
+
             $profile = [
                 'id' => $user->iduser,
                 'nisn' => $user->nisn,
+                'nis' => $user->nis,
+                'nomor_induk' => $user->nisn ?: ($user->nis ?: $user->username),
                 'institution' => $institutionName,
-                'idkategori' => $user->idkategori ?? $user->kelas?->idkategori,
+                'idkategori' => $instansiId,
                 'jenjang' => $user->kelas?->jenjang?->nama_jenjang ?? 'Umum',
                 'class_id' => $user->idkelas,
                 'class_name' => $user->kelas?->nama_kelas ?? 'Belum Ditentukan',
@@ -52,6 +100,7 @@ class SessionController extends Controller
                     'jenjang' => $user->kelas->jenjang?->nama_jenjang,
                     'institution' => $institutionName,
                 ] : null,
+                'teachers' => $teachers,
             ];
             $id = $user->iduser;
         } else {

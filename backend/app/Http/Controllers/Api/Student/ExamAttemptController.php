@@ -9,6 +9,7 @@ use App\Models\AssessmentJawabanPilgan;
 use App\Models\AssessmentJawabanPilganDetail;
 use App\Models\ExamGroup;
 use App\Models\UserSiswa;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -90,7 +91,9 @@ class ExamAttemptController extends Controller
                 $sessionEndCarbon = \Carbon\Carbon::parse($a->tanggal_batas_assessment);
             }
 
+            $isSessionEnded = true;
             if ($sessionEndCarbon) {
+                $isSessionEnded = now()->gte($sessionEndCarbon);
                 $secsUntilSessionEnd = max(0, $sessionEndCarbon->getTimestamp() - now()->getTimestamp());
                 $minsUntilSessionEnd = (int) floor($secsUntilSessionEnd / 60);
                 if ($minsUntilSessionEnd < $durationMinutes) {
@@ -116,7 +119,8 @@ class ExamAttemptController extends Controller
                     'status' => $attemptStatus,
                     'started_at' => $attempt->tgl_input_time,
                     'submitted_at' => ($attempt->komentar === 'submitted') ? $attempt->tgl_input_time : null,
-                    'total_score' => ($attempt->komentar === 'submitted') ? (float) $attempt->nilai : null,
+                    'total_score' => ($attempt->komentar === 'submitted' && $isSessionEnded) ? (float) $attempt->nilai : null,
+                    'is_session_ended' => $isSessionEnded,
                 ] : null
             ];
         });
@@ -214,6 +218,18 @@ class ExamAttemptController extends Controller
                 'lama_dikerjakan' => '',
                 'tgl_input_time' => now(),
             ]);
+
+            AuditLog::record(
+                'MULAI_UJIAN',
+                'assessment_jawaban_pilgan',
+                $attemptId,
+                "Siswa {$user->nama} mulai mengerjakan ujian {$assessment->nama_assessment}",
+                [
+                    'idassessment' => $idassessment,
+                    'exam_group_id' => $group->id ?? null,
+                    'start_time' => now()->toIso8601String(),
+                ]
+            );
         } else {
             // If existing attempt was in progress but expired (started longer than duration ago),
             // reset tgl_input_time to now so student gets the fresh full duration to take it
@@ -396,6 +412,17 @@ class ExamAttemptController extends Controller
             ];
         }
 
+        // Deterministic question sequence shuffle per student attempt:
+        // CBT Rule: All students get the EXACT SAME 50 questions, but each student gets a unique, consistent question sequence!
+        $qSeed = crc32($attempt->idassessment_jawaban_pilgan . '_questions_order');
+        mt_srand($qSeed);
+        for ($i = count($questionsPayload) - 1; $i > 0; $i--) {
+            $j = mt_rand(0, $i);
+            $tmp = $questionsPayload[$i];
+            $questionsPayload[$i] = $questionsPayload[$j];
+            $questionsPayload[$j] = $tmp;
+        }
+
         // Canonical attempt status check based strictly on komentar === 'submitted'
         $attemptStatus = ($attempt->komentar === 'submitted') ? 'submitted' : 'in_progress';
 
@@ -458,11 +485,67 @@ class ExamAttemptController extends Controller
             'lama_dikerjakan' => $durationFormatted,
         ]);
 
+        $assessment = $attempt->assessment;
+
+        AuditLog::record(
+            'SELESAI_UJIAN',
+            'assessment_jawaban_pilgan',
+            $attemptId,
+            "Siswa mengumpulkan lembar ujian " . ($assessment?->nama_assessment ?? 'Ujian') . " (Nilai: {$finalScore})",
+            [
+                'idassessment' => $assessment?->idassessment,
+                'final_score' => $finalScore,
+                'correct_answers' => $correctCount,
+                'total_questions' => $totalQuestions,
+                'duration' => $durationFormatted,
+            ]
+        );
+
+        // Flow Requirement (mod-siswa-end-session-check):
+        // Pengecekan Status Sesi: Apakah Sesi Ujian Benar-benar Berakhir? (End Session)
+        // Jika Belum Berakhir -> mod-siswa-waiting-session: Skor & Pembahasan TIDAK Langsung Ditampilkan
+        // Jika Sesi Berakhir -> mod-siswa-result-announced: Skor & Pembahasan Lengkap Diumumkan
+        $sessionEndTime = null;
+        $matchedGroup = ExamGroup::where('exam_id', $assessment?->idassessment)
+            ->get()
+            ->first(function ($g) use ($attempt) {
+                $studentIds = $g->student_ids ?: [];
+                $classIds = $g->class_ids ?: [];
+                return in_array((string)$attempt->iduser, $studentIds);
+            });
+
+        if ($matchedGroup && $matchedGroup->end_time) {
+            $sessionEndTime = \Carbon\Carbon::parse($matchedGroup->end_time);
+        } elseif ($assessment->tanggal_batas_assessment) {
+            $sessionEndTime = \Carbon\Carbon::parse($assessment->tanggal_batas_assessment);
+        }
+
+        $isSessionEnded = $sessionEndTime ? now()->gte($sessionEndTime) : true;
+
+        if (!$isSessionEnded) {
+            return response()->json([
+                'message' => 'Ujian TryOut berhasil diselesaikan dan tersimpan. Skor & pembahasan soal akan diumumkan setelah seluruh sesi ujian ditutup resmi.',
+                'is_session_ended' => false,
+                'session_end_time' => $sessionEndTime ? $sessionEndTime->format('Y-m-d H:i:s') : null,
+                'attempt' => [
+                    'id' => $attempt->idassessment_jawaban_pilgan,
+                    'status' => 'submitted',
+                    'is_session_ended' => false,
+                    'total_score' => null,
+                    'correct_answers' => null,
+                    'total_questions' => $totalQuestions,
+                ]
+            ]);
+        }
+
         return response()->json([
             'message' => 'Ujian TryOut berhasil diselesaikan.',
+            'is_session_ended' => true,
+            'session_end_time' => $sessionEndTime ? $sessionEndTime->format('Y-m-d H:i:s') : null,
             'attempt' => [
                 'id' => $attempt->idassessment_jawaban_pilgan,
                 'status' => 'submitted',
+                'is_session_ended' => true,
                 'total_score' => $finalScore,
                 'correct_answers' => $correctCount,
                 'total_questions' => $totalQuestions,

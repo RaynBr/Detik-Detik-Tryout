@@ -40,7 +40,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (loginVal: string, passwordVal: string) => Promise<User>;
+  login: (loginVal: string, passwordVal: string, expectedRole?: string) => Promise<User>;
   logout: (isAutoExpired?: any) => Promise<void>;
 }
 
@@ -124,12 +124,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => clearInterval(interval);
   }, [user]);
 
-  const login = async (loginVal: string, passwordVal: string): Promise<User> => {
+  const login = async (loginVal: string, passwordVal: string, expectedRole?: string): Promise<User> => {
     try {
-      const response = await apiClient.post('/auth/login', {
+      const payload: any = {
         login: loginVal,
         password: passwordVal,
-      });
+      };
+      if (expectedRole) {
+        payload.expected_role = expectedRole;
+      }
+      const response = await apiClient.post('/auth/login', payload);
 
       const { token, session_token, user: loggedInUser } = response.data;
 

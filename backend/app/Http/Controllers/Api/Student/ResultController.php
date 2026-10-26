@@ -74,7 +74,60 @@ class ResultController extends Controller
         $totalQuestions = count($questions);
         $score = ($totalQuestions > 0) ? round(($correctCount / $totalQuestions) * 100, 2) : 0;
 
+        // Flow Requirement (mod-siswa-end-session-check):
+        // Pengecekan Status Sesi: Apakah Sesi Ujian Benar-benar Berakhir? (End Session)
+        // Jika Belum Berakhir -> mod-siswa-waiting-session: Skor & Pembahasan TIDAK Langsung Ditampilkan
+        // Jika Sesi Berakhir -> mod-siswa-result-announced: Skor & Pembahasan Lengkap Diumumkan
+        $sessionEndTime = null;
+        $matchedGroup = \App\Models\ExamGroup::where('exam_id', $assessment->idassessment)
+            ->get()
+            ->first(function ($g) use ($user) {
+                $studentIds = $g->student_ids ?: [];
+                $classIds = $g->class_ids ?: [];
+                if (in_array((string)$user->iduser, $studentIds)) {
+                    return true;
+                }
+                if ($user->idkelas && (in_array($user->idkelas, $classIds) || in_array((string)$user->idkelas, $classIds))) {
+                    return true;
+                }
+                return false;
+            });
+
+        if ($matchedGroup && $matchedGroup->end_time) {
+            $sessionEndTime = \Carbon\Carbon::parse($matchedGroup->end_time);
+        } elseif ($assessment->tanggal_batas_assessment) {
+            $sessionEndTime = \Carbon\Carbon::parse($assessment->tanggal_batas_assessment);
+        }
+
+        $isSessionEnded = $sessionEndTime ? now()->gte($sessionEndTime) : true;
+
+        if (!$isSessionEnded) {
+            return response()->json([
+                'is_session_ended' => false,
+                'results_hidden' => true,
+                'message' => 'Sesi ujian masih berlangsung. Skor dan pembahasan soal belum dapat diakses. Menunggu jadwal sesi ujian ditutup resmi' . ($sessionEndTime ? ' pada ' . $sessionEndTime->format('d/m/Y H:i') . ' WIB.' : '.'),
+                'session_end_time' => $sessionEndTime ? $sessionEndTime->format('Y-m-d H:i:s') : null,
+                'attempt' => [
+                    'id' => $attempt->idassessment_jawaban_pilgan,
+                    'assessment_id' => $assessment->idassessment,
+                    'title' => $assessment->nama_assessment,
+                    'subject' => $assessment->mapel?->nama_mapel ?? 'TryOut',
+                    'status' => 'submitted',
+                    'total_score' => null,
+                    'total_questions' => $totalQuestions,
+                    'total_correct' => null,
+                    'total_incorrect' => null,
+                    'duration_spent' => $attempt->lama_dikerjakan ?: '-',
+                    'submitted_at' => $attempt->tgl_input_time,
+                    'is_session_ended' => false,
+                ],
+                'questions' => [],
+            ]);
+        }
+
         return response()->json([
+            'is_session_ended' => true,
+            'results_hidden' => false,
             'attempt' => [
                 'id' => $attempt->idassessment_jawaban_pilgan,
                 'assessment_id' => $assessment->idassessment,
@@ -87,9 +140,9 @@ class ResultController extends Controller
                 'total_incorrect' => $totalQuestions - $correctCount,
                 'duration_spent' => $attempt->lama_dikerjakan ?: '-',
                 'submitted_at' => $attempt->tgl_input_time,
+                'is_session_ended' => true,
             ],
             'questions' => $reviewQuestions,
-            'results_hidden' => false,
         ]);
     }
 }
