@@ -225,17 +225,17 @@ export const StudentExamsPage: React.FC = () => {
   const finishedCount = finishedExams.length;
 
   return (
-    <div className="min-h-screen bg-slate-100/70 dark:bg-[#070a13] text-slate-800 dark:text-gray-100 flex flex-col transition-colors duration-200">
+    <div className="min-h-screen bg-[#F7F9FC] dark:bg-[#0B1014] text-[#161C2D] dark:text-[#F7FCFE] flex flex-col transition-colors duration-200 font-sans">
       
       {/* Top Navbar */}
-      <header className="h-16 glass-panel border-b border-slate-200 dark:border-white/5 px-4 md:px-8 flex items-center justify-between shrink-0 sticky top-0 z-30">
+      <header className="h-16 bg-white dark:bg-[#1A1E22] border-b-2 border-[#161C2D] dark:border-[#32363A] px-4 md:px-8 flex items-center justify-between shrink-0 sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-600/10 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-500/20">
-            <GraduationCap className="h-5 w-5" />
+          <div className="p-2 bg-[#38B1ED] text-white rounded-xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
+            <GraduationCap className="h-5 w-5 stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="font-extrabold text-sm text-slate-900 dark:text-white tracking-tight">Detik Detik TryOut</h1>
-            <p className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">
+            <h1 className="font-black text-sm text-[#161C2D] dark:text-white tracking-tight">Detik Detik TryOut</h1>
+            <p className="text-[10px] text-[#5D6371] dark:text-gray-400 font-semibold">
               {user?.profile?.institution || 'Portal Ujian Siswa'} {user?.profile?.class_name ? `• ${user.profile.class_name}` : ''}
             </p>
           </div>

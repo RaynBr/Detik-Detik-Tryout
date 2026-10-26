@@ -6,96 +6,118 @@
 @theme {
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
-  --color-brand-900: #312e81;
+  /* MyExams Brand Palette (Primary #38B1ED, Accent #39C0ED & Navy #0A2540) */
+  --color-brand-50: #f0f9ff;
+  --color-brand-100: #e0f2fe;
+  --color-brand-200: #bae6fd;
+  --color-brand-300: #7dd3fc;
+  --color-brand-400: #39c0ed;
+  --color-brand-500: #38b1ed;
+  --color-brand-600: #1394d5;
+  --color-brand-700: #0a7bb5;
+  --color-brand-800: #075985;
+  --color-brand-900: #0a2540;
 
-  --color-accent-400: #22d3ee;
-  --color-accent-500: #06b6d4;
-  --color-accent-600: #0891b2;
+  /* Harmonize Indigo utility classes to MyExams sky-blue cyan */
+  --color-indigo-50: #f0f9ff;
+  --color-indigo-100: #e0f2fe;
+  --color-indigo-200: #bae6fd;
+  --color-indigo-300: #7dd3fc;
+  --color-indigo-400: #39c0ed;
+  --color-indigo-500: #38b1ed;
+  --color-indigo-600: #1394d5;
+  --color-indigo-700: #0a7bb5;
+  --color-indigo-800: #075985;
+  --color-indigo-900: #0a2540;
+  --color-indigo-950: #082f49;
+
+  --color-accent-400: #39c0ed;
+  --color-accent-500: #38b1ed;
+  --color-accent-600: #0a2540;
 }
 
 :root {
   font-family: var(--font-sans);
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: #F7F9FC;
+  color: #161C2D;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 html.dark {
-  background-color: #070a13;
-  color: #f3f4f6;
+  background-color: #0B1014;
+  color: #F7FCFE;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.05), transparent 400px),
-              radial-gradient(circle at bottom left, rgba(6, 182, 212, 0.04), transparent 400px),
-              #f8fafc;
-  color: #0f172a;
+  background-color: #F7F9FC;
+  color: #161C2D;
   overflow-x: hidden;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 html.dark body,
 .dark body {
-  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent 400px),
-              radial-gradient(circle at bottom left, rgba(6, 182, 212, 0.10), transparent 400px),
-              #070a13 !important;
-  color: #f3f4f6 !important;
+  background-color: #0B1014 !important;
+  color: #F7FCFE !important;
 }
 
-/* Glassmorphism & Card elevation utility classes */
+/* MyExams Neo-Brutalist & Hard-Shadow Card System */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+  background: #ffffff;
+  border: 2px solid #161C2D;
+  box-shadow: 4px 4px 0px 0px #171717;
+  border-radius: 12px;
 }
 
 .dark .glass-panel {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  background: #1A1E22;
+  border: 2px solid #32363A;
+  box-shadow: 4px 4px 0px 0px #000000;
+  border-radius: 12px;
 }
 
 .glass-card {
   background: #ffffff;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+  border: 2px solid #161C2D;
+  box-shadow: 3px 3px 0px 0px #171717;
+  border-radius: 12px;
 }
 
 .dark .glass-card {
-  background: rgba(15, 23, 42, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: none;
+  background: #1A1E22;
+  border: 2px solid #32363A;
+  box-shadow: 3px 3px 0px 0px #000000;
+  border-radius: 12px;
 }
 
 .glass-input {
   background: #ffffff;
-  border: 1px solid #cbd5e1;
-  color: #0f172a;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 2px solid #C3CCD8;
+  border-radius: 6px;
+  color: #161C2D;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark .glass-input {
-  background: rgba(7, 10, 19, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #f3f4f6;
+  background: #1A1E22;
+  border: 2px solid #32363A;
+  color: #F7FCFE;
 }
 
 .glass-input:focus {
-  border-color: var(--color-brand-500);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-  outline: none;
+  border-color: #38B1ED;
+  outline: 2px solid #38B1ED;
+  outline-offset: 1px;
+  box-shadow: 2px 2px 0px 0px #171717;
+}
+
+.dark .glass-input:focus {
+  border-color: #38B1ED;
+  outline: 2px solid #38B1ED;
+  box-shadow: 2px 2px 0px 0px #000000;
 }
 
 /* Anti-Cheat: Text selection and drag protection */
@@ -207,26 +229,108 @@ html.dark body,
   animation: pulse-subtle 3s infinite ease-in-out;
 }
 
-/* Tactile Click & Hover Micro-interactions */
+/* Tactile Click & Hover Micro-interactions (MyExams Offset Hard Shadow) */
 .btn-press {
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.btn-press:hover {
+  transform: translate(-1px, -1px);
+}
+
 .btn-press:active {
-  transform: scale(0.97);
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px 0px #171717 !important;
+}
+
+.dark .btn-press:active {
+  box-shadow: 1px 1px 0px 0px #000000 !important;
 }
 
 .card-interactive {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
 }
 
 .card-interactive:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.08), 0 8px 12px -6px rgba(0, 0, 0, 0.04);
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px 0px #171717 !important;
 }
 
 .dark .card-interactive:hover {
-  box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.4), 0 0 15px 1px rgba(99, 102, 241, 0.15);
+  box-shadow: 6px 6px 0px 0px #000000 !important;
+}
+
+/* MyExams Signature Components */
+.myexams-btn-primary {
+  background-color: #38B1ED;
+  color: #ffffff;
+  border: 2px solid #161C2D;
+  box-shadow: 3px 3px 0px 0px #171717;
+  border-radius: 12px;
+  font-weight: 700;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.myexams-btn-primary:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px 0px #171717;
+}
+
+.myexams-btn-primary:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px 0px #171717;
+}
+
+.dark .myexams-btn-primary {
+  border-color: #38B1ED;
+  box-shadow: 3px 3px 0px 0px #000000;
+}
+
+.myexams-btn-outline {
+  background-color: #ffffff;
+  color: #161C2D;
+  border: 2px solid #161C2D;
+  box-shadow: 2px 2px 0px 0px #171717;
+  border-radius: 8px;
+  font-weight: 700;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark .myexams-btn-outline {
+  background-color: #1A1E22;
+  color: #F7FCFE;
+  border: 2px solid #32363A;
+  box-shadow: 2px 2px 0px 0px #000000;
+}
+
+.myexams-btn-outline:hover {
+  background-color: #f8fafc;
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px 0px #171717;
+}
+
+.myexams-btn-outline:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px 0px #171717;
+}
+
+.myexams-badge {
+  border: 2px solid #161C2D;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  box-shadow: 2px 2px 0px 0px #171717;
+}
+
+.dark .myexams-badge {
+  border: 2px solid #32363A;
+  box-shadow: 2px 2px 0px 0px #000000;
 }
 
 .skeleton-shimmer {
