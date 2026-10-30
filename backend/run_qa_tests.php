@@ -191,7 +191,11 @@ try {
     // Row 1: Valid
     // Row 2: Invalid Mapel (Exact match fails)
     // Row 3: Invalid Email (duplicate / invalid format)
-    $tmpCsv = sys_get_temp_dir() . '/test_import_guru_' . time() . '.csv';
+    $tempDir = __DIR__ . '/storage/tmp';
+    if (!is_dir($tempDir)) {
+        @mkdir($tempDir, 0777, true);
+    }
+    $tmpCsv = $tempDir . '/test_import_guru_' . time() . '.csv';
     $fp = fopen($tmpCsv, 'w');
     fputcsv($fp, ['Nama Guru', 'NIP', 'NUPTK', 'Email', 'Username', 'Password', 'Jenis Kelamin', 'No HP', 'Alamat', 'Status', 'Instansi', 'Jenjang', 'Mata Pelajaran', 'Role']);
     
@@ -269,7 +273,7 @@ try {
     $validKelasName = $existingKelas ? $existingKelas->nama_kelas : 'X IPA 1';
     $validJenjangName = $existingJenjang ? $existingJenjang->nama_jenjang : 'SMA';
 
-    $tmpCsvSiswa = sys_get_temp_dir() . '/test_import_siswa_' . time() . '.csv';
+    $tmpCsvSiswa = $tempDir . '/test_import_siswa_' . time() . '.csv';
     $fp = fopen($tmpCsvSiswa, 'w');
     fputcsv($fp, ['Nama', 'NIS', 'NISN', 'Username', 'Password', 'Jenis Kelamin', 'Nomor Absen', 'Kelas', 'Jenjang', 'Tempat Lahir', 'Tanggal Lahir', 'Agama', 'No HP', 'Alamat', 'Status']);
 
