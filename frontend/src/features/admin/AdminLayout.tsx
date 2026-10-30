@@ -111,7 +111,7 @@ export const AdminLayout: React.FC = () => {
               <div className="overflow-hidden">
                 <h1 className="font-black text-sm tracking-tight text-[#161C2D] dark:text-white truncate">Detik Detik TryOut</h1>
                 <p className="text-xs text-[#5D6371] dark:text-gray-400 font-semibold truncate">
-                  {user?.role === 'super_admin' ? 'Super Admin IP Portal' : user?.role === 'admin' ? (user?.profile?.institution || 'Admin Sekolah') : 'Portal CBT'}
+                  {user?.profile?.institution || 'Admin Instansi / Sekolah'}
                 </p>
               </div>
             </div>

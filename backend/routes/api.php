@@ -55,12 +55,21 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::apiResource('jenjang', MasterJenjangController::class);
         Route::apiResource('subjects', MasterMataPelajaranController::class);
         Route::apiResource('tahun-soal', MasterTahunSoalController::class);
-        Route::apiResource('test-tasks', TestTaskController::class);
+
+        // Subscriptions & Kuota Instansi
+        Route::get('subscriptions', [\App\Http\Controllers\Api\SuperAdmin\PlatformSubscriptionController::class, 'index']);
+        Route::put('subscriptions/{idkategori}', [\App\Http\Controllers\Api\SuperAdmin\PlatformSubscriptionController::class, 'updateQuota']);
 
         // Monitoring & Audit Trail Global
         Route::get('audit-logs', [AuditTrailController::class, 'index']);
         Route::get('audit-logs/actions', [AuditTrailController::class, 'actions']);
         Route::get('audit-logs/summary', [AuditTrailController::class, 'summary']);
+        Route::get('monitoring/activity', [\App\Http\Controllers\Api\SuperAdmin\PlatformMonitoringController::class, 'activity']);
+        Route::get('monitoring/security', [\App\Http\Controllers\Api\SuperAdmin\PlatformMonitoringController::class, 'security']);
+
+        // Pengaturan Platform (SMTP, Logo, Maintenance, Backup)
+        Route::get('settings', [\App\Http\Controllers\Api\SuperAdmin\PlatformSettingController::class, 'index']);
+        Route::post('settings', [\App\Http\Controllers\Api\SuperAdmin\PlatformSettingController::class, 'update']);
 
         // Profil & Keamanan Super Admin
         Route::get('profile', [ProfileController::class, 'show']);
@@ -71,7 +80,7 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
     // ==========================================
     // 2. ADMIN INSTANSI / SEKOLAH ROUTES
     // ==========================================
-    Route::middleware(['role:admin|super_admin'])->prefix('admin')->group(function () {
+    Route::middleware(['role:admin'])->prefix('admin')->group(function () {
         // Dashboard Sekolah Terisolasi
         Route::get('dashboard/stats', [DashboardController::class, 'stats']);
         Route::get('dashboard/reports', [DashboardController::class, 'reports']);

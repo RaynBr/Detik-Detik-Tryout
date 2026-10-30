@@ -38,7 +38,8 @@ const UsersManagementPage = lazy(() => import('./features/admin/UsersManagementP
 const AuditTrailPage = lazy(() => import('./features/admin/AuditTrailPage').then(m => ({ default: m.AuditTrailPage })));
 const AdminProfilePage = lazy(() => import('./features/admin/AdminProfilePage').then(m => ({ default: m.AdminProfilePage })));
 const MasterTahunSoalPage = lazy(() => import('./features/admin/MasterTahunSoalPage').then(m => ({ default: m.MasterTahunSoalPage })));
-const TestTaskManagerPage = lazy(() => import('./features/admin/TestTaskManagerPage').then(m => ({ default: m.TestTaskManagerPage })));
+const PlatformSubscriptionsPage = lazy(() => import('./features/admin/PlatformSubscriptionsPage').then(m => ({ default: m.PlatformSubscriptionsPage })));
+const PlatformSettingsPage = lazy(() => import('./features/admin/PlatformSettingsPage').then(m => ({ default: m.PlatformSettingsPage })));
 
 const PageLoader = () => (
   <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#070a13] text-slate-800 dark:text-white space-y-4 p-4 transition-colors">
@@ -103,14 +104,15 @@ export const App: React.FC = () => {
                   <Route path="/super-admin/jenjang" element={<JenjangPage />} />
                   <Route path="/super-admin/subjects" element={<SubjectsPage />} />
                   <Route path="/super-admin/tahun-soal" element={<MasterTahunSoalPage />} />
-                  <Route path="/super-admin/test-tasks" element={<TestTaskManagerPage />} />
+                  <Route path="/super-admin/subscriptions" element={<PlatformSubscriptionsPage />} />
                   <Route path="/super-admin/audit-logs" element={<AuditTrailPage />} />
+                  <Route path="/super-admin/settings" element={<PlatformSettingsPage />} />
                   <Route path="/super-admin/profile" element={<AdminProfilePage />} />
                 </Route>
               </Route>
 
-              {/* Admin Instansi / Sekolah routes (/admin/*) */}
-              <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin']} />}>
+              {/* Admin Instansi / Sekolah routes (/admin/*) - Strictly for role 'admin' */}
+              <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route element={<AdminLayout />}>
                   <Route path="/admin/dashboard" element={<AdminDashboard />} />
                   <Route path="/admin/school-users" element={<SchoolUsersPage />} />
@@ -126,9 +128,6 @@ export const App: React.FC = () => {
                   <Route path="/admin/profile" element={<AdminProfilePage />} />
                 </Route>
               </Route>
-
-              {/* Backward compatibility redirects */}
-              <Route path="/admin/super-dashboard" element={<Navigate to="/super-admin/dashboard" replace />} />
 
               {/* Public utility pages */}
               <Route path="/unauthorized" element={<Unauthorized />} />

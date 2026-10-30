@@ -10,7 +10,6 @@ import {
   X,
   Layers,
   Building2,
-  FileQuestion,
   PanelLeftClose,
   PanelLeftOpen,
   History,
@@ -19,7 +18,9 @@ import {
   UserCheck,
   ChevronDown,
   ChevronRight,
-  ShieldAlert
+  ShieldAlert,
+  CreditCard,
+  Settings
 } from 'lucide-react';
 
 interface SubMenuItem {
@@ -58,8 +59,7 @@ export const SuperAdminLayout: React.FC = () => {
   const isMasterPlatformActive = [
     '/super-admin/jenjang',
     '/super-admin/subjects',
-    '/super-admin/tahun-soal',
-    '/super-admin/test-tasks'
+    '/super-admin/tahun-soal'
   ].includes(location.pathname);
 
   const [masterPlatformOpen, setMasterPlatformOpen] = React.useState<boolean>(isMasterPlatformActive);
@@ -70,7 +70,7 @@ export const SuperAdminLayout: React.FC = () => {
     }
   }, [location.pathname, isMasterPlatformActive]);
 
-  // Menu items strictly for SUPER ADMIN PLATFORM
+  // Menu items strictly for SUPER ADMIN PLATFORM OWNER
   const superAdminMenus: MenuItem[] = [
     { name: 'Dashboard Platform', path: '/super-admin/dashboard', icon: LayoutDashboard },
     { name: '1. Kelola Instansi', path: '/super-admin/instansi', icon: Building2 },
@@ -83,11 +83,12 @@ export const SuperAdminLayout: React.FC = () => {
         { name: 'Jenjang Nasional', path: '/super-admin/jenjang', icon: Layers },
         { name: 'Mata Pelajaran Nasional', path: '/super-admin/subjects', icon: BookOpen },
         { name: 'Tahun Soal Nasional', path: '/super-admin/tahun-soal', icon: CalendarDays },
-        { name: 'Internal Test Tasks', path: '/super-admin/test-tasks', icon: FileQuestion },
       ]
     },
-    { name: '4. Audit Trail Global', path: '/super-admin/audit-logs', icon: History },
-    { name: '5. Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },
+    { name: '4. Subscription & Kuota', path: '/super-admin/subscriptions', icon: CreditCard },
+    { name: '5. Monitoring Platform', path: '/super-admin/audit-logs', icon: History },
+    { name: '6. Pengaturan Platform', path: '/super-admin/settings', icon: Settings },
+    { name: '7. Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },
   ];
 
   return (

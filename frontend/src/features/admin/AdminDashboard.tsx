@@ -171,12 +171,8 @@ export const AdminDashboard: React.FC = () => {
       {/* 1. Welcome Banner */}
       <WelcomeBanner
         title={`Halo, ${user?.name || 'Administrator'} 👋`}
-        subtitle={
-          user?.role === 'admin'
-            ? 'Panel Dashboard Admin Instansi: Pantau data guru, siswa, kelas, paket ujian, dan laporan akademik instansi Anda.'
-            : 'Pantau bank soal, paket TryOut, integritas sesi ujian, dan sebaran kelas mitra secara real-time.'
-        }
-        roleBadge={user?.role === 'admin' ? 'Admin Instansi Panel' : 'Super Admin Panel'}
+        subtitle="Panel Dashboard Admin Instansi: Pantau data guru, siswa, kelas, paket ujian, dan laporan akademik instansi Anda."
+        roleBadge="Admin Instansi Panel"
         metrics={[
           { label: 'Guru', value: stats.teachers },
           { label: 'Siswa', value: stats.students },
