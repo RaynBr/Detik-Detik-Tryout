@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MasterKelas;
 use App\Models\SiswaKelas;
 use App\Models\UserSiswa;
+use App\Models\GuruMataPelajaran;
 use Illuminate\Http\Request;
 
 class MasterKelasController extends Controller
@@ -30,11 +31,44 @@ class MasterKelasController extends Controller
             $query->where('tingkat', $request->tingkat);
         }
 
-        $classes = $query->orderBy('nama_kelas', 'asc')
-            ->get();
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama_kelas', 'like', "%{$search}%")
+                  ->orWhere('jurusan', 'like', "%{$search}%");
+            });
+        }
 
-        // Also add aliases for frontend compatibility
-        $mapped = $classes->map(function ($c) {
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $classes = $query->orderBy('nama_kelas', 'asc')->get();
+            $mapped = $classes->map(function ($c) {
+                $c->name = $c->nama_kelas;
+                $c->level = $c->tingkat;
+                $c->institution = $c->kategori?->nama_kategori ?? 'Semua';
+                $c->major = [
+                    'id' => $c->idjenjang,
+                    'name' => $c->jenjang?->nama_jenjang ?? $c->jurusan,
+                    'code' => $c->jenjang?->kode_jenjang ?? $c->jurusan
+                ];
+                return $c;
+            });
+
+            return response()->json([
+                'data' => $mapped,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $mapped->count(),
+                'total' => $mapped->count(),
+                'from' => $mapped->count() > 0 ? 1 : null,
+                'to' => $mapped->count() > 0 ? $mapped->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $query->orderBy('nama_kelas', 'asc')->paginate($perPage);
+
+        $paginator->through(function ($c) {
             $c->name = $c->nama_kelas;
             $c->level = $c->tingkat;
             $c->institution = $c->kategori?->nama_kategori ?? 'Semua';
@@ -46,7 +80,7 @@ class MasterKelasController extends Controller
             return $c;
         });
 
-        return response()->json($mapped);
+        return response()->json($paginator);
     }
 
     public function store(Request $request)
@@ -214,6 +248,11 @@ class MasterKelasController extends Controller
             $masterKela = MasterKelas::findOrFail($masterKela);
         }
 
+        $user = $request->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
+        }
+
         $request->validate([
             'iduser' => 'required|exists:user,iduser',
             'nisn' => 'nullable|string|max:30',
@@ -249,6 +288,11 @@ class MasterKelasController extends Controller
             $masterKela = MasterKelas::findOrFail($masterKela);
         }
 
+        $user = request()->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
+        }
+
         SiswaKelas::where('iduser', $iduser)->where('idkelas', $masterKela->id)->delete();
         UserSiswa::where('iduser', $iduser)->where('idkelas', $masterKela->id)->update([
             'idkelas' => null
@@ -256,6 +300,133 @@ class MasterKelasController extends Controller
 
         return response()->json([
             'message' => 'Siswa berhasil dikeluarkan dari kelas.'
+        ]);
+    }
+
+    /**
+     * Get subject teachers (Guru Pengampu) for this class
+     */
+    public function getSubjectTeachers($masterKela)
+    {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
+        $user = request()->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
+        }
+
+        $items = GuruMataPelajaran::where('idkelas', $masterKela->id)
+            ->with(['guru', 'mataPelajaran'])
+            ->orderBy('id', 'desc')
+            ->get();
+
+        return response()->json([
+            'data' => $items
+        ]);
+    }
+
+    /**
+     * Assign or update a subject teacher in this class
+     */
+    public function assignSubjectTeacher(Request $request, $masterKela)
+    {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
+        $user = $request->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
+        }
+
+        $validated = $request->validate([
+            'idmapel' => 'required|exists:master_mata_pelajaran,id',
+            'iduser_bo' => 'required|exists:user_bo,iduser_bo',
+            'tahun_ajaran' => 'nullable|string|max:20',
+            'status' => 'nullable|string|in:aktif,nonaktif,Aktif,Nonaktif',
+        ]);
+
+        $status = strtolower($validated['status'] ?? 'aktif');
+        $tahunAjaran = $validated['tahun_ajaran'] ?? '2026/2027';
+
+        $record = GuruMataPelajaran::updateOrCreate(
+            [
+                'idkelas' => $masterKela->id,
+                'idmapel' => $validated['idmapel'],
+            ],
+            [
+                'iduser_bo' => $validated['iduser_bo'],
+                'tahun_ajaran' => $tahunAjaran,
+                'status' => $status,
+            ]
+        );
+
+        $record->load(['guru', 'mataPelajaran']);
+
+        return response()->json([
+            'message' => 'Guru Pengampu berhasil ditugaskan.',
+            'data' => $record
+        ]);
+    }
+
+    /**
+     * Update an existing subject teacher entry
+     */
+    public function updateSubjectTeacher(Request $request, $masterKela, $guruMapelId)
+    {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
+        $user = $request->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
+        }
+
+        $record = GuruMataPelajaran::where('idkelas', $masterKela->id)->findOrFail($guruMapelId);
+
+        $validated = $request->validate([
+            'idmapel' => 'nullable|exists:master_mata_pelajaran,id',
+            'iduser_bo' => 'nullable|exists:user_bo,iduser_bo',
+            'tahun_ajaran' => 'nullable|string|max:20',
+            'status' => 'nullable|string|in:aktif,nonaktif,Aktif,Nonaktif',
+        ]);
+
+        $updateData = [];
+        if (isset($validated['idmapel'])) $updateData['idmapel'] = $validated['idmapel'];
+        if (isset($validated['iduser_bo'])) $updateData['iduser_bo'] = $validated['iduser_bo'];
+        if (isset($validated['tahun_ajaran'])) $updateData['tahun_ajaran'] = $validated['tahun_ajaran'];
+        if (isset($validated['status'])) $updateData['status'] = strtolower($validated['status']);
+
+        $record->update($updateData);
+        $record->load(['guru', 'mataPelajaran']);
+
+        return response()->json([
+            'message' => 'Guru Pengampu berhasil diperbarui.',
+            'data' => $record
+        ]);
+    }
+
+    /**
+     * Remove subject teacher from this class
+     */
+    public function removeSubjectTeacher($masterKela, $guruMapelId)
+    {
+        if (!($masterKela instanceof MasterKelas)) {
+            $masterKela = MasterKelas::findOrFail($masterKela);
+        }
+
+        $user = request()->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
+        }
+
+        GuruMataPelajaran::where('idkelas', $masterKela->id)->where('id', $guruMapelId)->delete();
+
+        return response()->json([
+            'message' => 'Guru Pengampu berhasil dihapus dari kelas.'
         ]);
     }
 }

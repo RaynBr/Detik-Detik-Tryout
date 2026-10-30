@@ -9,9 +9,35 @@ use Illuminate\Http\Request;
 
 class MasterTahunSoalController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $tahun = MasterTahunSoal::orderBy('tahun', 'desc')->get();
+        $query = MasterTahunSoal::query();
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('tahun', 'like', "%{$search}%")
+                  ->orWhere('keterangan', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $tahun = $query->orderBy('tahun', 'desc')->get();
+            return response()->json([
+                'data' => $tahun,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $tahun->count(),
+                'total' => $tahun->count(),
+                'from' => $tahun->count() > 0 ? 1 : null,
+                'to' => $tahun->count() > 0 ? $tahun->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $tahun = $query->orderBy('tahun', 'desc')->paginate($perPage);
+
         return response()->json($tahun);
     }
 

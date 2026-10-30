@@ -23,8 +23,8 @@ export const SuperAdminDashboard: React.FC = () => {
     const fetchData = async () => {
       try {
         const [statsRes, instansiRes] = await Promise.all([
-          apiClient.get('/admin/dashboard/stats').catch(() => ({ data: {} })),
-          apiClient.get('/admin/instansi').catch(() => ({ data: [] }))
+          apiClient.get('/super-admin/dashboard/stats').catch(() => ({ data: {} })),
+          apiClient.get('/super-admin/instansi').catch(() => ({ data: [] }))
         ]);
         setData({
           stats: statsRes.data,
@@ -54,10 +54,10 @@ export const SuperAdminDashboard: React.FC = () => {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <GradientStatCard title="Instansi Aktif" value={`${data.stats.total_instansi || 0} Mitra`} icon={Building2} variant="purple" onClick={() => navigate('/admin/instansi')} />
-        <GradientStatCard title="Total Siswa" value={`${data.stats.total_students || 0} Peserta`} icon={GraduationCap} variant="cyan" onClick={() => navigate('/admin/students')} />
-        <GradientStatCard title="Total Guru" value={`${data.stats.total_teachers || 0} Pengajar`} icon={UserCheck} variant="emerald" onClick={() => navigate('/admin/teachers')} />
-        <GradientStatCard title="Bank Soal" value={`${(data.stats.total_bank_soal || 0).toLocaleString()} Soal`} icon={Layers} variant="indigo" onClick={() => navigate('/admin/questions')} />
+        <GradientStatCard title="Instansi Mitra" value={`${data.stats.total_instansi || 0} Mitra`} icon={Building2} variant="purple" onClick={() => navigate('/super-admin/instansi')} />
+        <GradientStatCard title="Total Siswa Global" value={`${data.stats.total_students || 0} Peserta`} icon={GraduationCap} variant="cyan" onClick={() => navigate('/super-admin/users')} />
+        <GradientStatCard title="Total Guru Global" value={`${data.stats.total_teachers || 0} Pengajar`} icon={UserCheck} variant="emerald" onClick={() => navigate('/super-admin/users')} />
+        <GradientStatCard title="Bank Soal Platform" value={`${(data.stats.total_bank_soal || 0).toLocaleString()} Soal`} icon={Layers} variant="indigo" onClick={() => navigate('/super-admin/subjects')} />
       </div>
 
       <div className="glass-panel rounded-3xl p-6 space-y-4 border border-slate-200/80 dark:border-white/5">

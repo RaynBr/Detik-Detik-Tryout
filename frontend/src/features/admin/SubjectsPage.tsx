@@ -13,6 +13,8 @@ import {
   UserPlus, 
   UserMinus
 } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface MasterJenjang {
   id: number;
@@ -49,6 +51,7 @@ interface Subject {
   nama_mapel: string;
   name?: string;
   idjenjang: number;
+  tahun_ajaran?: string;
   jenjang?: MasterJenjang;
   kelompok: string;
   kkm: number;
@@ -61,12 +64,14 @@ export const SubjectsPage: React.FC = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [jenjangList, setJenjangList] = useState<MasterJenjang[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [academicYears, setAcademicYears] = useState<{ id: number; name: string; is_active: boolean }[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   
   // Search and Filter
   const [search, setSearch] = useState('');
   const [selectedJenjangFilter, setSelectedJenjangFilter] = useState<string>('all');
   const [selectedKelompokFilter, setSelectedKelompokFilter] = useState<string>('all');
+  const [selectedTahunAjaranFilter, setSelectedTahunAjaranFilter] = useState<string>('all');
 
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
@@ -78,6 +83,7 @@ export const SubjectsPage: React.FC = () => {
   const [namaMapel, setNamaMapel] = useState('');
   const [kodeMapel, setKodeMapel] = useState('');
   const [idjenjang, setIdjenjang] = useState<number>(1);
+  const [tahunAjaran, setTahunAjaran] = useState<string>('2026/2027');
   const [kelompok, setKelompok] = useState('Wajib');
   const [kkm, setKkm] = useState(75.00);
   const [deskripsi, setDeskripsi] = useState('');
@@ -85,17 +91,36 @@ export const SubjectsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const fetchData = async () => {
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchData = async (page = currentPage) => {
     setLoadingData(true);
     try {
-      const [subjectsRes, jenjangRes, teachersRes] = await Promise.all([
-        apiClient.get('/admin/subjects'),
-        apiClient.get('/admin/jenjang'),
-        apiClient.get('/admin/teachers'),
+      const params: any = { page };
+      if (search) params.search = search;
+      if (selectedJenjangFilter !== 'all') params.idjenjang = selectedJenjangFilter;
+      if (selectedKelompokFilter !== 'all') params.kelompok = selectedKelompokFilter;
+      if (selectedTahunAjaranFilter !== 'all') params.tahun_ajaran = selectedTahunAjaranFilter;
+
+      const [subjectsRes, jenjangRes, teachersRes, yearsRes] = await Promise.all([
+        apiClient.get('/admin/subjects', { params }),
+        apiClient.get('/admin/jenjang', { params: { all: true } }),
+        apiClient.get('/admin/teachers', { params: { all: true } }),
+        apiClient.get('/admin/academic-years', { params: { all: true } }).catch(() => ({ data: [] })),
       ]);
-      setSubjects(subjectsRes.data);
-      setJenjangList(jenjangRes.data);
-      setTeachers(teachersRes.data);
+      setPaginationFromResponse(subjectsRes.data);
+      const list = subjectsRes.data?.data || (Array.isArray(subjectsRes.data) ? subjectsRes.data : []);
+      setSubjects(list);
+      setJenjangList(jenjangRes.data?.data || (Array.isArray(jenjangRes.data) ? jenjangRes.data : []));
+      setTeachers(teachersRes.data?.data || (Array.isArray(teachersRes.data) ? teachersRes.data : []));
+      const yList = yearsRes.data?.data || (Array.isArray(yearsRes.data) ? yearsRes.data : []);
+      setAcademicYears(yList);
     } catch (err) {
       console.error('Failed to fetch subjects data:', err);
       toast.error('Gagal memuat data mata pelajaran.');
@@ -105,14 +130,16 @@ export const SubjectsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(currentPage);
+  }, [currentPage, search, selectedJenjangFilter, selectedKelompokFilter, selectedTahunAjaranFilter]);
 
   const openAddModal = () => {
     setEditingSubject(null);
     setNamaMapel('');
     setKodeMapel('');
     setIdjenjang(jenjangList[0]?.id || 1);
+    const activeYear = academicYears.find(y => y.is_active)?.name || academicYears[0]?.name || '2026/2027';
+    setTahunAjaran(activeYear);
     setKelompok('Wajib');
     setKkm(75.00);
     setDeskripsi('');
@@ -125,6 +152,7 @@ export const SubjectsPage: React.FC = () => {
     setNamaMapel(s.nama_mapel || s.name || '');
     setKodeMapel(s.kode_mapel || s.code || '');
     setIdjenjang(s.idjenjang || s.jenjang?.id || 1);
+    setTahunAjaran(s.tahun_ajaran || '2026/2027');
     setKelompok(s.kelompok || 'Wajib');
     setKkm(s.kkm || 75.00);
     setDeskripsi(s.deskripsi || '');
@@ -151,6 +179,7 @@ export const SubjectsPage: React.FC = () => {
       nama_mapel: namaMapel.trim(),
       kode_mapel: kodeMapel.trim().toUpperCase(),
       idjenjang,
+      tahun_ajaran: tahunAjaran,
       kelompok,
       kkm,
       deskripsi: deskripsi.trim() || null,
@@ -217,17 +246,7 @@ export const SubjectsPage: React.FC = () => {
     }
   };
 
-  const filtered = subjects.filter((s) => {
-    const matchesSearch = 
-      (s.nama_mapel || s.name || '').toLowerCase().includes(search.toLowerCase()) ||
-      (s.kode_mapel || s.code || '').toLowerCase().includes(search.toLowerCase()) ||
-      (s.kelompok || '').toLowerCase().includes(search.toLowerCase());
-
-    const matchesJenjang = selectedJenjangFilter === 'all' || String(s.idjenjang) === selectedJenjangFilter;
-    const matchesKelompok = selectedKelompokFilter === 'all' || s.kelompok === selectedKelompokFilter;
-
-    return matchesSearch && matchesJenjang && matchesKelompok;
-  });
+  const filtered = subjects;
 
   return (
     <div className="space-y-6">
@@ -267,7 +286,10 @@ export const SubjectsPage: React.FC = () => {
               id="search-subjects"
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                resetPage();
+              }}
               placeholder="Cari kode atau nama mapel..."
               className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
             />
@@ -276,7 +298,10 @@ export const SubjectsPage: React.FC = () => {
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <select
               value={selectedJenjangFilter}
-              onChange={(e) => setSelectedJenjangFilter(e.target.value)}
+              onChange={(e) => {
+                setSelectedJenjangFilter(e.target.value);
+                resetPage();
+              }}
               className="w-full sm:w-44 px-3 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
             >
               <option value="all">Semua Jenjang</option>
@@ -289,7 +314,10 @@ export const SubjectsPage: React.FC = () => {
 
             <select
               value={selectedKelompokFilter}
-              onChange={(e) => setSelectedKelompokFilter(e.target.value)}
+              onChange={(e) => {
+                setSelectedKelompokFilter(e.target.value);
+                resetPage();
+              }}
               className="w-full sm:w-36 px-3 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
             >
               <option value="all">Semua Kelompok</option>
@@ -298,11 +326,27 @@ export const SubjectsPage: React.FC = () => {
               <option value="Keahlian">Keahlian</option>
               <option value="Muatan Lokal">Muatan Lokal</option>
             </select>
+
+            <select
+              value={selectedTahunAjaranFilter}
+              onChange={(e) => {
+                setSelectedTahunAjaranFilter(e.target.value);
+                resetPage();
+              }}
+              className="w-full sm:w-36 px-3 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+            >
+              <option value="all">Semua T.A.</option>
+              {academicYears.map((y) => (
+                <option key={y.id} value={y.name}>
+                  T.A. {y.name} {y.is_active ? '★' : ''}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         <div className="text-xs text-slate-500 font-semibold self-end sm:self-center">
-          Total: {filtered.length} Mata Pelajaran
+          Total: {paginationMeta.total} Mata Pelajaran
         </div>
       </div>
 
@@ -328,6 +372,7 @@ export const SubjectsPage: React.FC = () => {
                 <tr className="border-b border-slate-200 dark:border-white/5 bg-slate-50/60 dark:bg-white/[0.02] text-slate-500 dark:text-gray-400 font-bold uppercase tracking-wider text-[11px]">
                   <th className="py-4 px-5">Kode</th>
                   <th className="py-4 px-5">Nama Mata Pelajaran</th>
+                  <th className="py-4 px-5">Tahun Ajaran</th>
                   <th className="py-4 px-5">Jenjang</th>
                   <th className="py-4 px-5">Kelompok</th>
                   <th className="py-4 px-5">KKM</th>
@@ -355,6 +400,11 @@ export const SubjectsPage: React.FC = () => {
                           <p className="text-[11px] text-slate-400 max-w-xs truncate">{s.deskripsi}</p>
                         )}
                       </div>
+                    </td>
+                    <td className="py-4 px-5">
+                      <span className="px-2.5 py-1 rounded-lg font-bold text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-500/20">
+                        {s.tahun_ajaran || '2026/2027'}
+                      </span>
                     </td>
                     <td className="py-4 px-5">
                       <span className="px-2.5 py-1 rounded-lg font-bold text-xs bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-500/20">
@@ -419,6 +469,16 @@ export const SubjectsPage: React.FC = () => {
         )}
       </div>
 
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
+
       {/* Add / Edit Subject Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -480,7 +540,7 @@ export const SubjectsPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="col-span-1">
                   <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
                     Jenjang
@@ -493,6 +553,23 @@ export const SubjectsPage: React.FC = () => {
                     {jenjangList.map((j) => (
                       <option key={j.id} value={j.id}>
                         {j.kode_jenjang}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Tahun Ajaran
+                  </label>
+                  <select
+                    value={tahunAjaran}
+                    onChange={(e) => setTahunAjaran(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/30"
+                  >
+                    {academicYears.map((y) => (
+                      <option key={y.id} value={y.name}>
+                        {y.name} {y.is_active ? '(Aktif)' : ''}
                       </option>
                     ))}
                   </select>

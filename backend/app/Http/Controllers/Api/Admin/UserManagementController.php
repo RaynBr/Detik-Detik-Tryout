@@ -9,6 +9,8 @@ use App\Models\KategoriUserBo;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class UserManagementController extends Controller
 {
@@ -32,7 +34,38 @@ class UserManagementController extends Controller
             });
         }
 
-        $admins = $query->orderBy('nama', 'asc')->get()->map(function ($u) {
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $admins = $query->orderBy('nama', 'asc')->get()->map(function ($u) {
+                return [
+                    'iduser_bo' => $u->iduser_bo,
+                    'nama' => $u->nama,
+                    'username' => $u->login_username,
+                    'email' => $u->login_email,
+                    'jenis_kelamin' => $u->jenis_kelamin,
+                    'telp' => $u->telp,
+                    'alamat' => $u->alamat,
+                    'role' => $u->role,
+                    'status_aktif' => $u->status_aktif,
+                    'last_login_at' => $u->last_login_at,
+                ];
+            });
+
+            return response()->json([
+                'data' => $admins,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $admins->count(),
+                'total' => $admins->count(),
+                'from' => $admins->count() > 0 ? 1 : null,
+                'to' => $admins->count() > 0 ? $admins->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $query->orderBy('nama', 'asc')->paginate($perPage);
+
+        $paginator->through(function ($u) {
             return [
                 'iduser_bo' => $u->iduser_bo,
                 'nama' => $u->nama,
@@ -47,7 +80,7 @@ class UserManagementController extends Controller
             ];
         });
 
-        return response()->json($admins);
+        return response()->json($paginator);
     }
 
     /**
@@ -66,14 +99,10 @@ class UserManagementController extends Controller
             'jenis_kelamin' => 'nullable|in:L,P',
             'telp' => 'nullable|string|max:20',
             'alamat' => 'nullable|string|max:500',
-            'password' => 'required|string|min:6',
+            'password' => ['required', 'string', Password::min(8)->letters()->mixedCase()->numbers()->symbols()],
         ]);
 
-        // Encode password with 5x base64 (matching existing convention)
-        $encoded = $request->password;
-        for ($i = 0; $i < 5; $i++) {
-            $encoded = base64_encode($encoded);
-        }
+        $encoded = Hash::make($request->password);
 
         $id = Str::uuid()->toString();
         $user = UserBo::create([
@@ -127,7 +156,40 @@ class UserManagementController extends Controller
             });
         }
 
-        $admins = $query->orderBy('nama', 'asc')->get()->map(function ($u) {
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $admins = $query->orderBy('nama', 'asc')->get()->map(function ($u) {
+                return [
+                    'iduser_bo' => $u->iduser_bo,
+                    'nama' => $u->nama,
+                    'username' => $u->login_username,
+                    'email' => $u->login_email,
+                    'jenis_kelamin' => $u->jenis_kelamin,
+                    'telp' => $u->telp,
+                    'alamat' => $u->alamat,
+                    'role' => $u->role,
+                    'instansi' => $u->kategori?->nama_kategori ?? '-',
+                    'idkategori' => $u->idkategori,
+                    'status_aktif' => $u->status_aktif,
+                    'last_login_at' => $u->last_login_at,
+                ];
+            });
+
+            return response()->json([
+                'data' => $admins,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $admins->count(),
+                'total' => $admins->count(),
+                'from' => $admins->count() > 0 ? 1 : null,
+                'to' => $admins->count() > 0 ? $admins->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $query->orderBy('nama', 'asc')->paginate($perPage);
+
+        $paginator->through(function ($u) {
             return [
                 'iduser_bo' => $u->iduser_bo,
                 'nama' => $u->nama,
@@ -144,7 +206,7 @@ class UserManagementController extends Controller
             ];
         });
 
-        return response()->json($admins);
+        return response()->json($paginator);
     }
 
     /**
@@ -163,14 +225,11 @@ class UserManagementController extends Controller
             'jenis_kelamin' => 'nullable|in:L,P',
             'telp' => 'nullable|string|max:20',
             'alamat' => 'nullable|string|max:500',
-            'password' => 'required|string|min:6',
+            'password' => ['required', 'string', Password::min(8)->letters()->mixedCase()->numbers()->symbols()],
             'idkategori' => 'required|string|exists:kategori_user_bo,idkategori',
         ]);
 
-        $encoded = $request->password;
-        for ($i = 0; $i < 5; $i++) {
-            $encoded = base64_encode($encoded);
-        }
+        $encoded = Hash::make($request->password);
 
         $id = Str::uuid()->toString();
         $user = UserBo::create([
@@ -214,9 +273,15 @@ class UserManagementController extends Controller
      */
     public function monitoringGuruSiswa(Request $request)
     {
-        $perInstansi = KategoriUserBo::with(['guru', 'siswa', 'adminSekolah'])
-            ->get()
-            ->map(function ($inst) {
+        $query = KategoriUserBo::with(['guru', 'siswa', 'adminSekolah'])->where('status_remove', 'N');
+
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where('nama_kategori', 'LIKE', "%{$s}%");
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->orderBy('nama_kategori', 'asc')->get()->map(function ($inst) {
                 return [
                     'idkategori' => $inst->idkategori,
                     'nama_instansi' => $inst->nama_kategori,
@@ -237,6 +302,42 @@ class UserManagementController extends Controller
                 ];
             });
 
-        return response()->json($perInstansi);
+            return response()->json([
+                'data' => $items,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $items->count(),
+                'total' => $items->count(),
+                'from' => $items->count() > 0 ? 1 : null,
+                'to' => $items->count() > 0 ? $items->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $query->orderBy('nama_kategori', 'asc')->paginate($perPage);
+
+        $paginator->through(function ($inst) {
+            return [
+                'idkategori' => $inst->idkategori,
+                'nama_instansi' => $inst->nama_kategori,
+                'total_admin' => $inst->adminSekolah->count(),
+                'total_guru' => $inst->guru->count(),
+                'total_siswa' => $inst->siswa->count(),
+                'admins' => $inst->adminSekolah->map(fn($a) => [
+                    'id' => $a->iduser_bo,
+                    'nama' => $a->nama,
+                    'username' => $a->login_username,
+                ])->values(),
+                'gurus' => $inst->guru->map(fn($g) => [
+                    'id' => $g->iduser_bo,
+                    'nama' => $g->nama,
+                    'email' => $g->login_email,
+                    'telp' => $g->telp,
+                ])->values(),
+            ];
+        });
+
+        return response()->json($paginator);
     }
 }

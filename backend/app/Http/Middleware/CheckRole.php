@@ -39,7 +39,12 @@ class CheckRole
             $userRole = $user->getRoleNames()->first();
         }
 
-        if (!$userRole || !in_array($userRole, $allowedRoles)) {
+        // Support alias: admin <=> admin_instansi
+        $roleMatches = in_array($userRole, $allowedRoles) ||
+            ($userRole === 'admin' && in_array('admin_instansi', $allowedRoles)) ||
+            ($userRole === 'admin_instansi' && in_array('admin', $allowedRoles));
+
+        if (!$userRole || !$roleMatches) {
             return response()->json([
                 'message' => 'Akses ditolak. Anda tidak memiliki izin untuk tindakan ini.',
                 'user_role' => $userRole,

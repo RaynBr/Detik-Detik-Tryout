@@ -7,6 +7,8 @@ import {
   Trash2, Edit, ChevronRight, Search, X,
   GraduationCap, ShieldCheck, KeyRound
 } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface InstansiItem {
   idkategori: string;
@@ -53,11 +55,20 @@ export const InstansiPage: React.FC = () => {
   });
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
 
-  const fetchInstansi = async () => {
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchInstansi = async (page = currentPage) => {
     setLoading(true);
     try {
-      const res = await apiClient.get('/admin/instansi', { params: { search } });
-      const list = res.data || [];
+      const res = await apiClient.get('/admin/instansi', { params: { search, page } });
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
       setInstansiList(list);
 
       // If School Admin, automatically load their single instansi directly
@@ -72,8 +83,8 @@ export const InstansiPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchInstansi();
-  }, [search]);
+    fetchInstansi(currentPage);
+  }, [search, currentPage]);
 
   const openInstansiDetail = async (instansi: InstansiItem) => {
     setLoadingDetail(true);
@@ -611,7 +622,10 @@ export const InstansiPage: React.FC = () => {
               type="text"
               placeholder="Cari nama instansi..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                resetPage();
+              }}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.02] text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
             />
           </div>
@@ -625,74 +639,88 @@ export const InstansiPage: React.FC = () => {
               Belum ada instansi yang terdaftar.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {instansiList.map((inst) => (
-                <div
-                  key={inst.idkategori}
-                  className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/5 hover:border-indigo-500/30 transition shadow-sm hover:shadow-md flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2.5 bg-indigo-50 dark:bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                          <School className="h-6 w-6" />
-                        </div>
-                        <div>
-                          <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">{inst.nama_kategori}</h3>
-                          <p className="text-[11px] font-mono text-slate-400">ID: {inst.idkategori}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            setEditingInstansiId(inst.idkategori);
-                            setInstansiFormName(inst.nama_kategori);
-                            setShowInstansiModal(true);
-                          }}
-                          className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteInstansi(inst.idkategori, inst.nama_kategori)}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-white/5 text-center">
-                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
-                        <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.admin_count}</span>
-                        <span className="text-[10px] text-slate-400">Admin</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
-                        <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.guru_count}</span>
-                        <span className="text-[10px] text-slate-400">Guru</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
-                        <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.siswa_count}</span>
-                        <span className="text-[10px] text-slate-400">Siswa</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
-                        <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.kelas_count}</span>
-                        <span className="text-[10px] text-slate-400">Kelas</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => openInstansiDetail(inst)}
-                    className="mt-4 w-full py-2.5 px-3 bg-indigo-50 dark:bg-indigo-600/10 hover:bg-indigo-100 dark:hover:bg-indigo-600/20 text-indigo-700 dark:text-indigo-400 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {instansiList.map((inst) => (
+                  <div
+                    key={inst.idkategori}
+                    className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/5 hover:border-indigo-500/30 transition shadow-sm hover:shadow-md flex flex-col justify-between"
                   >
-                    <Users className="h-3.5 w-3.5" />
-                    Kelola Anggota Instansi
-                    <ChevronRight className="h-3.5 w-3.5 ml-auto" />
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2.5 bg-indigo-50 dark:bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                            <School className="h-6 w-6" />
+                          </div>
+                          <div>
+                            <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">{inst.nama_kategori}</h3>
+                            <p className="text-[11px] font-mono text-slate-400">ID: {inst.idkategori}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingInstansiId(inst.idkategori);
+                              setInstansiFormName(inst.nama_kategori);
+                              setShowInstansiModal(true);
+                            }}
+                            className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteInstansi(inst.idkategori, inst.nama_kategori)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-white/5 text-center">
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
+                          <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.admin_count}</span>
+                          <span className="text-[10px] text-slate-400">Admin</span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
+                          <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.guru_count}</span>
+                          <span className="text-[10px] text-slate-400">Guru</span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
+                          <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.siswa_count}</span>
+                          <span className="text-[10px] text-slate-400">Siswa</span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
+                          <span className="block text-xs font-bold text-slate-800 dark:text-gray-200">{inst.kelas_count}</span>
+                          <span className="text-[10px] text-slate-400">Kelas</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => openInstansiDetail(inst)}
+                      className="mt-4 w-full py-2.5 px-3 bg-indigo-50 dark:bg-indigo-600/10 hover:bg-indigo-100 dark:hover:bg-indigo-600/20 text-indigo-700 dark:text-indigo-400 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      Kelola Anggota Instansi
+                      <ChevronRight className="h-3.5 w-3.5 ml-auto" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="glass-panel rounded-2xl border border-slate-200/80 dark:border-white/5 overflow-hidden">
+                <Pagination
+                  currentPage={paginationMeta.currentPage}
+                  lastPage={paginationMeta.lastPage}
+                  total={paginationMeta.total}
+                  perPage={paginationMeta.perPage}
+                  from={paginationMeta.from}
+                  to={paginationMeta.to}
+                  onPageChange={setPage}
+                />
+              </div>
+            </>
           )}
         </>
       )}

@@ -28,7 +28,22 @@ class TestTaskController extends Controller
             });
         }
 
-        return response()->json($query->orderBy('created_at', 'desc')->get());
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $tasks = $query->orderBy('created_at', 'desc')->get();
+            return response()->json([
+                'data' => $tasks,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $tasks->count(),
+                'total' => $tasks->count(),
+                'from' => $tasks->count() > 0 ? 1 : null,
+                'to' => $tasks->count() > 0 ? $tasks->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        return response()->json($query->orderBy('created_at', 'desc')->paginate($perPage));
     }
 
     public function store(Request $request)

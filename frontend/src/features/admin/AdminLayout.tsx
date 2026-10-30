@@ -13,11 +13,8 @@ import {
   BarChart3,
   Layers,
   Building2,
-  FileQuestion,
   PanelLeftClose,
   PanelLeftOpen,
-  History,
-  Users,
   CalendarDays,
   UserCheck,
   ChevronDown,
@@ -56,57 +53,44 @@ export const AdminLayout: React.FC = () => {
     });
   };
 
-  const isSuperAdmin = user?.role === 'super_admin';
-
-  // Submenu state for Super Admin Master Data Akademik
-  const isMasterDataChildActive = [
-    '/admin/classes',
-    '/admin/jenjang',
-    '/admin/subjects',
+  // Submenu state for Admin Instansi Akademik Sekolah
+  const isSchoolAcademicsActive = [
     '/admin/academic-years',
-    '/admin/tahun-soal'
+    '/admin/subjects',
+    '/admin/majors'
   ].includes(location.pathname);
 
-  const [masterDataOpen, setMasterDataOpen] = React.useState<boolean>(isMasterDataChildActive);
+  const [academicsOpen, setAcademicsOpen] = React.useState<boolean>(isSchoolAcademicsActive);
 
-  // Keep master data open if user is currently on one of the master data routes
   React.useEffect(() => {
-    if (isMasterDataChildActive) {
-      setMasterDataOpen(true);
+    if (isSchoolAcademicsActive) {
+      setAcademicsOpen(true);
     }
-  }, [location.pathname, isMasterDataChildActive]);
+  }, [location.pathname, isSchoolAcademicsActive]);
 
-  // Menu items strictly aligned with "final Overall System Flow.drawio.xml"
-  const superAdminMenus: MenuItem[] = [
-    { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-    { name: '1. Kelola Instansi', path: '/admin/instansi', icon: Building2 },
-    { name: '2. Kelola Pengguna', path: '/admin/users', icon: Users },
+  // Menu items strictly for ADMIN INSTANSI (Portal Sekolah)
+  const schoolAdminMenus: MenuItem[] = [
+    { name: 'Dashboard Sekolah', path: '/admin/dashboard', icon: LayoutDashboard },
+    { name: 'Pengguna Instansi', path: '/admin/school-users', icon: Building2 },
+    { name: 'Kelola Guru', path: '/admin/teachers', icon: UserCheck },
+    { name: 'Kelola Siswa', path: '/admin/students', icon: GraduationCap },
+    { name: 'Kelola Kelas & Rombel', path: '/admin/classes', icon: School },
     { 
-      name: '3. Master Data Akademik', 
-      path: '/admin/classes', 
+      name: 'Akademik Sekolah', 
+      path: '/admin/academic-years', 
       icon: Layers,
       subItems: [
-        { name: 'Daftar Kelas & Rombel', path: '/admin/classes', icon: GraduationCap },
-        { name: 'Jenjang Pendidikan', path: '/admin/jenjang', icon: Layers },
+        { name: 'Tahun Ajaran Sekolah', path: '/admin/academic-years', icon: CalendarDays },
         { name: 'Mata Pelajaran & KKM', path: '/admin/subjects', icon: BookOpen },
-        { name: 'Tahun Ajaran', path: '/admin/academic-years', icon: CalendarDays },
-        { name: 'Tahun Soal', path: '/admin/tahun-soal', icon: CalendarDays },
+        { name: 'Konsentrasi / Jurusan', path: '/admin/majors', icon: Layers },
       ]
     },
-    { name: '4. Bank Soal', path: '/admin/questions', icon: FileQuestion },
-    { name: '5. Audit Trail Global', path: '/admin/audit-logs', icon: History },
-    { name: '6. Profil & Keamanan', path: '/admin/profile', icon: UserCheck },
-  ];
-
-  const schoolAdminMenus: MenuItem[] = [
-    { name: 'Dashboard Instansi', path: '/admin/dashboard', icon: LayoutDashboard },
-    { name: 'Pengguna Instansi', path: '/admin/instansi', icon: Building2 },
-    { name: 'Siswa & Kelas', path: '/admin/classes', icon: GraduationCap },
+    { name: 'Monitoring Ujian', path: '/admin/proctoring', icon: BarChart3 },
     { name: 'Laporan Rekap Nilai', path: '/admin/reports', icon: BarChart3 },
     { name: 'Profil & Keamanan', path: '/admin/profile', icon: UserCheck },
   ];
 
-  const currentMenuItems = isSuperAdmin ? superAdminMenus : schoolAdminMenus;
+  const currentMenuItems = schoolAdminMenus;
 
   return (
     <div className="h-screen overflow-hidden flex bg-[#F7F9FC] dark:bg-[#0B1014] text-[#161C2D] dark:text-[#F7FCFE] transition-colors duration-200 font-sans">
@@ -164,9 +148,9 @@ export const AdminLayout: React.FC = () => {
           {currentMenuItems.map((item) => {
             const Icon = item.icon;
             
-            // Render accordion menu if item has sub-items (e.g. Master Data Akademik)
+            // Render accordion menu if item has sub-items (e.g. Akademik Sekolah)
             if (item.subItems) {
-              const isParentActive = isMasterDataChildActive;
+              const isParentActive = isSchoolAcademicsActive;
               return (
                 <div key={item.name} className="space-y-1">
                   <button
@@ -174,14 +158,14 @@ export const AdminLayout: React.FC = () => {
                       if (isCollapsed) {
                         navigate(item.path);
                       } else {
-                        setMasterDataOpen((prev) => !prev);
+                        setAcademicsOpen((prev) => !prev);
                       }
                     }}
                     title={isCollapsed ? item.name : undefined}
                     className={`w-full flex items-center ${
                       isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'
-                    } rounded-xl text-sm font-bold transition duration-150 ${
-                      isParentActive && !masterDataOpen
+                    } rounded-xl text-sm font-bold transition duration-150 cursor-pointer ${
+                      isParentActive && !academicsOpen
                         ? 'bg-[#38B1ED] text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]'
                         : isParentActive
                         ? 'text-[#0A2540] dark:text-[#38B1ED] bg-[#38B1ED]/15 border-2 border-[#161C2D] dark:border-[#38B1ED]'
@@ -194,13 +178,13 @@ export const AdminLayout: React.FC = () => {
                     </div>
                     {!isCollapsed && (
                       <span className="shrink-0 text-slate-500">
-                        {masterDataOpen ? <ChevronDown className="h-4 w-4 stroke-[2.5]" /> : <ChevronRight className="h-4 w-4 stroke-[2.5]" />}
+                        {academicsOpen ? <ChevronDown className="h-4 w-4 stroke-[2.5]" /> : <ChevronRight className="h-4 w-4 stroke-[2.5]" />}
                       </span>
                     )}
                   </button>
 
                   {/* Sub-menu accordion (only shown when expanded desktop) */}
-                  {!isCollapsed && masterDataOpen && (
+                  {!isCollapsed && academicsOpen && (
                     <div className="pl-4 space-y-1 pt-0.5 border-l-2 border-[#161C2D] dark:border-[#32363A] ml-5">
                       {item.subItems.map((sub) => {
                         const SubIcon = sub.icon;
@@ -357,16 +341,16 @@ export const AdminLayout: React.FC = () => {
                   return (
                     <div key={item.name} className="space-y-1">
                       <button
-                        onClick={() => setMasterDataOpen((prev) => !prev)}
+                        onClick={() => setAcademicsOpen((prev) => !prev)}
                         className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5 transition"
                       >
                         <div className="flex items-center gap-3">
                           <Icon className="h-4.5 w-4.5" />
                           <span>{item.name}</span>
                         </div>
-                        {masterDataOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        {academicsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </button>
-                      {masterDataOpen && (
+                      {academicsOpen && (
                         <div className="pl-6 space-y-1 border-l-2 border-indigo-200 dark:border-indigo-500/20 ml-4">
                           {item.subItems.map((sub) => {
                             const SubIcon = sub.icon;

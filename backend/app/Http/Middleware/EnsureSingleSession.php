@@ -15,19 +15,19 @@ class EnsureSingleSession
     {
         $user = $request->user();
 
-        if ($user) {
+        if ($user && !empty($user->active_session_token)) {
             $clientToken = $request->header('X-Session-Token');
 
-            if ($clientToken && $user->active_session_token && $user->active_session_token !== $clientToken) {
-                if ($user->hasRole('siswa')) {
-                    // Revoke current Sanctum token to force logout
-                    $request->user()->currentAccessToken()?->delete();
+            // Two-way validation:
+            // If user has active_session_token, request MUST supply X-Session-Token and it MUST match.
+            // If header is missing or does not match active_session_token, immediately revoke token and logout.
+            if (!$clientToken || !hash_equals((string) $user->active_session_token, (string) $clientToken)) {
+                $request->user()->currentAccessToken()?->delete();
 
-                    return response()->json([
-                        'message' => 'Sesi Anda telah aktif di perangkat lain. Anda telah dikeluarkan otomatis.',
-                        'code' => 'SESSION_OVERWRITE'
-                    ], 401);
-                }
+                return response()->json([
+                    'message' => 'Sesi Anda tidak valid atau telah aktif di perangkat lain. Anda telah dikeluarkan otomatis.',
+                    'code' => 'SESSION_OVERWRITE'
+                ], 401);
             }
         }
 

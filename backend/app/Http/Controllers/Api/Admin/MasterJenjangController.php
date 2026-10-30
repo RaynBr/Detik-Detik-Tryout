@@ -8,11 +8,34 @@ use Illuminate\Http\Request;
 
 class MasterJenjangController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $jenjang = MasterJenjang::withCount(['kelas', 'mataPelajaran'])
-            ->orderBy('urutan', 'asc')
-            ->get();
+        $query = MasterJenjang::withCount(['kelas', 'mataPelajaran']);
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama_jenjang', 'like', "%{$search}%")
+                  ->orWhere('kode_jenjang', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $jenjang = $query->orderBy('urutan', 'asc')->get();
+            return response()->json([
+                'data' => $jenjang,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $jenjang->count(),
+                'total' => $jenjang->count(),
+                'from' => $jenjang->count() > 0 ? 1 : null,
+                'to' => $jenjang->count() > 0 ? $jenjang->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $jenjang = $query->orderBy('urutan', 'asc')->paginate($perPage);
 
         return response()->json($jenjang);
     }

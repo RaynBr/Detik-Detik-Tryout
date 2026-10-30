@@ -25,7 +25,12 @@ class UserSiswa extends Authenticatable
         'nisn',
         'nis',
         'jenis_kelamin',
+        'tempat_lahir',
+        'tanggal_lahir',
+        'agama',
+        'nomor_absen',
         'idkelas',
+        'idjenjang',
         'idkategori',
         'telp',
         'alamat',
@@ -37,6 +42,7 @@ class UserSiswa extends Authenticatable
         'kode_referal',
         'active_session_token',
         'last_login_at',
+        'force_change_password',
     ];
 
     protected $hidden = [
@@ -78,11 +84,36 @@ class UserSiswa extends Authenticatable
     {
         $raw = (string) $this->login_password;
 
-        if (password_verify($plainPassword, $raw)) {
+        // 1. Check if stored password is a standard bcrypt hash
+        $isBcrypt = str_starts_with($raw, '$2y$') || str_starts_with($raw, '$2a$') || str_starts_with($raw, '$2b$');
+        if ($isBcrypt) {
+            try {
+                if (\Illuminate\Support\Facades\Hash::check($plainPassword, $raw)) {
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                // Not a valid bcrypt hash, fall through to migration check
+            }
+        }
+
+        // 2. Migration helper: if legacy 5x base64 or plaintext matches,
+        // automatically upgrade stored password to standard bcrypt hash upon first login.
+        $decoded = $raw;
+        for ($i = 0; $i < 5; $i++) {
+            $step = @base64_decode($decoded, true);
+            if ($step !== false && preg_match('//u', $step)) {
+                $decoded = $step;
+            } else {
+                break;
+            }
+        }
+
+        if ($decoded === $plainPassword || $raw === $plainPassword) {
+            $this->update(['login_password' => \Illuminate\Support\Facades\Hash::make($plainPassword)]);
             return true;
         }
 
-        return $raw === $plainPassword;
+        return false;
     }
 
     public function kelas(): BelongsTo

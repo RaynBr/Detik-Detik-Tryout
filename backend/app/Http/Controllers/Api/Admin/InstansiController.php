@@ -15,19 +15,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 
 class InstansiController extends Controller
 {
     /**
-     * Helper to encode password 5x base64 for UserBo compatibility
+     * Helper to encode password using standard Hash::make() - no Base64 (Requirement 4)
      */
     protected function encodePasswordBo(string $plain): string
     {
-        $val = $plain;
-        for ($i = 0; $i < 5; $i++) {
-            $val = base64_encode($val);
-        }
-        return $val;
+        return Hash::make($plain);
     }
 
     /**
@@ -80,43 +77,108 @@ class InstansiController extends Controller
             $query->where('idkategori', $user->idkategori);
         }
 
-        if ($request->has('search') && !empty($request->search)) {
+        if ($request->filled('search')) {
             $query->where('nama_kategori', 'like', '%' . $request->search . '%');
         }
 
-        $items = $query->orderBy('nama_kategori', 'asc')->get();
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->orderBy('nama_kategori', 'asc')->get();
+            $idkategoriList = $items->pluck('idkategori')->filter()->toArray();
 
-        $result = $items->map(function ($item) {
-            $adminCount = UserBo::where('idkategori', $item->idkategori)
+            $adminCounts = UserBo::whereIn('idkategori', $idkategoriList)
                 ->where('status_remove', 'N')
                 ->where(function ($q) {
                     $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin');
-                })->count();
+                })
+                ->groupBy('idkategori')
+                ->selectRaw('idkategori, count(*) as count')
+                ->pluck('count', 'idkategori');
 
-            $guruCount = UserBo::where('idkategori', $item->idkategori)
+            $guruCounts = UserBo::whereIn('idkategori', $idkategoriList)
                 ->where('status_remove', 'N')
                 ->where('role_type', 'guru')
-                ->count();
+                ->groupBy('idkategori')
+                ->selectRaw('idkategori, count(*) as count')
+                ->pluck('count', 'idkategori');
 
-            $siswaCount = UserSiswa::where('idkategori', $item->idkategori)
-                ->orWhereHas('kelas', function ($q) use ($item) {
-                    $q->where('idkategori', $item->idkategori);
-                })->count();
+            $kelasCounts = MasterKelas::whereIn('idkategori', $idkategoriList)
+                ->groupBy('idkategori')
+                ->selectRaw('idkategori, count(*) as count')
+                ->pluck('count', 'idkategori');
 
-            $kelasCount = MasterKelas::where('idkategori', $item->idkategori)->count();
+            $siswaCounts = UserSiswa::whereIn('idkategori', $idkategoriList)
+                ->groupBy('idkategori')
+                ->selectRaw('idkategori, count(*) as count')
+                ->pluck('count', 'idkategori');
 
+            $result = $items->map(function ($item) use ($adminCounts, $guruCounts, $kelasCounts, $siswaCounts) {
+                return [
+                    'idkategori' => $item->idkategori,
+                    'nama_kategori' => $item->nama_kategori,
+                    'tgl_input' => $item->tgl_input,
+                    'admin_count' => (int) ($adminCounts->get($item->idkategori) ?? 0),
+                    'guru_count' => (int) ($guruCounts->get($item->idkategori) ?? 0),
+                    'siswa_count' => (int) ($siswaCounts->get($item->idkategori) ?? 0),
+                    'kelas_count' => (int) ($kelasCounts->get($item->idkategori) ?? 0),
+                ];
+            });
+
+            return response()->json([
+                'data' => $result,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $result->count(),
+                'total' => $result->count(),
+                'from' => $result->count() > 0 ? 1 : null,
+                'to' => $result->count() > 0 ? $result->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $query->orderBy('nama_kategori', 'asc')->paginate($perPage);
+
+        $idkategoriList = $paginator->getCollection()->pluck('idkategori')->filter()->toArray();
+
+        $adminCounts = UserBo::whereIn('idkategori', $idkategoriList)
+            ->where('status_remove', 'N')
+            ->where(function ($q) {
+                $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin');
+            })
+            ->groupBy('idkategori')
+            ->selectRaw('idkategori, count(*) as count')
+            ->pluck('count', 'idkategori');
+
+        $guruCounts = UserBo::whereIn('idkategori', $idkategoriList)
+            ->where('status_remove', 'N')
+            ->where('role_type', 'guru')
+            ->groupBy('idkategori')
+            ->selectRaw('idkategori, count(*) as count')
+            ->pluck('count', 'idkategori');
+
+        $kelasCounts = MasterKelas::whereIn('idkategori', $idkategoriList)
+            ->groupBy('idkategori')
+            ->selectRaw('idkategori, count(*) as count')
+            ->pluck('count', 'idkategori');
+
+        $siswaCounts = UserSiswa::whereIn('idkategori', $idkategoriList)
+            ->groupBy('idkategori')
+            ->selectRaw('idkategori, count(*) as count')
+            ->pluck('count', 'idkategori');
+
+        $paginator->through(function ($item) use ($adminCounts, $guruCounts, $kelasCounts, $siswaCounts) {
             return [
                 'idkategori' => $item->idkategori,
                 'nama_kategori' => $item->nama_kategori,
                 'tgl_input' => $item->tgl_input,
-                'admin_count' => $adminCount,
-                'guru_count' => $guruCount,
-                'siswa_count' => $siswaCount,
-                'kelas_count' => $kelasCount,
+                'admin_count' => (int) ($adminCounts->get($item->idkategori) ?? 0),
+                'guru_count' => (int) ($guruCounts->get($item->idkategori) ?? 0),
+                'siswa_count' => (int) ($siswaCounts->get($item->idkategori) ?? 0),
+                'kelas_count' => (int) ($kelasCounts->get($item->idkategori) ?? 0),
             ];
         });
 
-        return response()->json($result);
+        return response()->json($paginator);
     }
 
     /**
@@ -516,7 +578,8 @@ class InstansiController extends Controller
             ->where('idkategori', $idkategori)
             ->firstOrFail();
 
-        $admin->update(['status_remove' => 'Y']);
+        $admin->tokens()->delete();
+        $admin->update(['status_remove' => 'Y', 'status_aktif' => 'N', 'active_session_token' => null]);
 
         AuditLog::record(
             'DELETE_ADMIN_INSTANSI',
@@ -645,7 +708,8 @@ class InstansiController extends Controller
             ->where('idkategori', $idkategori)
             ->firstOrFail();
 
-        $guru->update(['status_remove' => 'Y']);
+        $guru->tokens()->delete();
+        $guru->update(['status_remove' => 'Y', 'status_aktif' => 'N', 'active_session_token' => null]);
 
         AuditLog::record(
             'DELETE_GURU',
@@ -770,7 +834,8 @@ class InstansiController extends Controller
         $siswa = UserSiswa::where('iduser', $iduser)
             ->where('idkategori', $idkategori)
             ->firstOrFail();
-        $siswa->update(['status_aktif' => 'N']);
+        $siswa->tokens()->delete();
+        $siswa->update(['status_aktif' => 'N', 'active_session_token' => null]);
 
         AuditLog::record(
             'DELETE_SISWA',
@@ -783,5 +848,237 @@ class InstansiController extends Controller
         return response()->json([
             'message' => 'Siswa berhasil dinonaktifkan'
         ]);
+    }
+
+    /**
+     * Standard Server-Side Paginated list of users in the school (Admin, Guru, Siswa).
+     * Accepts: page, per_page (default 15), role (all|guru|siswa|admin), search, sort_by, sort_order.
+     */
+    public function schoolUsers(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $idkategori = ($user->role === 'super_admin' && $request->filled('idkategori'))
+            ? $request->input('idkategori')
+            : $user->idkategori;
+
+        if (!$idkategori) {
+            return response()->json(['message' => 'ID Instansi diperlukan.'], 400);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        if ($perPage <= 0 || $perPage > 100) {
+            $perPage = 15;
+        }
+
+        $roleFilter = $request->input('role', 'all');
+        $search = trim((string) $request->input('search', ''));
+        $sortBy = $request->input('sort_by', 'nama');
+        $sortOrder = strtolower($request->input('sort_order', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+        // 1. If role is 'guru'
+        if ($roleFilter === 'guru') {
+            $q = UserBo::with(['mapelAjar.mataPelajaran'])
+                ->where('idkategori', $idkategori)
+                ->where('status_remove', '!=', 'Y')
+                ->where('role_type', 'guru');
+
+            if ($search !== '') {
+                $q->where(function ($query) use ($search) {
+                    $query->where('nama', 'like', "%{$search}%")
+                          ->orWhere('login_username', 'like', "%{$search}%")
+                          ->orWhere('login_email', 'like', "%{$search}%")
+                          ->orWhere('nuptk', 'like', "%{$search}%")
+                          ->orWhere('nip', 'like', "%{$search}%")
+                          ->orWhere('telp', 'like', "%{$search}%");
+                });
+            }
+
+            $paginator = $q->orderBy($sortBy === 'nama' ? 'nama' : 'iduser_bo', $sortOrder)
+                           ->paginate($perPage);
+
+            $paginator->through(function ($g) {
+                return [
+                    'id' => $g->iduser_bo,
+                    'user_type' => 'guru',
+                    'nama' => $g->nama,
+                    'identifier' => $g->nuptk ?: ($g->nip ?: $g->login_username),
+                    'username' => $g->login_username,
+                    'email' => $g->login_email,
+                    'telp' => $g->telp,
+                    'alamat' => $g->alamat,
+                    'status_aktif' => $g->status_aktif,
+                    'role' => 'guru',
+                    'mapel' => $g->mapelAjar->map(fn($m) => $m->mataPelajaran?->nama_mapel)->filter()->values(),
+                ];
+            });
+
+            return response()->json($paginator);
+        }
+
+        // 2. If role is 'admin'
+        if ($roleFilter === 'admin') {
+            $q = UserBo::where('idkategori', $idkategori)
+                ->where('status_remove', '!=', 'Y')
+                ->where(function ($query) {
+                    $query->where('role_type', 'admin_sekolah')
+                          ->orWhere('role_type', 'admin');
+                });
+
+            if ($search !== '') {
+                $q->where(function ($query) use ($search) {
+                    $query->where('nama', 'like', "%{$search}%")
+                          ->orWhere('login_username', 'like', "%{$search}%")
+                          ->orWhere('login_email', 'like', "%{$search}%")
+                          ->orWhere('telp', 'like', "%{$search}%");
+                });
+            }
+
+            $paginator = $q->orderBy($sortBy === 'nama' ? 'nama' : 'iduser_bo', $sortOrder)
+                           ->paginate($perPage);
+
+            $paginator->through(function ($a) {
+                return [
+                    'id' => $a->iduser_bo,
+                    'user_type' => 'admin',
+                    'nama' => $a->nama,
+                    'identifier' => $a->login_username,
+                    'username' => $a->login_username,
+                    'email' => $a->login_email,
+                    'telp' => $a->telp,
+                    'alamat' => $a->alamat,
+                    'status_aktif' => $a->status_aktif,
+                    'role' => 'admin',
+                    'mapel' => [],
+                ];
+            });
+
+            return response()->json($paginator);
+        }
+
+        // 3. If role is 'siswa'
+        if ($roleFilter === 'siswa') {
+            $q = UserSiswa::with(['kelas.jenjang'])
+                ->where('idkategori', $idkategori);
+
+            if ($search !== '') {
+                $q->where(function ($query) use ($search) {
+                    $query->where('nama', 'like', "%{$search}%")
+                          ->orWhere('nisn', 'like', "%{$search}%")
+                          ->orWhere('login_email', 'like', "%{$search}%")
+                          ->orWhere('telp', 'like', "%{$search}%");
+                });
+            }
+
+            $paginator = $q->orderBy($sortBy === 'nama' ? 'nama' : 'iduser', $sortOrder)
+                           ->paginate($perPage);
+
+            $paginator->through(function ($s) {
+                return [
+                    'id' => $s->iduser,
+                    'user_type' => 'siswa',
+                    'nama' => $s->nama,
+                    'identifier' => $s->nisn ?: $s->iduser,
+                    'username' => $s->nisn ?: $s->iduser,
+                    'email' => $s->login_email,
+                    'telp' => $s->telp,
+                    'alamat' => $s->alamat,
+                    'status_aktif' => $s->status_aktif,
+                    'role' => 'siswa',
+                    'class_name' => $s->kelas?->nama_kelas ?? '-',
+                    'mapel' => [],
+                ];
+            });
+
+            return response()->json($paginator);
+        }
+
+        // 4. If role is 'all', query across both tables via DB query union
+        $boQuery = DB::table('user_bo')
+            ->select([
+                'iduser_bo as id',
+                DB::raw("'user_bo' as source_table"),
+                'nama',
+                'login_username as username',
+                'login_email as email',
+                DB::raw("COALESCE(nuptk, nip, login_username) as identifier"),
+                'telp',
+                'alamat',
+                'status_aktif',
+                'role_type as role',
+                DB::raw("NULL as class_name"),
+            ])
+            ->where('idkategori', $idkategori)
+            ->where('status_remove', '!=', 'Y')
+            ->where(function ($q) {
+                $q->where('role_type', 'guru')
+                  ->orWhere('role_type', 'admin_sekolah')
+                  ->orWhere('role_type', 'admin');
+            });
+
+        if ($search !== '') {
+            $boQuery->where(function ($q) use ($search) {
+                $q->where('nama', 'like', "%{$search}%")
+                  ->orWhere('login_username', 'like', "%{$search}%")
+                  ->orWhere('login_email', 'like', "%{$search}%")
+                  ->orWhere('nuptk', 'like', "%{$search}%")
+                  ->orWhere('nip', 'like', "%{$search}%")
+                  ->orWhere('telp', 'like', "%{$search}%");
+            });
+        }
+
+        $siswaQuery = DB::table('user')
+            ->leftJoin('master_kelas', 'user.idkelas', '=', 'master_kelas.id')
+            ->select([
+                'user.iduser as id',
+                DB::raw("'user' as source_table"),
+                'user.nama',
+                'user.nisn as username',
+                'user.login_email as email',
+                DB::raw("COALESCE(user.nisn, user.iduser) as identifier"),
+                'user.telp',
+                'user.alamat',
+                'user.status_aktif',
+                DB::raw("'siswa' as role"),
+                'master_kelas.nama_kelas as class_name',
+            ])
+            ->where('user.idkategori', $idkategori);
+
+        if ($search !== '') {
+            $siswaQuery->where(function ($q) use ($search) {
+                $q->where('user.nama', 'like', "%{$search}%")
+                  ->orWhere('user.nisn', 'like', "%{$search}%")
+                  ->orWhere('user.login_email', 'like', "%{$search}%")
+                  ->orWhere('user.telp', 'like', "%{$search}%");
+            });
+        }
+
+        $union = $boQuery->unionAll($siswaQuery);
+
+        $paginator = DB::query()->fromSub($union, 'u')
+            ->orderBy($sortBy === 'nama' ? 'nama' : 'id', $sortOrder)
+            ->paginate($perPage);
+
+        $paginator->through(function ($item) {
+            return [
+                'id' => $item->id,
+                'user_type' => $item->role === 'guru' ? 'guru' : ($item->role === 'siswa' ? 'siswa' : 'admin'),
+                'nama' => $item->nama,
+                'identifier' => $item->identifier,
+                'username' => $item->username,
+                'email' => $item->email,
+                'telp' => $item->telp,
+                'alamat' => $item->alamat,
+                'status_aktif' => $item->status_aktif,
+                'role' => $item->role,
+                'class_name' => $item->class_name ?? '-',
+                'mapel' => [],
+            ];
+        });
+
+        return response()->json($paginator);
     }
 }

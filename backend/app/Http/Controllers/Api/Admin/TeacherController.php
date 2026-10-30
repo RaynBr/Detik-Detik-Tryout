@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\GuruMataPelajaran;
 use App\Models\UserBo;
+use App\Services\SimpleSpreadsheetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class TeacherController extends Controller
 {
@@ -26,9 +29,59 @@ class TeacherController extends Controller
             $query->where('idkategori', $user->idkategori);
         }
 
-        $teachers = $query->get();
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama', 'like', "%{$search}%")
+                  ->orWhere('login_email', 'like', "%{$search}%")
+                  ->orWhere('login_username', 'like', "%{$search}%")
+                  ->orWhere('telp', 'like', "%{$search}%");
+            });
+        }
 
-        $mapped = $teachers->map(function ($t) {
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $teachers = $query->orderBy('nama', 'asc')->get();
+            $mapped = $teachers->map(function ($t) {
+                return [
+                    'id' => $t->iduser_bo,
+                    'name' => $t->name,
+                    'email' => $t->email,
+                    'username' => $t->username,
+                    'phone' => $t->telp,
+                    'role' => $t->role,
+                    'institution' => $t->kategori?->nama_kategori,
+                    'is_active' => $t->status_aktif === 'Y',
+                    'teacher' => [
+                        'id' => $t->iduser_bo,
+                        'user_id' => $t->iduser_bo,
+                        'nip' => $t->iduser_bo,
+                        'subjects' => $t->mapelAjar->map(function ($m) {
+                            return [
+                                'id' => $m->mataPelajaran?->id,
+                                'name' => $m->mataPelajaran?->nama_mapel,
+                                'code' => $m->mataPelajaran?->kode_mapel,
+                            ];
+                        })->filter(fn($s) => !empty($s['id']))->values()
+                    ]
+                ];
+            });
+
+            return response()->json([
+                'data' => $mapped,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $mapped->count(),
+                'total' => $mapped->count(),
+                'from' => $mapped->count() > 0 ? 1 : null,
+                'to' => $mapped->count() > 0 ? $mapped->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $query->orderBy('nama', 'asc')->paginate($perPage);
+
+        $paginator->through(function ($t) {
             return [
                 'id' => $t->iduser_bo,
                 'name' => $t->name,
@@ -53,7 +106,7 @@ class TeacherController extends Controller
             ];
         });
 
-        return response()->json($mapped);
+        return response()->json($paginator);
     }
 
     public function store(Request $request)
@@ -62,7 +115,7 @@ class TeacherController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email',
             'username' => 'nullable|string',
-            'password' => 'required|string|min:4',
+            'password' => ['required', 'string', Password::min(8)->letters()->mixedCase()->numbers()->symbols()],
             'phone' => 'nullable|string',
             'subject_ids' => 'nullable|array',
             'role_type' => 'nullable|in:guru,admin_sekolah',
@@ -76,11 +129,7 @@ class TeacherController extends Controller
         $id = (string) (time() . rand(1000, 9999));
         $username = $request->username ?: strtolower(explode('@', $request->email)[0]);
 
-        // Base64 x5 encoded password for user_bo compatibility
-        $pwd = $request->password;
-        for ($i = 0; $i < 5; $i++) {
-            $pwd = base64_encode($pwd);
-        }
+        $pwd = Hash::make($request->password);
 
         $userBo = UserBo::create([
             'iduser_bo' => $id,
@@ -140,14 +189,21 @@ class TeacherController extends Controller
 
         if ($request->has('is_active')) {
             $updateData['status_aktif'] = $request->is_active ? 'Y' : 'N';
+            if (!$request->is_active) {
+                // Revoke tokens on account deactivation (Requirement 5)
+                $userBo->tokens()->delete();
+                $updateData['active_session_token'] = null;
+            }
         }
 
         if ($request->filled('password')) {
-            $pwd = $request->password;
-            for ($i = 0; $i < 5; $i++) {
-                $pwd = base64_encode($pwd);
-            }
-            $updateData['login_password'] = $pwd;
+            $request->validate([
+                'password' => ['string', Password::min(8)->letters()->mixedCase()->numbers()->symbols()],
+            ]);
+            $updateData['login_password'] = Hash::make($request->password);
+            // Revoke tokens on password change (Requirement 5)
+            $userBo->tokens()->delete();
+            $updateData['active_session_token'] = null;
         }
 
         $userBo->update($updateData);
@@ -178,7 +234,9 @@ class TeacherController extends Controller
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses menghapus guru instansi lain.'], 403);
         }
 
-        $userBo->update(['status_remove' => 'Y', 'status_aktif' => 'N']);
+        // Revoke all tokens and sessions on teacher deactivation/removal (Requirement 5)
+        $userBo->tokens()->delete();
+        $userBo->update(['status_remove' => 'Y', 'status_aktif' => 'N', 'active_session_token' => null]);
 
         return response()->json([
             'message' => 'Guru berhasil dinonaktifkan/dihapus.'
@@ -191,40 +249,128 @@ class TeacherController extends Controller
     public function downloadTemplate(SimpleSpreadsheetService $spreadsheetService)
     {
         $headers = [
-            'Nama Lengkap Guru',
+            'Nama Guru',
+            'NIP',
+            'NUPTK',
             'Email',
             'Username',
             'Password',
-            'No Telepon',
-            'Mata Pelajaran Utama'
+            'Jenis Kelamin',
+            'No HP',
+            'Alamat',
+            'Status',
+            'Instansi',
+            'Jenjang',
+            'Mata Pelajaran',
+            'Role'
         ];
 
         $sampleRows = [
-            ['Budi Santoso, M.Pd.', 'budi.santoso@sekolah.sch.id', 'budisantoso', 'Guru1234!', '081234567890', 'Matematika'],
-            ['Siti Nurhaliza, S.Pd.', 'siti.nurhaliza@sekolah.sch.id', 'sitinurhaliza', 'Guru1234!', '081298765432', 'Bahasa Indonesia'],
-            ['Ahmad Fauzi, S.Kom.', 'ahmad.fauzi@sekolah.sch.id', 'ahmadfauzi', 'Guru1234!', '081377889900', 'Informatika'],
+            ['Budi Santoso, M.Pd.', '198501012010011001', '1234567890123456', 'budi.santoso@sekolah.sch.id', 'budisantoso', 'Guru1234!', 'L', '081234567890', 'Jl. Merdeka No. 10', 'Aktif', 'SMA Negeri 1', 'SMA', 'Matematika', 'guru'],
+            ['Siti Nurhaliza, S.Pd.', '199002022015022002', '2345678901234567', 'siti.nurhaliza@sekolah.sch.id', 'sitinurhaliza', 'Guru1234!', 'P', '081298765432', 'Jl. Sudirman No. 25', 'Aktif', 'SMA Negeri 1', 'SMA', 'Bahasa Indonesia', 'guru'],
+            ['Ahmad Fauzi, S.Kom.', '', '', 'ahmad.fauzi@sekolah.sch.id', 'ahmadfauzi', 'Guru1234!', 'L', '081377889900', 'Jl. Thamrin No. 5', 'Aktif', 'SMA Negeri 1', 'SMA', 'Informatika', 'guru'],
         ];
 
         return $spreadsheetService->downloadCsv($headers, $sampleRows, 'template_import_guru.csv');
     }
 
     /**
-     * Import data guru via Excel (.xlsx) atau CSV (.csv)
+     * Import data guru via Excel (.xlsx) atau CSV (.csv) with Preview & Exact Match
      */
     public function import(Request $request, SimpleSpreadsheetService $spreadsheetService)
     {
+        $authUser = $request->user();
+        $isAdminInstansi = $authUser && $authUser->role === 'admin' && !empty($authUser->idkategori);
+        $defaultIdKategori = $isAdminInstansi ? $authUser->idkategori : ($request->idkategori ?? $authUser?->idkategori ?? '27830150842287772');
+
+        // Mode 1: Batch JSON Commit (for chunked uploading with progress)
+        if ($request->has('rows') && is_array($request->rows)) {
+            $rowsToSave = $request->input('rows');
+            $savedCount = 0;
+            $failedRows = [];
+
+            DB::beginTransaction();
+            try {
+                foreach ($rowsToSave as $item) {
+                    $rowNum = $item['row_number'] ?? 0;
+                    $data = $item['data'] ?? $item;
+
+                    $name = trim($data['nama'] ?? $data['name'] ?? '');
+                    $email = trim($data['email'] ?? '');
+                    $username = trim($data['username'] ?? '');
+                    $password = trim($data['password'] ?? 'Guru1234!');
+                    $nip = trim($data['nip'] ?? '');
+                    $nuptk = trim($data['nuptk'] ?? '');
+                    $phone = trim($data['phone'] ?? $data['telp'] ?? '');
+                    $alamat = trim($data['alamat'] ?? '');
+                    $jk = strtoupper(trim($data['jenis_kelamin'] ?? 'L'));
+                    $status = (strtolower(trim($data['status'] ?? 'aktif')) === 'nonaktif' || strtolower(trim($data['status'] ?? '')) === 'n') ? 'N' : 'Y';
+                    $roleType = trim($data['role'] ?? 'guru') ?: 'guru';
+                    $targetKategori = $isAdminInstansi ? $authUser->idkategori : ($data['idkategori'] ?? $defaultIdKategori);
+                    $targetJenjang = $data['idjenjang'] ?? null;
+                    $targetMapelId = $data['idmapel'] ?? null;
+
+                    if (empty($name) || empty($email)) {
+                        $failedRows[] = ['row_number' => $rowNum, 'name' => $name, 'message' => 'Nama atau Email tidak boleh kosong'];
+                        continue;
+                    }
+
+                    $pwd = Hash::make($password);
+
+                    $newId = (string) (time() . rand(1000, 9999) . rand(10, 99));
+
+                    $userBo = UserBo::create([
+                        'iduser_bo' => $newId,
+                        'idkategori' => $targetKategori,
+                        'idjenjang' => $targetJenjang,
+                        'nama' => $name,
+                        'nip' => $nip ?: null,
+                        'nuptk' => $nuptk ?: null,
+                        'login_email' => $email,
+                        'login_username' => $username,
+                        'login_password' => $pwd,
+                        'force_change_password' => true,
+                        'jenis_kelamin' => $jk === 'P' ? 'P' : 'L',
+                        'telp' => $phone ?: null,
+                        'alamat' => $alamat ?: null,
+                        'status_admin' => '2',
+                        'role_type' => $roleType,
+                        'status_aktif' => $status,
+                        'status_remove' => 'N',
+                        'tanggal_input' => now(),
+                    ]);
+
+                    if ($targetMapelId) {
+                        GuruMataPelajaran::create([
+                            'iduser_bo' => $newId,
+                            'idmapel' => $targetMapelId,
+                            'tahun_ajaran' => '2026/2027',
+                            'status' => 'aktif',
+                        ]);
+                    }
+
+                    $savedCount++;
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'message' => "Berhasil mengimpor {$savedCount} data guru.",
+                    'saved_count' => $savedCount,
+                    'failed_rows' => $failedRows,
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Terjadi kesalahan sistem saat menyimpan data guru: ' . $e->getMessage()
+                ], 500);
+            }
+        }
+
+        // Mode 2: File Upload (Preview Mode or Direct Import)
         $request->validate([
             'file' => 'required|file|max:10240',
         ]);
-
-        $user = $request->user();
-        $idkategori = ($user && $user->role === 'admin' && !empty($user->idkategori))
-            ? $user->idkategori
-            : ($request->idkategori ?? $user?->idkategori);
-
-        if (empty($idkategori)) {
-            $idkategori = '27830150842287772';
-        }
 
         $file = $request->file('file');
 
@@ -245,108 +391,159 @@ class TeacherController extends Controller
         // Remove header row
         array_shift($rows);
 
-        $imported = 0;
-        $errors = [];
+        $previewRows = [];
+        $validCount = 0;
+        $invalidCount = 0;
 
-        DB::beginTransaction();
-        try {
-            foreach ($rows as $index => $row) {
-                $rowNum = $index + 2; // 1-indexed Excel row
+        $seenEmails = [];
+        $seenUsernames = [];
 
-                $name = trim($row[0] ?? '');
-                $email = trim($row[1] ?? '');
-                $username = trim($row[2] ?? '');
-                $password = trim($row[3] ?? 'Guru1234!');
-                $phone = trim($row[4] ?? '');
-                $mapelName = trim($row[5] ?? '');
+        foreach ($rows as $index => $row) {
+            $rowNum = $index + 2;
 
-                if (empty($name)) {
-                    $errors[] = "Baris {$rowNum}: Nama Guru tidak boleh kosong.";
-                    continue;
+            $name = trim($row[0] ?? '');
+            $nip = trim($row[1] ?? '');
+            $nuptk = trim($row[2] ?? '');
+            $email = trim($row[3] ?? '');
+            $username = trim($row[4] ?? '');
+            $password = trim($row[5] ?? 'Guru1234!');
+            $jk = strtoupper(trim($row[6] ?? 'L'));
+            $phone = trim($row[7] ?? '');
+            $alamat = trim($row[8] ?? '');
+            $statusRaw = trim($row[9] ?? 'Aktif');
+            $instansiName = trim($row[10] ?? '');
+            $jenjangName = trim($row[11] ?? '');
+            $mapelName = trim($row[12] ?? '');
+            $roleType = trim($row[13] ?? 'guru') ?: 'guru';
+
+            if (empty($username) && !empty($email)) {
+                $username = strtolower(explode('@', $email)[0]);
+            }
+
+            $isValid = true;
+            $errorReasons = [];
+
+            if (empty($name)) {
+                $isValid = false;
+                $errorReasons[] = 'Nama Guru tidak boleh kosong';
+            }
+
+            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $isValid = false;
+                $errorReasons[] = "Format email '{$email}' tidak valid";
+            } elseif (in_array(strtolower($email), $seenEmails)) {
+                $isValid = false;
+                $errorReasons[] = "Email '{$email}' duplikat dalam berkas";
+            } else {
+                $seenEmails[] = strtolower($email);
+            }
+
+            if (!empty($username)) {
+                if (in_array(strtolower($username), $seenUsernames)) {
+                    $isValid = false;
+                    $errorReasons[] = "Username '{$username}' duplikat dalam berkas";
+                } else {
+                    $seenUsernames[] = strtolower($username);
                 }
+            }
 
-                if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $errors[] = "Baris {$rowNum}: Format email '{$email}' tidak valid.";
-                    continue;
-                }
-
-                if (empty($username)) {
-                    $username = strtolower(explode('@', $email)[0]);
-                }
-
-                // Check duplicate email or username
+            // Check database duplicate for email or username
+            if ($isValid) {
                 $exists = UserBo::where('status_remove', '!=', 'Y')
                     ->where(function ($q) use ($email, $username) {
-                        $q->where('login_email', $email)
-                          ->orWhere('login_username', $username);
+                        $q->where('login_email', $email);
+                        if (!empty($username)) {
+                            $q->orWhere('login_username', $username);
+                        }
                     })->first();
 
                 if ($exists) {
-                    $errors[] = "Baris {$rowNum}: Email '{$email}' atau username '{$username}' sudah terdaftar.";
-                    continue;
-                }
-
-                // 5x Base64 encoding for user_bo password
-                $pwd = $password;
-                for ($i = 0; $i < 5; $i++) {
-                    $pwd = base64_encode($pwd);
-                }
-
-                $newId = (string) (time() . rand(1000, 9999) . $index);
-
-                $newGuru = UserBo::create([
-                    'iduser_bo' => $newId,
-                    'idkategori' => $idkategori,
-                    'nama' => $name,
-                    'login_email' => $email,
-                    'login_username' => $username,
-                    'login_password' => $pwd,
-                    'telp' => $phone ?: null,
-                    'status_admin' => '2',
-                    'role_type' => 'guru',
-                    'status_aktif' => 'Y',
-                    'status_remove' => 'N',
-                    'tanggal_input' => now(),
-                ]);
-
-                // Mapel association if provided
-                if (!empty($mapelName)) {
-                    $mapel = \App\Models\MasterMataPelajaran::where('nama_mapel', 'like', "%{$mapelName}%")
-                        ->orWhere('kode_mapel', 'like', "%{$mapelName}%")
-                        ->first();
-                    if ($mapel) {
-                        GuruMataPelajaran::create([
-                            'iduser_bo' => $newId,
-                            'idmapel' => $mapel->id,
-                            'tahun_ajaran' => '2026/2027',
-                        ]);
+                    $isValid = false;
+                    if (strtolower($exists->login_email) === strtolower($email)) {
+                        $errorReasons[] = "Email sudah digunakan";
+                    } else {
+                        $errorReasons[] = "Username sudah digunakan";
                     }
                 }
-
-                $imported++;
             }
 
-            if ($imported === 0 && !empty($errors)) {
-                DB::rollBack();
-                return response()->json([
-                    'message' => 'Tidak ada data guru yang berhasil diimpor.',
-                    'errors' => $errors
-                ], 422);
+            // Instansi validation
+            $resolvedKategoriId = $defaultIdKategori;
+            if (!$isAdminInstansi && !empty($instansiName)) {
+                $instansi = \App\Models\KategoriUserBo::where('nama_kategori', $instansiName)->first();
+                if (!$instansi) {
+                    $isValid = false;
+                    $errorReasons[] = "Instansi '{$instansiName}' tidak ditemukan";
+                } else {
+                    $resolvedKategoriId = $instansi->idkategori;
+                }
             }
 
-            DB::commit();
+            // Jenjang validation (EXACT MATCH)
+            $resolvedJenjangId = null;
+            if (!empty($jenjangName)) {
+                $jenjang = \App\Models\MasterJenjang::where('nama_jenjang', $jenjangName)
+                    ->orWhere('kode_jenjang', $jenjangName)
+                    ->first();
+                if (!$jenjang) {
+                    $isValid = false;
+                    $errorReasons[] = "Jenjang '{$jenjangName}' tidak ditemukan";
+                } else {
+                    $resolvedJenjangId = $jenjang->id;
+                }
+            }
 
-            return response()->json([
-                'message' => "Berhasil mengimpor {$imported} data guru.",
-                'imported_count' => $imported,
-                'errors' => $errors,
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Terjadi kesalahan sistem saat menyimpan data guru: ' . $e->getMessage()
-            ], 500);
+            // Mata Pelajaran validation (EXACT MATCH)
+            $resolvedMapelId = null;
+            if (!empty($mapelName)) {
+                $mapel = \App\Models\MasterMataPelajaran::where('nama_mapel', $mapelName)
+                    ->orWhere('kode_mapel', $mapelName)
+                    ->first();
+                if (!$mapel) {
+                    $isValid = false;
+                    $errorReasons[] = "Mata Pelajaran '{$mapelName}' tidak ditemukan";
+                } else {
+                    $resolvedMapelId = $mapel->id;
+                }
+            }
+
+            if ($isValid) {
+                $validCount++;
+            } else {
+                $invalidCount++;
+            }
+
+            $previewRows[] = [
+                'row_number' => $rowNum,
+                'name' => $name ?: "Baris {$rowNum}",
+                'status' => $isValid ? 'VALID' : 'INVALID',
+                'message' => $isValid ? '-' : implode(', ', $errorReasons),
+                'data' => [
+                    'nama' => $name,
+                    'nip' => $nip,
+                    'nuptk' => $nuptk,
+                    'email' => $email,
+                    'username' => $username,
+                    'password' => $password,
+                    'jenis_kelamin' => $jk,
+                    'phone' => $phone,
+                    'alamat' => $alamat,
+                    'status' => $statusRaw,
+                    'idkategori' => $resolvedKategoriId,
+                    'idjenjang' => $resolvedJenjangId,
+                    'idmapel' => $resolvedMapelId,
+                    'role' => $roleType,
+                ]
+            ];
         }
+
+        // Return preview data
+        return response()->json([
+            'total_data' => count($rows),
+            'valid_count' => $validCount,
+            'invalid_count' => $invalidCount,
+            'rows' => $previewRows,
+        ]);
     }
 
     /**
@@ -366,12 +563,16 @@ class TeacherController extends Controller
         }
 
         $newPassword = $request->input('new_password') ?: ('Guru' . rand(1000, 9999) . '!');
-        $pwd = $newPassword;
-        for ($i = 0; $i < 5; $i++) {
-            $pwd = base64_encode($pwd);
-        }
+        $pwd = Hash::make($newPassword);
 
-        $teacher->update(['login_password' => $pwd]);
+        $teacher->update([
+            'login_password' => $pwd,
+            'force_change_password' => true,
+            'active_session_token' => null,
+        ]);
+
+        // Revoke all tokens on reset password (Requirement 5)
+        $teacher->tokens()->delete();
 
         \App\Models\AuditLog::record(
             'RESET_PASSWORD_GURU',

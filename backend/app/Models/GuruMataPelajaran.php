@@ -17,6 +17,7 @@ class GuruMataPelajaran extends Model
         'idmapel',
         'idkelas',
         'tahun_ajaran',
+        'status',
     ];
 
     public function guru(): BelongsTo

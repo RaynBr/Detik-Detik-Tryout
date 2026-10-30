@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../shared/api/client';
 import { toast } from '../../shared/context/ToastContext';
 import { Calendar, Plus, Edit, Trash2, X, Check } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface TahunSoal {
   id: number;
@@ -17,16 +19,25 @@ export const MasterTahunSoalPage: React.FC = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ tahun: '', keterangan: '' });
 
-  const fetchData = async () => {
+  const {
+    currentPage,
+    setPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchData = async (page = currentPage) => {
     setLoading(true);
     try {
-      const res = await apiClient.get('/admin/tahun-soal');
-      setData(res.data || []);
+      const res = await apiClient.get('/admin/tahun-soal', { params: { page } });
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setData(list);
     } catch { toast.error('Gagal memuat data tahun soal.'); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(currentPage); }, [currentPage]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -156,6 +167,16 @@ export const MasterTahunSoalPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
 
       {/* Modal */}
       {showModal && (

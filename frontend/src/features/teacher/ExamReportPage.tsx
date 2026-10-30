@@ -5,6 +5,8 @@ import { useToast } from '../../shared/context/ToastContext';
 import { TableSkeleton } from '../../shared/components/LoadingSkeleton';
 import { ExamPrintReportModal } from './components/ExamPrintReportModal';
 import { LaTeXRenderer } from '../../shared/components/LaTeXRenderer';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 import {
   BarChart3,
   FileSpreadsheet,
@@ -137,6 +139,10 @@ export const ExamReportPage: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [studentDetail, setStudentDetail] = useState<any | null>(null);
 
+  // Pagination hooks
+  const { currentPage, setPage, resetPage } = usePaginationUrl(15);
+  const [analysisPage, setAnalysisPage] = useState<number>(1);
+
   // Filter & Search states
   const [activeTab, setActiveTab] = useState<'students' | 'analysis'>('students');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -155,7 +161,7 @@ export const ExamReportPage: React.FC = () => {
 
   // Sync when urlExamId changes
   useEffect(() => {
-    if (urlExamId && exams.some(e => e.id === urlExamId)) {
+    if (urlExamId && Array.isArray(exams) && exams.some(e => e.id === urlExamId)) {
       setSelectedExamId(urlExamId);
     }
   }, [urlExamId, exams]);
@@ -174,11 +180,17 @@ export const ExamReportPage: React.FC = () => {
   const fetchExams = async () => {
     setLoadingExams(true);
     try {
-      const res = await apiClient.get('/teacher/exams');
-      setExams(res.data);
-      if (res.data.length > 0) {
-        const found = urlExamId && res.data.some((e: any) => e.id === urlExamId);
-        setSelectedExamId(found ? urlExamId : res.data[0].id);
+      const res = await apiClient.get('/teacher/exams', { params: { all: true } });
+      const raw = res.data;
+      const examList: ExamItem[] = Array.isArray(raw)
+        ? raw
+        : (Array.isArray(raw?.data) ? raw.data : []);
+      setExams(examList);
+      if (examList.length > 0) {
+        const found = urlExamId && examList.some((e: any) => e.id === urlExamId);
+        setSelectedExamId(found ? urlExamId : examList[0].id);
+      } else {
+        setSelectedExamId(null);
       }
     } catch (err) {
       console.error('Failed to load exams list:', err);
@@ -207,24 +219,28 @@ export const ExamReportPage: React.FC = () => {
 
   // Filtered Exams based on Combobox typing
   const filteredExams = useMemo(() => {
-    if (!examSearchQuery.trim()) return exams;
+    const safeExams = Array.isArray(exams) ? exams : [];
+    if (!examSearchQuery.trim()) return safeExams;
     const q = examSearchQuery.toLowerCase();
-    return exams.filter((ex) => {
-      const matchTitle = ex.title.toLowerCase().includes(q);
-      const matchSubject = ex.subject?.name?.toLowerCase().includes(q) || false;
-      const matchCode = ex.subject?.code?.toLowerCase().includes(q) || false;
+    return safeExams.filter((ex) => {
+      const matchTitle = (ex.title || '').toLowerCase().includes(q);
+      const matchSubject = (ex.subject?.name || '').toLowerCase().includes(q);
+      const matchCode = (ex.subject?.code || '').toLowerCase().includes(q);
       return matchTitle || matchSubject || matchCode;
     });
   }, [exams, examSearchQuery]);
 
   const selectedExam = useMemo(() => {
-    return exams.find((e) => e.id === selectedExamId) || null;
+    const safeExams = Array.isArray(exams) ? exams : [];
+    return safeExams.find((e) => e.id === selectedExamId) || null;
   }, [exams, selectedExamId]);
 
   // Load Report whenever selectedExamId changes
   useEffect(() => {
     if (selectedExamId) {
       fetchReport(selectedExamId);
+    } else {
+      setReport(null);
     }
   }, [selectedExamId]);
 
@@ -294,6 +310,21 @@ export const ExamReportPage: React.FC = () => {
       return matchSearch && matchClass && matchStatus;
     });
   }, [report, searchQuery, selectedClass, statusFilter]);
+
+  const totalStudents = filteredStudents.length;
+  const lastStudentPage = Math.max(1, Math.ceil(totalStudents / 15));
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * 15;
+    return filteredStudents.slice(start, start + 15);
+  }, [filteredStudents, currentPage]);
+
+  const totalAnalysis = report?.item_analysis?.length || 0;
+  const lastAnalysisPage = Math.max(1, Math.ceil(totalAnalysis / 15));
+  const paginatedAnalysis = useMemo(() => {
+    if (!report?.item_analysis) return [];
+    const start = (analysisPage - 1) * 15;
+    return report.item_analysis.slice(start, start + 15);
+  }, [report, analysisPage]);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
@@ -452,7 +483,7 @@ export const ExamReportPage: React.FC = () => {
 
           <button
             onClick={() => setShowPrintModal(true)}
-            disabled={!report || report.students.length === 0}
+            disabled={!report || !report.students || report.students.length === 0}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xs font-bold transition shadow-lg shadow-indigo-600/20 disabled:opacity-50 btn-press"
           >
             <Printer className="h-4 w-4" />
@@ -591,14 +622,15 @@ export const ExamReportPage: React.FC = () => {
               
               <div className="space-y-3">
                 {[
-                  { label: '81 - 100 (Sangat Baik)', count: report.statistics.score_distribution.range_81_100, color: 'bg-emerald-500' },
-                  { label: '61 - 80 (Baik / KKM)', count: report.statistics.score_distribution.range_61_80, color: 'bg-teal-500' },
-                  { label: '41 - 60 (Cukup)', count: report.statistics.score_distribution.range_41_60, color: 'bg-blue-500' },
-                  { label: '21 - 40 (Kurang)', count: report.statistics.score_distribution.range_21_40, color: 'bg-amber-500' },
-                  { label: '0 - 20 (Sangat Kurang)', count: report.statistics.score_distribution.range_0_20, color: 'bg-rose-500' },
+                  { label: '81 - 100 (Sangat Baik)', count: report?.statistics?.score_distribution?.range_81_100 ?? 0, color: 'bg-emerald-500' },
+                  { label: '61 - 80 (Baik / KKM)', count: report?.statistics?.score_distribution?.range_61_80 ?? 0, color: 'bg-teal-500' },
+                  { label: '41 - 60 (Cukup)', count: report?.statistics?.score_distribution?.range_41_60 ?? 0, color: 'bg-blue-500' },
+                  { label: '21 - 40 (Kurang)', count: report?.statistics?.score_distribution?.range_21_40 ?? 0, color: 'bg-amber-500' },
+                  { label: '0 - 20 (Sangat Kurang)', count: report?.statistics?.score_distribution?.range_0_20 ?? 0, color: 'bg-rose-500' },
                 ].map((range, i) => {
-                  const percent = report.statistics.total_participants > 0
-                    ? Math.round((range.count / report.statistics.total_participants) * 100)
+                  const totalP = report?.statistics?.total_participants ?? 0;
+                  const percent = totalP > 0
+                    ? Math.round((range.count / totalP) * 100)
                     : 0;
 
                   return (
@@ -669,7 +701,7 @@ export const ExamReportPage: React.FC = () => {
               <Users className="h-4 w-4" />
               <span>Rekapitulasi Nilai & Peringkat Siswa</span>
               <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-md">
-                {report.students.length}
+                {report.students?.length ?? 0}
               </span>
             </button>
             <button
@@ -683,7 +715,7 @@ export const ExamReportPage: React.FC = () => {
               <HelpCircle className="h-4 w-4" />
               <span>Analisis Butir Soal (Item Analysis)</span>
               <span className="px-1.5 py-0.5 text-[10px] bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-gray-300 rounded-md">
-                {report.item_analysis.length}
+                {report.item_analysis?.length ?? 0}
               </span>
             </button>
           </div>
@@ -699,7 +731,10 @@ export const ExamReportPage: React.FC = () => {
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      resetPage();
+                    }}
                     placeholder="Cari nama siswa, NISN..."
                     className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -711,7 +746,10 @@ export const ExamReportPage: React.FC = () => {
                     <Filter className="h-3.5 w-3.5 text-slate-400" />
                     <select
                       value={selectedClass}
-                      onChange={(e) => setSelectedClass(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedClass(e.target.value);
+                        resetPage();
+                      }}
                       className="bg-transparent font-bold text-slate-700 dark:text-gray-300 focus:outline-none"
                     >
                       <option value="all">Semua Kelas</option>
@@ -726,7 +764,10 @@ export const ExamReportPage: React.FC = () => {
                   {/* Filter Status Kelulusan */}
                   <select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      resetPage();
+                    }}
                     className="bg-slate-50 dark:bg-black/20 px-3 py-2 rounded-2xl border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-700 dark:text-gray-300 focus:outline-none"
                   >
                     <option value="all">Semua Status</option>
@@ -762,8 +803,8 @@ export const ExamReportPage: React.FC = () => {
                         </td>
                       </tr>
                     ) : (
-                      filteredStudents.map((st) => (
-                        <tr key={st.attempt_id} className="hover:bg-slate-50/60 dark:hover:bg-white/[0.01] transition">
+                      paginatedStudents.map((st, idx) => (
+                        <tr key={st.attempt_id ?? `student-${st.student_id ?? idx}-${st.rank ?? idx}`} className="hover:bg-slate-50/60 dark:hover:bg-white/[0.01] transition">
                           {/* Rank Badge */}
                           <td className="px-4 py-3 text-center">
                             {st.rank === 1 ? (
@@ -875,6 +916,15 @@ export const ExamReportPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+
+              <Pagination
+                currentPage={currentPage}
+                lastPage={lastStudentPage}
+                from={totalStudents > 0 ? (currentPage - 1) * 15 + 1 : 0}
+                to={Math.min(currentPage * 15, totalStudents)}
+                total={totalStudents}
+                onPageChange={setPage}
+              />
             </div>
           )}
 
@@ -903,7 +953,7 @@ export const ExamReportPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/[0.03]">
-                    {report.item_analysis.map((item) => (
+                    {paginatedAnalysis.map((item) => (
                       <tr key={item.number} className="hover:bg-slate-50/60 dark:hover:bg-white/[0.01] transition">
                         <td className="px-4 py-3 text-center font-bold text-slate-900 dark:text-white">{item.number}</td>
                         <td className="px-4 py-3 text-slate-700 dark:text-gray-300 max-w-xs truncate" title={item.content_preview}>
@@ -958,6 +1008,15 @@ export const ExamReportPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+
+              <Pagination
+                currentPage={analysisPage}
+                lastPage={lastAnalysisPage}
+                from={totalAnalysis > 0 ? (analysisPage - 1) * 15 + 1 : 0}
+                to={Math.min(analysisPage * 15, totalAnalysis)}
+                total={totalAnalysis}
+                onPageChange={setAnalysisPage}
+              />
             </div>
           )}
 

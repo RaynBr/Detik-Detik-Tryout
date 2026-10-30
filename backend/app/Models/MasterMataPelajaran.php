@@ -15,6 +15,7 @@ class MasterMataPelajaran extends Model
 
     protected $fillable = [
         'idjenjang',
+        'tahun_ajaran',
         'kode_mapel',
         'nama_mapel',
         'kelompok',

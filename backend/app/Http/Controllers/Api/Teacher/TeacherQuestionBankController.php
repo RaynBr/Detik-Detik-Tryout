@@ -58,7 +58,7 @@ class TeacherQuestionBankController extends Controller
             $query->where('idassessment', $pkgId);
         }
 
-        $perPage = $request->integer('per_page', 25);
+        $perPage = $request->integer('per_page', 15);
         $paginator = $query->orderBy('idassessment_soal_pilgan', 'desc')->paginate($perPage);
 
         $transformed = $paginator->getCollection()->map(function ($q) {
@@ -191,7 +191,7 @@ class TeacherQuestionBankController extends Controller
 
         if ($user && $user->role === 'guru') {
             $ownerId = $item->iduser_bo ?: $item->assessment?->iduser_bo;
-            if ($ownerId && $ownerId !== $user->iduser_bo) {
+            if ((string)$ownerId !== (string)$user->iduser_bo) {
                 return response()->json([
                     'message' => 'Akses ditolak: Guru hanya dapat mengubah butir soal yang dibuat oleh dirinya sendiri.'
                 ], 403);
@@ -261,7 +261,7 @@ class TeacherQuestionBankController extends Controller
 
         if ($user && $user->role === 'guru') {
             $ownerId = $item->iduser_bo ?: $item->assessment?->iduser_bo;
-            if ($ownerId && $ownerId !== $user->iduser_bo) {
+            if ((string)$ownerId !== (string)$user->iduser_bo) {
                 return response()->json([
                     'message' => 'Akses ditolak: Guru hanya dapat menghapus butir soal yang dibuat oleh dirinya sendiri.'
                 ], 403);
@@ -299,7 +299,7 @@ class TeacherQuestionBankController extends Controller
 
         if ($user && $user->role === 'guru') {
             $ownerId = $item->iduser_bo ?: $item->assessment?->iduser_bo;
-            if ($ownerId && $ownerId !== $user->iduser_bo) {
+            if ((string)$ownerId !== (string)$user->iduser_bo) {
                 return response()->json([
                     'message' => 'Akses ditolak: Guru hanya dapat mengubah status butir soal miliknya sendiri.'
                 ], 403);

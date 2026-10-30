@@ -99,6 +99,7 @@ class LoginController extends Controller
             return response()->json([
                 'token' => $apiToken,
                 'session_token' => $sessionToken,
+                'must_change_password' => (bool) ($userBo->force_change_password ?? false),
                 'user' => [
                     'id' => $userBo->iduser_bo,
                     'name' => $userBo->name,
@@ -171,6 +172,7 @@ class LoginController extends Controller
             return response()->json([
                 'token' => $apiToken,
                 'session_token' => $sessionToken,
+                'must_change_password' => (bool) ($userSiswa->force_change_password ?? false),
                 'user' => [
                     'id' => $userSiswa->iduser,
                     'name' => $userSiswa->name,
@@ -195,6 +197,12 @@ class LoginController extends Controller
                     ]
                 ]
             ]);
+        }
+
+        // Mitigation against Login Timing Attack (User Enumeration prevention):
+        // If neither account exists in DB, execute dummy bcrypt check to equalize timing (~100-150ms).
+        if (!$userBo && !$userSiswa) {
+            \Illuminate\Support\Facades\Hash::check($password, '$2y$12$e8w9u3KkUuJcK9.jBfZCcu7vF.Zl.21ZzW06Qj02W1mN9l5T9YFq.');
         }
 
         throw ValidationException::withMessages([

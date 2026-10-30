@@ -212,6 +212,24 @@ class SimpleSpreadsheetService
     }
 
     /**
+     * Sanitize cell value to prevent CSV/Excel Formula Injection (CWE-1236)
+     */
+    public static function sanitizeCell($value): string
+    {
+        $val = (string) $value;
+        if ($val === '') {
+            return $val;
+        }
+
+        $firstChar = $val[0];
+        if (in_array($firstChar, ['=', '+', '-', '@', "\t", "\r"], true)) {
+            return "'" . $val;
+        }
+
+        return $val;
+    }
+
+    /**
      * Stream a CSV file download with UTF-8 BOM.
      */
     public function downloadCsv(array $headers, array $sampleRows, string $filename): StreamedResponse
@@ -226,10 +244,12 @@ class SimpleSpreadsheetService
             // Write UTF-8 BOM for Microsoft Excel compatibility
             fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
-            fputcsv($handle, $headers);
+            $sanitizedHeaders = array_map([self::class, 'sanitizeCell'], $headers);
+            fputcsv($handle, $sanitizedHeaders);
 
             foreach ($sampleRows as $row) {
-                fputcsv($handle, $row);
+                $sanitizedRow = array_map([self::class, 'sanitizeCell'], $row);
+                fputcsv($handle, $sanitizedRow);
             }
 
             fclose($handle);

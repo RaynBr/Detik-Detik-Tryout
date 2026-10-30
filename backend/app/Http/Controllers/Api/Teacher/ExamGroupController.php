@@ -22,7 +22,30 @@ class ExamGroupController extends Controller
             $query->where('exam_id', $request->exam_id);
         }
 
-        return response()->json($query->latest()->get());
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('name', 'like', "%{$s}%")
+                  ->orWhere('token', 'like', "%{$s}%");
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest()->get();
+            return response()->json([
+                'data' => $items,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $items->count(),
+                'total' => $items->count(),
+                'from' => $items->count() > 0 ? 1 : null,
+                'to' => $items->count() > 0 ? $items->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        return response()->json($query->latest()->paginate($perPage));
     }
 
     /**

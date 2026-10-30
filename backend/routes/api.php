@@ -23,88 +23,125 @@ use App\Http\Controllers\Api\Student\ResultController;
 use App\Http\Controllers\Api\Proctoring\ViolationLogController;
 use Illuminate\Support\Facades\Route;
 
-// Public Auth routes
-Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:30,1');
+// Public Auth routes (Requirement 7: Throttle login 5 req/min)
+Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:5,1');
 
 // Protected routes (Requires Auth & Session Lock check)
 Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
     Route::get('/auth/me', [SessionController::class, 'me']);
     Route::post('/auth/logout', [LoginController::class, 'logout']);
 
-    // Admin & Super Admin Management routes
-    Route::middleware(['role:super_admin|admin'])->prefix('admin')->group(function () {
-        // Manajemen Instansi & Multi-Tenant User CRUD (Super Admin)
+    // ==========================================
+    // 1. SUPER ADMIN PLATFORM ROUTES
+    // ==========================================
+    Route::middleware(['role:super_admin'])->prefix('super-admin')->group(function () {
+        // Platform Global Dashboard Stats
+        Route::get('dashboard/stats', [DashboardController::class, 'stats']);
+
+        // Kelola Instansi Multi-Tenant (CRUD Instansi, Admin, Masa Aktif, Suspend)
         Route::post('instansi/{idkategori}/admins', [InstansiController::class, 'storeAdmin']);
         Route::put('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'updateAdmin']);
         Route::delete('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'destroyAdmin']);
-
-        Route::post('instansi/{idkategori}/gurus', [InstansiController::class, 'storeGuru']);
-        Route::put('instansi/{idkategori}/gurus/{iduser_bo}', [InstansiController::class, 'updateGuru']);
-        Route::delete('instansi/{idkategori}/gurus/{iduser_bo}', [InstansiController::class, 'destroyGuru']);
-
-        Route::post('instansi/{idkategori}/siswas', [InstansiController::class, 'storeSiswa']);
-        Route::put('instansi/{idkategori}/siswas/{iduser}', [InstansiController::class, 'updateSiswa']);
-        Route::delete('instansi/{idkategori}/siswas/{iduser}', [InstansiController::class, 'destroySiswa']);
-
         Route::apiResource('instansi', InstansiController::class);
 
-        // Master Jenjang Pendidikan (SD, SMP, SMA, SMK)
+        // Kelola Pengguna Platform
+        Route::get('users/super-admins', [UserManagementController::class, 'superAdmins']);
+        Route::post('users/super-admins', [UserManagementController::class, 'storeSuperAdmin']);
+        Route::get('users/admin-instansi', [UserManagementController::class, 'adminInstansi']);
+        Route::post('users/admin-instansi', [UserManagementController::class, 'storeAdminInstansi']);
+        Route::get('users/monitoring-guru-siswa', [UserManagementController::class, 'monitoringGuruSiswa']);
+
+        // Master Platform Nasional
         Route::apiResource('jenjang', MasterJenjangController::class);
-
-        // Master Kelas (Free text names for private schools)
-        Route::post('classes/{masterKela}/students', [MasterKelasController::class, 'addStudent']);
-        Route::delete('classes/{masterKela}/students/{iduser}', [MasterKelasController::class, 'removeStudent']);
-        Route::apiResource('classes', MasterKelasController::class)->parameters(['classes' => 'masterKela']);
-
-        // Master Mata Pelajaran
-        Route::post('subjects/{masterMataPelajaran}/teachers', [MasterMataPelajaranController::class, 'assignTeacher']);
-        Route::delete('subjects/{masterMataPelajaran}/teachers/{iduser_bo}', [MasterMataPelajaranController::class, 'removeTeacher']);
         Route::apiResource('subjects', MasterMataPelajaranController::class);
-        
-        // Master Guru & Siswa (Admin Scope)
-        Route::get('teachers/template', [TeacherController::class, 'downloadTemplate']);
-        Route::post('teachers/import', [TeacherController::class, 'import']);
-        Route::post('teachers/{iduser_bo}/reset-password', [TeacherController::class, 'resetPassword']);
-        Route::apiResource('teachers', TeacherController::class);
-        
-        Route::get('students/template', [StudentController::class, 'downloadTemplate']);
-        Route::post('students/import', [StudentController::class, 'import']);
-        Route::post('students/{iduser}/reset-password', [StudentController::class, 'resetPassword']);
-        Route::apiResource('students', StudentController::class);
+        Route::apiResource('tahun-soal', MasterTahunSoalController::class);
+        Route::apiResource('test-tasks', TestTaskController::class);
 
-        // Live monitor, stats & pre-flight system health check & school reports
+        // Monitoring & Audit Trail Global
+        Route::get('audit-logs', [AuditTrailController::class, 'index']);
+        Route::get('audit-logs/actions', [AuditTrailController::class, 'actions']);
+        Route::get('audit-logs/summary', [AuditTrailController::class, 'summary']);
+
+        // Profil & Keamanan Super Admin
+        Route::get('profile', [ProfileController::class, 'show']);
+        Route::put('profile', [ProfileController::class, 'update']);
+        Route::post('profile/change-password', [ProfileController::class, 'changePassword']);
+    });
+
+    // ==========================================
+    // 2. ADMIN INSTANSI / SEKOLAH ROUTES
+    // ==========================================
+    Route::middleware(['role:admin|super_admin'])->prefix('admin')->group(function () {
+        // Dashboard Sekolah Terisolasi
         Route::get('dashboard/stats', [DashboardController::class, 'stats']);
         Route::get('dashboard/reports', [DashboardController::class, 'reports']);
         Route::get('dashboard/live-monitoring', [DashboardController::class, 'liveMonitoring']);
         Route::get('dashboard/pre-flight-check', [DashboardController::class, 'preFlightCheck']);
 
-        // Profil & Keamanan (Admin & Super Admin)
+        // Menu Pengguna Instansi (Server-side Paginated 15 per page)
+        Route::get('school-users', [InstansiController::class, 'schoolUsers']);
+        Route::post('instansi/{idkategori}/admins', [InstansiController::class, 'storeAdmin']);
+        Route::put('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'updateAdmin']);
+        Route::delete('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'destroyAdmin']);
+        Route::post('instansi/{idkategori}/gurus', [InstansiController::class, 'storeGuru']);
+        Route::put('instansi/{idkategori}/gurus/{iduser_bo}', [InstansiController::class, 'updateGuru']);
+        Route::delete('instansi/{idkategori}/gurus/{iduser_bo}', [InstansiController::class, 'destroyGuru']);
+        Route::post('instansi/{idkategori}/siswas', [InstansiController::class, 'storeSiswa']);
+        Route::put('instansi/{idkategori}/siswas/{iduser}', [InstansiController::class, 'updateSiswa']);
+        Route::delete('instansi/{idkategori}/siswas/{iduser}', [InstansiController::class, 'destroySiswa']);
+        Route::apiResource('instansi', InstansiController::class);
+
+        // Kelola Guru Sekolah (CRUD, Import, Reset Password, Guru Mapel)
+        Route::get('teachers/template', [TeacherController::class, 'downloadTemplate']);
+        Route::post('teachers/import', [TeacherController::class, 'import'])->middleware('throttle:5,1');
+        Route::post('teachers/{iduser_bo}/reset-password', [TeacherController::class, 'resetPassword'])->middleware('throttle:5,1');
+        Route::apiResource('teachers', TeacherController::class);
+
+        // Kelola Siswa Sekolah (CRUD, Import, Reset Password)
+        Route::get('students/template', [StudentController::class, 'downloadTemplate']);
+        Route::post('students/import', [StudentController::class, 'import'])->middleware('throttle:5,1');
+        Route::post('students/{iduser}/reset-password', [StudentController::class, 'resetPassword'])->middleware('throttle:5,1');
+        Route::apiResource('students', StudentController::class);
+
+        // Kelola Kelas & Rombel (Wali Kelas, Siswa Kelas, Guru Pengampu)
+        Route::post('classes/{masterKela}/students', [MasterKelasController::class, 'addStudent']);
+        Route::delete('classes/{masterKela}/students/{iduser}', [MasterKelasController::class, 'removeStudent']);
+        Route::get('classes/{masterKela}/subject-teachers', [MasterKelasController::class, 'getSubjectTeachers']);
+        Route::post('classes/{masterKela}/subject-teachers', [MasterKelasController::class, 'assignSubjectTeacher']);
+        Route::put('classes/{masterKela}/subject-teachers/{guruMapelId}', [MasterKelasController::class, 'updateSubjectTeacher']);
+        Route::delete('classes/{masterKela}/subject-teachers/{guruMapelId}', [MasterKelasController::class, 'removeSubjectTeacher']);
+        Route::apiResource('classes', MasterKelasController::class)->parameters(['classes' => 'masterKela']);
+
+        // Akademik Sekolah (Tahun Ajaran, Mapel & KKM, Jenjang, Jurusan)
+        Route::post('academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate']);
+        Route::get('academic-years/{academicYear}/subjects', [AcademicYearController::class, 'subjects']);
+        Route::post('academic-years/{academicYear}/subjects', [AcademicYearController::class, 'attachSubject']);
+        Route::delete('academic-years/{academicYear}/subjects/{idmapel}', [AcademicYearController::class, 'detachSubject']);
+        Route::get('academic-years/{academicYear}/students', [AcademicYearController::class, 'students']);
+        Route::post('academic-years/{academicYear}/students', [AcademicYearController::class, 'enrollStudents']);
+        Route::delete('academic-years/{academicYear}/students/{iduser}', [AcademicYearController::class, 'removeStudent']);
+        Route::apiResource('academic-years', AcademicYearController::class);
+        Route::post('subjects/{masterMataPelajaran}/teachers', [MasterMataPelajaranController::class, 'assignTeacher']);
+        Route::delete('subjects/{masterMataPelajaran}/teachers/{iduser_bo}', [MasterMataPelajaranController::class, 'removeTeacher']);
+        Route::apiResource('subjects', MasterMataPelajaranController::class);
+        Route::apiResource('jenjang', MasterJenjangController::class);
+        Route::apiResource('majors', \App\Http\Controllers\Api\Admin\MajorController::class);
+        Route::apiResource('tahun-soal', MasterTahunSoalController::class);
+
+        // Test Tasks & Internal Tool
+        Route::apiResource('test-tasks', TestTaskController::class);
+
+        // User Management (Super Admin compatibility alias)
+        Route::get('users/super-admins', [UserManagementController::class, 'superAdmins']);
+        Route::post('users/super-admins', [UserManagementController::class, 'storeSuperAdmin']);
+        Route::get('users/admin-instansi', [UserManagementController::class, 'adminInstansi']);
+        Route::post('users/admin-instansi', [UserManagementController::class, 'storeAdminInstansi']);
+        Route::get('users/monitoring-guru-siswa', [UserManagementController::class, 'monitoringGuruSiswa']);
+
+        // Profil & Keamanan Admin Sekolah
         Route::get('profile', [ProfileController::class, 'show']);
         Route::put('profile', [ProfileController::class, 'update']);
         Route::post('profile/change-password', [ProfileController::class, 'changePassword']);
-
-        // Master Tahun Ajaran & Tahun Soal (Requirement 1)
-        Route::post('academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate']);
-        Route::apiResource('academic-years', AcademicYearController::class);
-        Route::apiResource('tahun-soal', MasterTahunSoalController::class);
-
-        // Test Task Manager (Requirement 7: CRUD Testing Internal)
-        Route::apiResource('test-tasks', TestTaskController::class);
-
-        // Audit Trail (Requirement 3: Super Admin & Admin Instansi)
-        Route::get('audit-logs', [AuditTrailController::class, 'index']);
-        Route::get('audit-logs/actions', [AuditTrailController::class, 'actions']);
-        Route::get('audit-logs/summary', [AuditTrailController::class, 'summary']);
-
-        // Super Admin ONLY Routes (Menu 2 Kelola Pengguna)
-        Route::middleware(['role:super_admin'])->group(function () {
-            // Kelola Pengguna (Menu 2 Flow)
-            Route::get('users/super-admins', [UserManagementController::class, 'superAdmins']);
-            Route::post('users/super-admins', [UserManagementController::class, 'storeSuperAdmin']);
-            Route::get('users/admin-instansi', [UserManagementController::class, 'adminInstansi']);
-            Route::post('users/admin-instansi', [UserManagementController::class, 'storeAdminInstansi']);
-            Route::get('users/monitoring-guru-siswa', [UserManagementController::class, 'monitoringGuruSiswa']);
-        });
     });
 
     // Teacher Bank Soal & TryOut Exam management routes
@@ -122,18 +159,18 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::put('profile', [ProfileController::class, 'update']);
         Route::post('profile/change-password', [ProfileController::class, 'changePassword']);
 
-        // Bank Soal & Import Template
+        // Bank Soal & Import Template (Requirement 7: Throttle import 5 req/min)
         Route::get('questions/template', [TeacherQuestionBankController::class, 'downloadTemplate']);
-        Route::post('questions/import', [TeacherQuestionBankController::class, 'import']);
+        Route::post('questions/import', [TeacherQuestionBankController::class, 'import'])->middleware('throttle:5,1');
         Route::patch('questions/{id}/status', [TeacherQuestionBankController::class, 'toggleStatus']);
         Route::apiResource('questions', TeacherQuestionBankController::class);
 
-        // TryOut Exams & Packages (Support 50 random question generator & class assignments)
-        Route::post('exams/generate-random', [TeacherExamController::class, 'generateRandom50']);
+        // TryOut Exams & Packages (Requirement 7: Throttle generate 10 req/min, export 20 req/min)
+        Route::post('exams/generate-random', [TeacherExamController::class, 'generateRandom50'])->middleware('throttle:10,1');
         Route::post('exams/{idassessment}/assign-class', [TeacherExamController::class, 'assignToClass']);
         Route::get('exams/{idassessment}/results', [TeacherExamController::class, 'results']);
         Route::get('exams/{idassessment}/report', [TeacherExamController::class, 'report']);
-        Route::get('exams/{idassessment}/report/export', [TeacherExamController::class, 'exportReport']);
+        Route::get('exams/{idassessment}/report/export', [TeacherExamController::class, 'exportReport'])->middleware('throttle:20,1');
         Route::get('exams/{idassessment}/attempts/{attemptId}', [TeacherExamController::class, 'attemptDetail']);
         Route::apiResource('exam-groups', \App\Http\Controllers\Api\Teacher\ExamGroupController::class);
         Route::apiResource('exams', TeacherExamController::class);

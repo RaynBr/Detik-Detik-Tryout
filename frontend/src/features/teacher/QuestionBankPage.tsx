@@ -11,6 +11,8 @@ import {
   X, Folder, FolderPlus, Copy, ArrowLeft, Layers, CheckCircle, FileText, ChevronRight,
   ShieldAlert, ToggleLeft, ToggleRight
 } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface Subject {
   id: number;
@@ -95,22 +97,31 @@ export const QuestionBankPage: React.FC = () => {
   const [targetImportPackageId, setTargetImportPackageId] = useState<number | null>(null);
   const [previewingQuestion, setPreviewingQuestion] = useState<Question | null>(null);
 
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
   // Fetch Packages, Subjects, Jenjang, Classes, and Tahun Soal
-  const fetchPackages = async () => {
+  const fetchPackages = async (page = currentPage) => {
     setLoadingPackages(true);
     try {
       const [packagesRes, subjectsRes, jenjangRes, kelasRes, tahunRes] = await Promise.all([
-        apiClient.get('/teacher/packages').catch(() => ({ data: [] })),
-        apiClient.get('/teacher/subjects').catch(() => ({ data: [] })),
-        apiClient.get('/teacher/jenjang').catch(() => ({ data: [] })),
-        apiClient.get('/teacher/classes').catch(() => ({ data: [] })),
-        apiClient.get('/admin/tahun-soal').catch(() => ({ data: [] }))
+        apiClient.get('/teacher/packages', { params: { search: search || undefined, page } }).catch(() => ({ data: [] })),
+        apiClient.get('/teacher/subjects', { params: { all: true } }).catch(() => ({ data: [] })),
+        apiClient.get('/teacher/jenjang', { params: { all: true } }).catch(() => ({ data: [] })),
+        apiClient.get('/teacher/classes', { params: { all: true } }).catch(() => ({ data: [] })),
+        apiClient.get('/admin/tahun-soal', { params: { all: true } }).catch(() => ({ data: [] }))
       ]);
-      const pList = Array.isArray(packagesRes.data) ? packagesRes.data : (packagesRes.data?.data || []);
-      const sList = Array.isArray(subjectsRes.data) ? subjectsRes.data : (subjectsRes.data?.data || []);
-      const jList = Array.isArray(jenjangRes.data) ? jenjangRes.data : (jenjangRes.data?.data || []);
-      const kList = Array.isArray(kelasRes.data) ? kelasRes.data : (kelasRes.data?.data || []);
-      const tList = Array.isArray(tahunRes.data) ? tahunRes.data : (tahunRes.data?.data || []);
+      setPaginationFromResponse(packagesRes.data);
+      const pList = packagesRes.data?.data || (Array.isArray(packagesRes.data) ? packagesRes.data : []);
+      const sList = subjectsRes.data?.data || (Array.isArray(subjectsRes.data) ? subjectsRes.data : []);
+      const jList = jenjangRes.data?.data || (Array.isArray(jenjangRes.data) ? jenjangRes.data : []);
+      const kList = kelasRes.data?.data || (Array.isArray(kelasRes.data) ? kelasRes.data : []);
+      const tList = tahunRes.data?.data || (Array.isArray(tahunRes.data) ? tahunRes.data : []);
       setPackages(pList);
       setSubjects(sList);
       setJenjangList(jList);
@@ -124,7 +135,7 @@ export const QuestionBankPage: React.FC = () => {
   };
 
   // Fetch questions for selected package with 4D filters
-  const fetchPackageQuestions = async (packageId: number) => {
+  const fetchPackageQuestions = async (packageId: number, page = currentPage) => {
     setLoadingQuestions(true);
     try {
       const res = await apiClient.get('/teacher/questions', {
@@ -135,9 +146,12 @@ export const QuestionBankPage: React.FC = () => {
           idmapel: subjectFilter || undefined,
           tahun_soal_id: tahunSoalFilter || undefined,
           status_aktif: statusFilter || undefined,
+          search: search || undefined,
+          page,
         }
       });
-      const qList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setPaginationFromResponse(res.data);
+      const qList = res.data?.data || (Array.isArray(res.data) ? res.data : []);
       setQuestions(qList);
     } catch (err) {
       console.error('Failed to load package questions:', err);
@@ -147,7 +161,6 @@ export const QuestionBankPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchPackages();
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') === 'upload') {
       setImportOpen(true);
@@ -155,17 +168,20 @@ export const QuestionBankPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedPackage) {
-      fetchPackageQuestions(selectedPackage.id);
+    if (currentView === 'packages') {
+      fetchPackages(currentPage);
+    } else if (selectedPackage) {
+      fetchPackageQuestions(selectedPackage.id, currentPage);
     }
-  }, [jenjangFilter, kelasFilter, subjectFilter, tahunSoalFilter, statusFilter]);
+  }, [currentView, selectedPackage, currentPage, search, subjectFilter, jenjangFilter, kelasFilter, tahunSoalFilter, statusFilter]);
 
   // Open a specific package
   const handleOpenPackage = (pkg: QuestionPackage) => {
     setSelectedPackage(pkg);
     setCurrentView('package_detail');
     setSearch('');
-    fetchPackageQuestions(pkg.id);
+    resetPage();
+    fetchPackageQuestions(pkg.id, 1);
   };
 
   // Back to packages list
@@ -175,7 +191,9 @@ export const QuestionBankPage: React.FC = () => {
     setFormActive(false);
     setActiveQuestionId(null);
     setPreviewingQuestion(null);
-    fetchPackages();
+    setSearch('');
+    resetPage();
+    fetchPackages(1);
   };
 
   // CRUD Package handlers
@@ -320,27 +338,11 @@ export const QuestionBankPage: React.FC = () => {
     }
   };
 
-  // Filtered packages
-  const filteredPackages = (Array.isArray(packages) ? packages : []).filter(pkg => {
-    const pkgTitle = pkg.title || (pkg as any).name || '';
-    const pkgCode = pkg.code || '';
-    const pkgDesc = pkg.description || '';
-    const matchSearch = pkgTitle.toLowerCase().includes(search.toLowerCase()) || 
-                        pkgCode.toLowerCase().includes(search.toLowerCase()) ||
-                        pkgDesc.toLowerCase().includes(search.toLowerCase());
-    const matchSubject = subjectFilter ? pkg.subject_id?.toString() === subjectFilter : true;
-    return matchSearch && matchSubject;
-  });
+  // Filtered packages (handled server-side via pagination)
+  const filteredPackages = Array.isArray(packages) ? packages : [];
 
-  // Filtered questions inside selected package
-  const filteredQuestions = (Array.isArray(questions) ? questions : []).filter(q => {
-    const contentText = q.content || (q as any).soal_text || '';
-    const topicText = q.topic || '';
-    const matchSearch = contentText.toLowerCase().includes(search.toLowerCase()) || 
-                        topicText.toLowerCase().includes(search.toLowerCase());
-    const matchDifficulty = difficultyFilter ? q.difficulty === difficultyFilter : true;
-    return matchSearch && matchDifficulty;
-  });
+  // Filtered questions inside selected package (handled server-side via pagination)
+  const filteredQuestions = Array.isArray(questions) ? questions : [];
 
   const totalAllQuestions = (Array.isArray(packages) ? packages : []).reduce((acc, p) => acc + (p.questions_count ?? p.total_questions ?? 0), 0);
 
@@ -491,13 +493,19 @@ export const QuestionBankPage: React.FC = () => {
                   type="text"
                   placeholder="Cari nama berkas, kode, atau catatan..."
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    resetPage();
+                  }}
                   className="w-full pl-10 pr-3 py-2 glass-input rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
                 />
               </div>
               <select
                 value={subjectFilter}
-                onChange={(e) => setSubjectFilter(e.target.value)}
+                onChange={(e) => {
+                  setSubjectFilter(e.target.value);
+                  resetPage();
+                }}
                 className="px-3.5 py-2 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
               >
                 <option value="">Semua Mata Pelajaran</option>
@@ -609,6 +617,16 @@ export const QuestionBankPage: React.FC = () => {
               </button>
             </div>
           )}
+
+          <Pagination
+            currentPage={paginationMeta.currentPage}
+            lastPage={paginationMeta.lastPage}
+            total={paginationMeta.total}
+            perPage={paginationMeta.perPage}
+            from={paginationMeta.from}
+            to={paginationMeta.to}
+            onPageChange={setPage}
+          />
         </div>
       )}
 
@@ -652,7 +670,10 @@ export const QuestionBankPage: React.FC = () => {
                       type="text"
                       placeholder="Cari konten/topik..."
                       value={search}
-                      onChange={(e) => setSearch(e.target.value)}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        resetPage();
+                      }}
                       className="w-full pl-9 pr-3 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
                     />
                   </div>
@@ -660,7 +681,10 @@ export const QuestionBankPage: React.FC = () => {
                   {/* 4D Filter: Jenjang */}
                   <select
                     value={jenjangFilter}
-                    onChange={(e) => setJenjangFilter(e.target.value)}
+                    onChange={(e) => {
+                      setJenjangFilter(e.target.value);
+                      resetPage();
+                    }}
                     className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
                   >
                     <option value="">Semua Jenjang</option>
@@ -672,7 +696,10 @@ export const QuestionBankPage: React.FC = () => {
                   {/* 4D Filter: Kelas */}
                   <select
                     value={kelasFilter}
-                    onChange={(e) => setKelasFilter(e.target.value)}
+                    onChange={(e) => {
+                      setKelasFilter(e.target.value);
+                      resetPage();
+                    }}
                     className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
                   >
                     <option value="">Semua Kelas</option>
@@ -684,7 +711,10 @@ export const QuestionBankPage: React.FC = () => {
                   {/* 4D Filter: Mapel */}
                   <select
                     value={subjectFilter}
-                    onChange={(e) => setSubjectFilter(e.target.value)}
+                    onChange={(e) => {
+                      setSubjectFilter(e.target.value);
+                      resetPage();
+                    }}
                     className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
                   >
                     <option value="">Semua Mapel</option>
@@ -696,7 +726,10 @@ export const QuestionBankPage: React.FC = () => {
                   {/* 4D Filter: Tahun Soal */}
                   <select
                     value={tahunSoalFilter}
-                    onChange={(e) => setTahunSoalFilter(e.target.value)}
+                    onChange={(e) => {
+                      setTahunSoalFilter(e.target.value);
+                      resetPage();
+                    }}
                     className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
                   >
                     <option value="">Semua Tahun Soal</option>
@@ -708,7 +741,10 @@ export const QuestionBankPage: React.FC = () => {
                   {/* Status Soal */}
                   <select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      resetPage();
+                    }}
                     className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
                   >
                     <option value="">Semua Status</option>
@@ -718,7 +754,10 @@ export const QuestionBankPage: React.FC = () => {
 
                   <select
                     value={difficultyFilter}
-                    onChange={(e) => setDifficultyFilter(e.target.value)}
+                    onChange={(e) => {
+                      setDifficultyFilter(e.target.value);
+                      resetPage();
+                    }}
                     className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
                   >
                     <option value="">Semua Tingkat</option>
@@ -892,6 +931,16 @@ export const QuestionBankPage: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              <Pagination
+                currentPage={paginationMeta.currentPage}
+                lastPage={paginationMeta.lastPage}
+                total={paginationMeta.total}
+                perPage={paginationMeta.perPage}
+                from={paginationMeta.from}
+                to={paginationMeta.to}
+                onPageChange={setPage}
+              />
             </>
           )}
         </div>

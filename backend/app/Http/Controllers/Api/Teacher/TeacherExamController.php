@@ -19,11 +19,75 @@ use Illuminate\Support\Str;
 class TeacherExamController extends Controller
 {
     /**
+     * Resolves authenticated user across Request parameter, auth guard, and request() helper.
+     */
+    protected function resolveUser(?Request $request = null)
+    {
+        return $request?->user() ?: auth()->user() ?: request()->user();
+    }
+
+    /**
+     * Authorize whether user can access/manage this assessment resource (IDOR protection)
+     */
+    protected function authorizeExamAccess($user, Assessment $assessment, bool $strictOwnerOnly = false): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        if ($user->role === 'super_admin') {
+            return null;
+        }
+
+        if ($user->role === 'admin') {
+            if (!empty($user->idkategori) && (string)$assessment->idkategori !== (string)$user->idkategori) {
+                return response()->json(['message' => 'Akses ditolak: Anda hanya dapat mengelola ujian di instansi Anda.'], 403);
+            }
+            return null;
+        }
+
+        if ($user->role === 'guru') {
+            if ($strictOwnerOnly) {
+                if ((string)$assessment->iduser_bo !== (string)$user->iduser_bo) {
+                    return response()->json(['message' => 'Akses ditolak: Guru hanya dapat menghapus paket ujian yang dibuat sendiri.'], 403);
+                }
+                return null;
+            }
+
+            $isOwner = (string)$assessment->iduser_bo === (string)$user->iduser_bo;
+            $sameSchool = !empty($user->idkategori) && (string)$assessment->idkategori === (string)$user->idkategori;
+            $isPublicMaster = in_array((string)$assessment->idkategori, ['27830150842287772', ''], true) || is_null($assessment->idkategori);
+
+            if (!$isOwner && !$sameSchool && !$isPublicMaster) {
+                return response()->json(['message' => 'Akses ditolak: Anda hanya dapat mengakses ujian milik Anda atau instansi Anda.'], 403);
+            }
+            return null;
+        }
+
+        return response()->json(['message' => 'Akses ditolak.'], 403);
+    }
+
+    /**
+     * Sanitize cell value for Excel export to prevent CSV / Formula Injection (CWE-1236)
+     */
+    protected function sanitizeCellForExcel($val): string
+    {
+        $str = (string) $val;
+        if ($str === '') {
+            return '';
+        }
+        if (in_array($str[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
+            $str = "'" . $str;
+        }
+        return htmlspecialchars($str, ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
      * List all TryOut packages
      */
     public function index(Request $request)
     {
-        $user = $request->user();
+        $user = $this->resolveUser($request);
         $query = Assessment::with(['jenjang', 'kelas', 'mapel', 'pembuat', 'kategori', 'examGroups', 'academicYear'])
             ->withCount(['soal', 'attempts']);
 
@@ -60,10 +124,96 @@ class TeacherExamController extends Controller
         }
 
         // Sort by tanggal_input desc so newly created or generated exams always appear first!
-        $items = $query->orderBy('tanggal_input', 'desc')->orderBy('idassessment', 'desc')->get();
+        $orderedQuery = $query->orderBy('tanggal_input', 'desc')->orderBy('idassessment', 'desc');
 
-        // Compatibility transform
-        $mapped = $items->map(function ($item) {
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $orderedQuery->get();
+            $mapped = $items->map(function ($item) {
+                $now = now();
+                $start = $item->tanggal_mulai_assessment ? \Carbon\Carbon::parse($item->tanggal_mulai_assessment) : null;
+                $end = $item->tanggal_batas_assessment ? \Carbon\Carbon::parse($item->tanggal_batas_assessment) : null;
+                
+                $status = 'published';
+                if ($start && $now->lt($start)) {
+                    $status = 'scheduled';
+                } elseif ($end && $now->gt($end)) {
+                    $status = 'closed';
+                }
+
+                return [
+                    'id' => $item->idassessment,
+                    'idassessment' => $item->idassessment,
+                    'title' => $item->nama_assessment,
+                    'name' => $item->nama_assessment,
+                    'code' => 'TO-' . substr($item->idassessment, -5),
+                    'description' => $item->deskripsi_assessment,
+                    'subject_id' => $item->idmapel,
+                    'subject_name' => $item->mapel?->nama_mapel ?? 'Umum',
+                    'subject' => [
+                        'id' => $item->idmapel,
+                        'name' => $item->mapel?->nama_mapel ?? 'Umum',
+                        'code' => $item->mapel?->kode_mapel ?? 'UMUM',
+                    ],
+                    'jenjang_name' => $item->jenjang?->nama_jenjang ?? 'Umum',
+                    'class_id' => $item->idkelas,
+                    'class_name' => $item->kelas?->nama_kelas ?? 'Semua Kelas / Bank Soal',
+                    'id_tahun_ajaran' => $item->id_tahun_ajaran,
+                    'academic_year' => $item->academicYear ? [
+                        'id' => $item->academicYear->id,
+                        'name' => $item->academicYear->name,
+                        'semester' => $item->academicYear->semester,
+                    ] : null,
+                    'duration_minutes' => $item->waktu_pengerjaan !== null ? (int) $item->waktu_pengerjaan : null,
+                    'total_questions' => $item->soal_count ?: $item->tampil_assessment_pilgan ?: 50,
+                    'questions_count' => $item->soal_count ?: $item->tampil_assessment_pilgan ?: 50,
+                    'tampil_assessment_pilgan' => $item->tampil_assessment_pilgan ?: 50,
+                    'start_time' => $item->tanggal_mulai_assessment,
+                    'end_time' => $item->tanggal_batas_assessment,
+                    'status' => $status,
+                    'attempts_count' => $item->attempts_count,
+                    'created_by' => $item->pembuat?->nama ?? 'Guru',
+                    'institution' => $item->kategori?->nama_kategori ?? 'Umum',
+                    'kkm_score' => $item->mapel?->kkm ?? 75,
+                    'settings' => [
+                        'allow_backtrack' => true,
+                        'allow_flag' => true,
+                        'shuffle_questions' => true,
+                        'shuffle_options' => true,
+                        'show_result_immediately' => true,
+                        'max_tab_switches' => 5,
+                    ],
+                    'exam_groups' => $item->examGroups->map(function ($g) {
+                        return [
+                            'id' => $g->id,
+                            'exam_id' => $g->exam_id,
+                            'name' => $g->name,
+                            'token' => $g->token,
+                            'start_time' => $g->start_time ? $g->start_time->toIso8601String() : null,
+                            'end_time' => $g->end_time ? $g->end_time->toIso8601String() : null,
+                            'max_participants' => $g->max_participants,
+                            'class_ids' => $g->class_ids,
+                            'student_ids' => $g->student_ids,
+                        ];
+                    }),
+                ];
+            });
+
+            return response()->json([
+                'data' => $mapped,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $mapped->count(),
+                'total' => $mapped->count(),
+                'from' => $mapped->count() > 0 ? 1 : null,
+                'to' => $mapped->count() > 0 ? $mapped->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $orderedQuery->paginate($perPage);
+
+        $paginator->through(function ($item) {
             $now = now();
             $start = $item->tanggal_mulai_assessment ? \Carbon\Carbon::parse($item->tanggal_mulai_assessment) : null;
             $end = $item->tanggal_batas_assessment ? \Carbon\Carbon::parse($item->tanggal_batas_assessment) : null;
@@ -133,7 +283,7 @@ class TeacherExamController extends Controller
             ];
         });
 
-        return response()->json($mapped);
+        return response()->json($paginator);
     }
 
     /**
@@ -158,7 +308,7 @@ class TeacherExamController extends Controller
         $packageId = $request->input('package_id') ?: $request->input('idassessment_sumber');
         $questionInputs = $request->input('questions', []);
 
-        $user = $request->user();
+        $user = $this->resolveUser($request);
         $idassessment = (string) (time() . rand(1000000, 9999999));
 
         $item = Assessment::create([
@@ -256,8 +406,12 @@ class TeacherExamController extends Controller
      */
     public function update(Request $request, $idassessment)
     {
-        $user = $request->user();
+        $user = $this->resolveUser($request);
         $item = Assessment::withCount('attempts')->findOrFail($idassessment);
+
+        if ($deny = $this->authorizeExamAccess($user, $item)) {
+            return $deny;
+        }
 
         $hasAttempts = ($item->attempts_count > 0) || AssessmentJawabanPilgan::where('idassessment', $idassessment)->exists();
 
@@ -421,7 +575,7 @@ class TeacherExamController extends Controller
             ->limit($totalSoal)
             ->get();
 
-        $user = $request->user();
+        $user = $this->resolveUser($request);
         $newAssessmentId = (string) (time() . rand(1000000, 9999999));
 
         // 2. Create the Assessment package
@@ -513,7 +667,18 @@ class TeacherExamController extends Controller
             'idkelas' => 'required|exists:master_kelas,id'
         ]);
 
+        $user = $this->resolveUser($request);
         $assessment = Assessment::findOrFail($idassessment);
+
+        if ($deny = $this->authorizeExamAccess($user, $assessment)) {
+            return $deny;
+        }
+
+        $targetClass = MasterKelas::findOrFail($request->idkelas);
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$targetClass->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Kelas tidak berada dalam instansi Anda.'], 403);
+        }
+
         $assessment->update([
             'idkelas' => $request->idkelas
         ]);
@@ -535,18 +700,42 @@ class TeacherExamController extends Controller
     /**
      * Show package questions
      */
-    public function show($idassessment)
+    public function show($idassessment, ...$extra)
     {
+        $req = null;
+        if ($idassessment instanceof Request) {
+            $req = $idassessment;
+            $idassessment = $extra[0] ?? $idassessment->route('idassessment') ?? $idassessment->route('exam') ?? $idassessment->route('package');
+        }
+
+        $user = $this->resolveUser($req);
         $assessment = Assessment::with(['jenjang', 'kelas', 'mapel', 'soal', 'examGroups'])->findOrFail($idassessment);
+
+        if ($deny = $this->authorizeExamAccess($user, $assessment)) {
+            return $deny;
+        }
+
         return response()->json($assessment);
     }
 
     /**
      * List results of students who took this exam
      */
-    public function results($idassessment)
+    public function results($idassessment, ...$extra)
     {
+        $req = null;
+        if ($idassessment instanceof Request) {
+            $req = $idassessment;
+            $idassessment = $extra[0] ?? $idassessment->route('idassessment');
+        }
+
+        $user = $this->resolveUser($req);
         $assessment = Assessment::with(['kelas', 'mapel'])->findOrFail($idassessment);
+
+        if ($deny = $this->authorizeExamAccess($user, $assessment)) {
+            return $deny;
+        }
+
         $attempts = AssessmentJawabanPilgan::where('idassessment', $idassessment)
             ->with(['siswa.kelas'])
             ->orderBy('nilai', 'desc')
@@ -583,9 +772,20 @@ class TeacherExamController extends Controller
     /**
      * Delete package safely
      */
-    public function destroy($idassessment)
+    public function destroy($idassessment, ...$extra)
     {
+        $req = null;
+        if ($idassessment instanceof Request) {
+            $req = $idassessment;
+            $idassessment = $extra[0] ?? $idassessment->route('idassessment') ?? $idassessment->route('exam') ?? $idassessment->route('package');
+        }
+
+        $user = $this->resolveUser($req);
         $assessment = Assessment::findOrFail($idassessment);
+
+        if ($deny = $this->authorizeExamAccess($user, $assessment, true)) {
+            return $deny;
+        }
 
         // Clean up linked dependencies safely
         ExamGroup::where('exam_id', $idassessment)->delete();
@@ -607,9 +807,20 @@ class TeacherExamController extends Controller
     /**
      * Detailed Exam Report for Teachers (Statistics, Rankings, Question Item Analysis)
      */
-    public function report($idassessment)
+    public function report($idassessment, ...$extra)
     {
+        $req = null;
+        if ($idassessment instanceof \Illuminate\Http\Request) {
+            $req = $idassessment;
+            $idassessment = $extra[0] ?? $idassessment->route('idassessment');
+        }
+
+        $user = $this->resolveUser($req);
         $assessment = Assessment::with(['mapel', 'jenjang', 'kelas', 'soal'])->findOrFail($idassessment);
+
+        if ($deny = $this->authorizeExamAccess($user, $assessment)) {
+            return $deny;
+        }
 
         $questions = $assessment->soal;
         $totalQuestions = $questions->count();
@@ -817,17 +1028,28 @@ class TeacherExamController extends Controller
     /**
      * Export Exam Report to Excel (.xls)
      */
-    public function exportReport($idassessment)
+    public function exportReport($idassessment, ...$extra)
     {
-        $reportData = $this->report($idassessment)->getData(true);
+        $req = null;
+        if ($idassessment instanceof \Illuminate\Http\Request) {
+            $req = $idassessment;
+            $idassessment = $extra[0] ?? $idassessment->route('idassessment');
+        }
+
+        $reportResponse = $this->report($req ?: $idassessment, $idassessment);
+        if ($reportResponse->status() === 403 || $reportResponse->status() === 401) {
+            return $reportResponse;
+        }
+
+        $reportData = $reportResponse->getData(true);
         $exam = $reportData['exam'];
         $students = $reportData['students'];
 
         $filename = "Laporan_Hasil_Ujian_" . preg_replace('/[^A-Za-z0-9_]/', '_', $exam['title']) . ".xls";
 
         $output = "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" /></head><body>";
-        $output .= "<h2>LAPORAN HASIL TRYOUT - " . htmlspecialchars($exam['title']) . "</h2>";
-        $output .= "<p>Mata Pelajaran: " . htmlspecialchars($exam['subject_name']) . " | KKM: " . $exam['kkm_score'] . " | Total Peserta: " . count($students) . "</p>";
+        $output .= "<h2>LAPORAN HASIL TRYOUT - " . $this->sanitizeCellForExcel($exam['title']) . "</h2>";
+        $output .= "<p>Mata Pelajaran: " . $this->sanitizeCellForExcel($exam['subject_name']) . " | KKM: " . $this->sanitizeCellForExcel($exam['kkm_score']) . " | Total Peserta: " . count($students) . "</p>";
         $output .= "<table border='1' cellspacing='0' cellpadding='5'>";
         $output .= "<tr style='background-color:#4f46e5;color:#ffffff;font-weight:bold;'>";
         $output .= "<th>Peringkat</th><th>NISN</th><th>Nama Siswa</th><th>Kelas</th><th>Skor Akhir</th><th>Status</th><th>Benar</th><th>Salah</th><th>Kosong</th><th>Waktu</th>";
@@ -837,16 +1059,16 @@ class TeacherExamController extends Controller
             $statusText = ($st['status'] === 'disqualified') ? 'Didiskualifikasi' : ($st['is_passed'] ? 'Lulus KKM' : 'Remedial');
             $scoreText = ($st['total_score'] !== null) ? $st['total_score'] : '-';
             $output .= "<tr>";
-            $output .= "<td align='center'>" . $st['rank'] . "</td>";
-            $output .= "<td style='mso-number-format:\"\\@\";'>" . htmlspecialchars($st['nisn']) . "</td>";
-            $output .= "<td>" . htmlspecialchars($st['name']) . "</td>";
-            $output .= "<td>" . htmlspecialchars($st['class_name']) . "</td>";
-            $output .= "<td align='center'><b>" . $scoreText . "</b></td>";
-            $output .= "<td align='center'>" . $statusText . "</td>";
-            $output .= "<td align='center'>" . $st['correct_count'] . "</td>";
-            $output .= "<td align='center'>" . $st['incorrect_count'] . "</td>";
-            $output .= "<td align='center'>" . $st['unanswered_count'] . "</td>";
-            $output .= "<td align='center'>" . ($st['duration_minutes'] ?: '-') . "</td>";
+            $output .= "<td align='center'>" . $this->sanitizeCellForExcel($st['rank']) . "</td>";
+            $output .= "<td style='mso-number-format:\"\\@\";'>" . $this->sanitizeCellForExcel($st['nisn']) . "</td>";
+            $output .= "<td>" . $this->sanitizeCellForExcel($st['name']) . "</td>";
+            $output .= "<td>" . $this->sanitizeCellForExcel($st['class_name']) . "</td>";
+            $output .= "<td align='center'><b>" . $this->sanitizeCellForExcel($scoreText) . "</b></td>";
+            $output .= "<td align='center'>" . $this->sanitizeCellForExcel($statusText) . "</td>";
+            $output .= "<td align='center'>" . $this->sanitizeCellForExcel($st['correct_count']) . "</td>";
+            $output .= "<td align='center'>" . $this->sanitizeCellForExcel($st['incorrect_count']) . "</td>";
+            $output .= "<td align='center'>" . $this->sanitizeCellForExcel($st['unanswered_count']) . "</td>";
+            $output .= "<td align='center'>" . $this->sanitizeCellForExcel($st['duration_minutes'] ?: '-') . "</td>";
             $output .= "</tr>";
         }
 
@@ -861,12 +1083,24 @@ class TeacherExamController extends Controller
     /**
      * View detailed answers of a specific student attempt
      */
-    public function attemptDetail($idassessment, $attemptId)
+    public function attemptDetail($idassessment, $attemptId = null, ...$extra)
     {
+        $req = null;
+        if ($idassessment instanceof \Illuminate\Http\Request) {
+            $req = $idassessment;
+            $idassessment = $attemptId;
+            $attemptId = $extra[0] ?? $req->route('attemptId');
+        }
+
+        $user = $this->resolveUser($req);
         $attempt = AssessmentJawabanPilgan::with(['assessment.soal', 'details', 'siswa.kelas'])
             ->where('idassessment_jawaban_pilgan', $attemptId)
             ->where('idassessment', $idassessment)
             ->firstOrFail();
+
+        if ($deny = $this->authorizeExamAccess($user, $attempt->assessment)) {
+            return $deny;
+        }
 
         $questions = $attempt->assessment->soal;
         $savedAnswers = $attempt->details->keyBy('idassessment_soal_pilgan');

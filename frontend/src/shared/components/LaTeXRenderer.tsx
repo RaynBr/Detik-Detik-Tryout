@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import katex from 'katex';
+import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 
 interface LaTeXRendererProps {
@@ -86,10 +87,11 @@ export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({ text }) => {
               throwOnError: false,
               displayMode: true,
             });
+            const cleanHtml = DOMPurify.sanitize(html);
             return (
               <span
                 key={index}
-                dangerouslySetInnerHTML={{ __html: html }}
+                dangerouslySetInnerHTML={{ __html: cleanHtml }}
                 className="my-3 py-2 px-3 block overflow-x-auto rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-100/80 dark:border-indigo-500/20 text-slate-900 dark:text-indigo-100 font-medium shadow-xs"
               />
             );
@@ -105,10 +107,11 @@ export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({ text }) => {
               throwOnError: false,
               displayMode: false,
             });
+            const cleanHtml = DOMPurify.sanitize(html);
             return (
               <span
                 key={index}
-                dangerouslySetInnerHTML={{ __html: html }}
+                dangerouslySetInnerHTML={{ __html: cleanHtml }}
                 className="inline-block mx-0.5 align-middle font-medium px-1 py-0.5 rounded-md bg-indigo-50/40 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-200 border border-indigo-100/60 dark:border-indigo-500/20"
               />
             );

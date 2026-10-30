@@ -21,16 +21,48 @@ class MasterMataPelajaranController extends Controller
             $query->where('kelompok', $request->kelompok);
         }
 
-        $mapels = $query->orderBy('nama_mapel', 'asc')->get();
+        if ($request->filled('tahun_ajaran')) {
+            $query->where('tahun_ajaran', $request->tahun_ajaran);
+        }
 
-        // Compatibility mapping for existing frontend (name & code)
-        $mapped = $mapels->map(function ($m) {
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama_mapel', 'like', "%{$search}%")
+                  ->orWhere('kode_mapel', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $mapels = $query->orderBy('nama_mapel', 'asc')->get();
+            $mapped = $mapels->map(function ($m) {
+                $m->name = $m->nama_mapel;
+                $m->code = $m->kode_mapel;
+                return $m;
+            });
+
+            return response()->json([
+                'data' => $mapped,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $mapped->count(),
+                'total' => $mapped->count(),
+                'from' => $mapped->count() > 0 ? 1 : null,
+                'to' => $mapped->count() > 0 ? $mapped->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $query->orderBy('nama_mapel', 'asc')->paginate($perPage);
+
+        $paginator->through(function ($m) {
             $m->name = $m->nama_mapel;
             $m->code = $m->kode_mapel;
             return $m;
         });
 
-        return response()->json($mapped);
+        return response()->json($paginator);
     }
 
     public function store(Request $request)
@@ -41,6 +73,7 @@ class MasterMataPelajaranController extends Controller
             'kode_mapel' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel',
             'code' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel', // alias
             'idjenjang' => 'nullable|exists:master_jenjang,id',
+            'tahun_ajaran' => 'nullable|string|max:20',
             'kelompok' => 'nullable|string|max:50',
             'kkm' => 'nullable|numeric|min:0|max:100',
             'deskripsi' => 'nullable|string',
@@ -49,11 +82,13 @@ class MasterMataPelajaranController extends Controller
         $nama = $validated['nama_mapel'] ?? $validated['name'] ?? 'Mata Pelajaran Baru';
         $kode = $validated['kode_mapel'] ?? $validated['code'] ?? ('MPL-' . strtoupper(substr(uniqid(), -5)));
         $idjenjang = $validated['idjenjang'] ?? 1;
+        $tahunAjaran = $validated['tahun_ajaran'] ?? (\App\Models\AcademicYear::where('is_active', true)->value('name') ?: '2026/2027');
 
         $mapel = MasterMataPelajaran::create([
             'nama_mapel' => trim($nama),
             'kode_mapel' => strtoupper(trim($kode)),
             'idjenjang' => $idjenjang,
+            'tahun_ajaran' => $tahunAjaran,
             'kelompok' => $validated['kelompok'] ?? 'Wajib',
             'kkm' => $validated['kkm'] ?? 75.00,
             'deskripsi' => $validated['deskripsi'] ?? null,
@@ -87,6 +122,7 @@ class MasterMataPelajaranController extends Controller
             'kode_mapel' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel,' . $masterMataPelajaran->id,
             'code' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel,' . $masterMataPelajaran->id,
             'idjenjang' => 'nullable|exists:master_jenjang,id',
+            'tahun_ajaran' => 'nullable|string|max:20',
             'kelompok' => 'nullable|string|max:50',
             'kkm' => 'nullable|numeric|min:0|max:100',
             'deskripsi' => 'nullable|string',
@@ -97,6 +133,7 @@ class MasterMataPelajaranController extends Controller
             'nama_mapel' => $validated['nama_mapel'] ?? $validated['name'] ?? $masterMataPelajaran->nama_mapel,
             'kode_mapel' => strtoupper(trim($validated['kode_mapel'] ?? $validated['code'] ?? $masterMataPelajaran->kode_mapel)),
             'idjenjang' => $validated['idjenjang'] ?? $masterMataPelajaran->idjenjang,
+            'tahun_ajaran' => $validated['tahun_ajaran'] ?? $masterMataPelajaran->tahun_ajaran,
             'kelompok' => $validated['kelompok'] ?? $masterMataPelajaran->kelompok,
             'kkm' => $validated['kkm'] ?? $masterMataPelajaran->kkm,
             'deskripsi' => $validated['deskripsi'] ?? $masterMataPelajaran->deskripsi,

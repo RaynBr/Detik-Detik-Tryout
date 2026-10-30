@@ -52,6 +52,7 @@ interface Answer {
 }
 
 import { useToast } from '../../shared/context/ToastContext';
+import { Pagination } from '../../shared/components/Pagination';
 
 export const GradingPage: React.FC = () => {
   const { toast } = useToast();
@@ -60,6 +61,9 @@ export const GradingPage: React.FC = () => {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [selectedAttempt, setSelectedAttempt] = useState<Attempt | null>(null);
   const [answers, setAnswers] = useState<Answer[]>([]);
+
+  // Pagination for Student Attempts Table
+  const [attemptPage, setAttemptPage] = useState(1);
 
   // Pagination & Filter states for Exam List
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,6 +98,7 @@ export const GradingPage: React.FC = () => {
     setSelectedExam(exam);
     setSelectedAttempt(null);
     setAnswers([]);
+    setAttemptPage(1);
     setLoadingAttempts(true);
     try {
       const res = await apiClient.get(`/teacher/exams/${exam.id}/attempts`);
@@ -171,6 +176,9 @@ export const GradingPage: React.FC = () => {
 
   const totalExamPages = Math.max(1, Math.ceil(filteredExams.length / examsPerPage));
   const paginatedExams = filteredExams.slice((examPage - 1) * examsPerPage, examPage * examsPerPage);
+
+  const totalAttemptPages = Math.max(1, Math.ceil(attempts.length / 15));
+  const paginatedAttempts = attempts.slice((attemptPage - 1) * 15, attemptPage * 15);
 
   const handleSearchChange = (val: string) => {
     setSearchQuery(val);
@@ -319,7 +327,7 @@ export const GradingPage: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-slate-200/80 dark:divide-white/5 text-sm text-slate-700 dark:text-gray-300">
                         {attempts.length > 0 ? (
-                          attempts.map((att) => (
+                          paginatedAttempts.map((att) => (
                             <tr 
                               key={att.id} 
                               className={`hover:bg-slate-50 dark:hover:bg-white/[0.01] transition-colors ${
@@ -370,6 +378,19 @@ export const GradingPage: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+
+                  {attempts.length > 0 && (
+                    <div className="p-3 border-t border-slate-200 dark:border-white/5">
+                      <Pagination
+                        currentPage={attemptPage}
+                        lastPage={totalAttemptPages}
+                        from={attempts.length > 0 ? (attemptPage - 1) * 15 + 1 : 0}
+                        to={Math.min(attemptPage * 15, attempts.length)}
+                        total={attempts.length}
+                        onPageChange={setAttemptPage}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </>

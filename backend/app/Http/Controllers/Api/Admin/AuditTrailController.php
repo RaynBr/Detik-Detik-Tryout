@@ -60,7 +60,7 @@ class AuditTrailController extends Controller
             });
         }
 
-        $perPage = min((int)($request->per_page ?? 20), 100);
+        $perPage = (int) $request->input('per_page', 15);
         $logs = $query->paginate($perPage);
 
         return response()->json($logs);

@@ -8,6 +8,8 @@ import {
   Sparkles, Plus, Edit2, Trash2, Calendar, Clock, Settings, Users, 
   BookOpen, AlertCircle, X, Search, Folder, CheckCircle, ChevronDown, ChevronUp, BarChart3, Upload
 } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface Subject {
   id: number;
@@ -161,19 +163,27 @@ export const ExamsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const isExamLocked = !!(editingExam && (editingExam.attempts_count ?? 0) > 0);
 
-  const fetchData = async () => {
+  const {
+    currentPage,
+    setPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchData = async (page = currentPage) => {
     setLoadingExams(true);
     try {
       const [examsRes, packagesRes, subjectsRes, questionsRes, studentsRes, classesRes, jenjangRes, academicYearsRes] = await Promise.all([
-        apiClient.get('/teacher/exams'),
-        apiClient.get('/teacher/packages'),
-        apiClient.get('/teacher/subjects'),
-        apiClient.get('/teacher/questions'),
-        apiClient.get('/teacher/students'),
-        apiClient.get('/teacher/classes'),
-        apiClient.get('/teacher/jenjang').catch(() => ({ data: [] })),
-        apiClient.get('/teacher/academic-years').catch(() => ({ data: [] })),
+        apiClient.get('/teacher/exams', { params: { page } }),
+        apiClient.get('/teacher/packages', { params: { all: true } }),
+        apiClient.get('/teacher/subjects', { params: { all: true } }),
+        apiClient.get('/teacher/questions', { params: { all: true } }),
+        apiClient.get('/teacher/students', { params: { all: true } }),
+        apiClient.get('/teacher/classes', { params: { all: true } }),
+        apiClient.get('/teacher/jenjang', { params: { all: true } }).catch(() => ({ data: [] })),
+        apiClient.get('/teacher/academic-years', { params: { all: true } }).catch(() => ({ data: [] })),
       ]);
+      setPaginationFromResponse(examsRes.data);
       setExams(Array.isArray(examsRes.data) ? examsRes.data : (examsRes.data?.data || []));
       setPackages(Array.isArray(packagesRes.data) ? packagesRes.data : (packagesRes.data?.data || []));
       setSubjects(Array.isArray(subjectsRes.data) ? subjectsRes.data : (subjectsRes.data?.data || []));
@@ -202,6 +212,10 @@ export const ExamsPage: React.FC = () => {
       setLoadingExams(false);
     }
   };
+
+  useEffect(() => {
+    fetchData(currentPage);
+  }, [currentPage]);
 
   const handleGenerateRandomSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -713,6 +727,16 @@ export const ExamsPage: React.FC = () => {
           <p className="text-sm font-bold text-slate-800 dark:text-gray-300">Belum ada paket ujian terjadwal.</p>
         </div>
       )}
+
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
 
       {/* CRUD Add/Edit Exam Modal */}
       {modalOpen && (

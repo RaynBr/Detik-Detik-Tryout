@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\UserBo;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class ProfileController extends Controller
 {
@@ -70,9 +72,14 @@ class ProfileController extends Controller
     {
         $request->validate([
             'current_password' => 'required|string',
-            'new_password' => 'required|string|min:8|confirmed|different:current_password',
+            'new_password' => [
+                'required',
+                'string',
+                Password::min(8)->letters()->mixedCase()->numbers()->symbols(),
+                'confirmed',
+                'different:current_password'
+            ],
         ], [
-            'new_password.min' => 'Password baru minimal 8 karakter.',
             'new_password.confirmed' => 'Konfirmasi password baru tidak cocok.',
             'new_password.different' => 'Password baru tidak boleh sama dengan password lama.',
         ]);
@@ -80,14 +87,23 @@ class ProfileController extends Controller
         $user = $request->user();
 
         if ($user instanceof \App\Models\UserSiswa) {
-            if (!\Illuminate\Support\Facades\Hash::check($request->current_password, $user->login_password)) {
+            if (!$user->verifyPassword($request->current_password)) {
                 return response()->json([
                     'message' => 'Password lama tidak sesuai.',
                 ], 422);
             }
-            $user->update(['login_password' => \Illuminate\Support\Facades\Hash::make($request->new_password)]);
+
+            $user->update([
+                'login_password' => Hash::make($request->new_password),
+                'force_change_password' => false,
+                'active_session_token' => null,
+            ]);
+
+            // Revoke all Sanctum tokens on password change (Requirement 5)
+            $user->tokens()->delete();
+
             AuditLog::record('CHANGE_PASSWORD_SISWA', 'user', $user->iduser, $user->nama);
-            return response()->json(['message' => 'Password berhasil diperbarui.']);
+            return response()->json(['message' => 'Password berhasil diperbarui. Silakan login kembali dengan password baru Anda.']);
         }
 
         if (!$user->verifyPassword($request->current_password)) {
@@ -96,13 +112,15 @@ class ProfileController extends Controller
             ], 422);
         }
 
-        // Encode new password with 5x base64
-        $encoded = $request->new_password;
-        for ($i = 0; $i < 5; $i++) {
-            $encoded = base64_encode($encoded);
-        }
+        // Store new password with standard Hash::make() - no Base64 (Requirement 4)
+        $user->update([
+            'login_password' => Hash::make($request->new_password),
+            'force_change_password' => false,
+            'active_session_token' => null,
+        ]);
 
-        $user->update(['login_password' => $encoded]);
+        // Revoke all Sanctum tokens on password change (Requirement 5)
+        $user->tokens()->delete();
 
         AuditLog::record(
             'CHANGE_PASSWORD',
@@ -112,7 +130,7 @@ class ProfileController extends Controller
         );
 
         return response()->json([
-            'message' => 'Password berhasil diperbarui.',
+            'message' => 'Password berhasil diperbarui. Silakan login kembali dengan password baru Anda.',
         ]);
     }
 }

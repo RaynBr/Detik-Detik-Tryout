@@ -9,6 +9,7 @@ export interface UserProfile {
   nis?: string;
   nip?: string;
   institution?: string;
+  idkategori?: number | string | null;
   jenjang?: string;
   class_name?: string;
   class_id?: number;
@@ -33,6 +34,7 @@ export interface User {
   email: string | null;
   username: string | null;
   role: 'super_admin' | 'admin' | 'guru' | 'siswa' | 'pengawas';
+  idkategori?: number | string | null;
   profile: UserProfile | null;
 }
 

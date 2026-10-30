@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../shared/api/client';
 import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
 import { LaTeXRenderer } from '../../shared/components/LaTeXRenderer';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 import { 
   Clock, Calendar, AlertCircle, CheckCircle, GraduationCap, 
   Play, RefreshCw, LogOut, BookOpen, ShieldCheck, User,
@@ -47,7 +49,9 @@ interface ExamListItem {
 export const StudentExamsPage: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { currentPage, setPage, resetPage, paginationMeta, setPaginationFromResponse } = usePaginationUrl(15);
   const [exams, setExams] = useState<ExamListItem[]>([]);
+  const [overviewExams, setOverviewExams] = useState<ExamListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [startingExamGroupId, setStartingExamGroupId] = useState<number | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -92,12 +96,31 @@ export const StudentExamsPage: React.FC = () => {
     }
   };
 
+  const fetchOverviewExams = async () => {
+    try {
+      const res = await apiClient.get('/student/exams', { params: { all: true } });
+      const items = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setOverviewExams(items);
+    } catch (err) {
+      console.error('Failed to load overview exams:', err);
+    }
+  };
+
   const fetchExams = async () => {
     setLoading(true);
     setGlobalError(null);
     try {
-      const res = await apiClient.get('/student/exams');
-      setExams(res.data || []);
+      const params: any = {
+        page: currentPage,
+        per_page: 15,
+      };
+      if (searchQuery.trim()) params.search = searchQuery.trim();
+      if (statusFilter !== 'all') params.status = statusFilter;
+
+      const res = await apiClient.get('/student/exams', { params });
+      const items = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setExams(items);
+      setPaginationFromResponse(res.data);
     } catch (err) {
       console.error('Failed to load student exams:', err);
       setGlobalError('Gagal memuat jadwal ujian. Silakan coba beberapa saat lagi.');
@@ -107,8 +130,12 @@ export const StudentExamsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchExams();
+    fetchOverviewExams();
   }, []);
+
+  useEffect(() => {
+    fetchExams();
+  }, [currentPage, searchQuery, statusFilter]);
 
   const handleStartOrResumeExam = async (exam: ExamListItem) => {
     // If disqualified, strictly block retake
@@ -140,27 +167,29 @@ export const StudentExamsPage: React.FC = () => {
     }
   };
 
+  const statSourceExams = overviewExams.length > 0 ? overviewExams : exams;
+
   // Find priority exam for Highlight Card (active or in_progress or first available)
-  const inProgressExam = exams.find(e => e.attempt?.status === 'in_progress');
-  const availableExam = exams.find(e => !e.attempt || e.attempt.status === 'not_started');
+  const inProgressExam = statSourceExams.find(e => e.attempt?.status === 'in_progress');
+  const availableExam = statSourceExams.find(e => !e.attempt || e.attempt.status === 'not_started');
   const heroExam = inProgressExam || availableExam;
 
   // Completed exams stats
-  const finishedExams = exams.filter(e => e.attempt?.status === 'submitted' || e.attempt?.status === 'auto_submitted');
+  const finishedExams = statSourceExams.filter(e => e.attempt?.status === 'submitted' || e.attempt?.status === 'auto_submitted');
   const scoredExams = finishedExams.filter(e => e.attempt?.total_score !== null && e.attempt?.total_score !== undefined);
   const avgScore = scoredExams.length > 0 
     ? Math.round(scoredExams.reduce((acc, curr) => acc + (curr.attempt?.total_score || 0), 0) / scoredExams.length)
     : 100;
 
   // Calendar Highlight Dates
-  const calendarHighlights: HighlightDate[] = exams.map((ex) => ({
+  const calendarHighlights: HighlightDate[] = statSourceExams.map((ex) => ({
     date: ex.start_time ? ex.start_time.split('T')[0] : new Date().toISOString().split('T')[0],
     title: ex.title,
     type: 'exam'
   }));
 
   // Dynamic Reminders for student computed from exam schedules
-  const activeOrUpcomingExams = exams
+  const activeOrUpcomingExams = statSourceExams
     .filter(e => !e.attempt || e.attempt.status === 'not_started' || e.attempt.status === 'in_progress')
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
@@ -190,7 +219,7 @@ export const StudentExamsPage: React.FC = () => {
       timeAgo: 'Penting',
       type: 'warning' as const
     },
-    ...(activeOrUpcomingExams.length === 0 && exams.length > 0 ? [{
+    ...(activeOrUpcomingExams.length === 0 && statSourceExams.length > 0 ? [{
       id: 'rem-completed-all',
       title: 'Semua Jadwal Ujian Selesai',
       description: 'Seluruh sesi ujian yang ditugaskan telah berhasil Anda kerjakan.',
@@ -199,29 +228,7 @@ export const StudentExamsPage: React.FC = () => {
     }] : [])
   ];
 
-  // Filtering Logic for Exams List (Search query & Status tabs)
-  const filteredExams = exams.filter(exam => {
-    const q = searchQuery.trim().toLowerCase();
-    const matchesSearch = q === '' ||
-      exam.title.toLowerCase().includes(q) ||
-      exam.subject_name.toLowerCase().includes(q) ||
-      exam.subject_code.toLowerCase().includes(q);
-
-    if (!matchesSearch) return false;
-
-    const isFinished = exam.attempt?.status === 'submitted' || exam.attempt?.status === 'auto_submitted';
-    const isUnstarted = !exam.attempt || exam.attempt.status === 'not_started' || exam.attempt.status === 'in_progress';
-
-    if (statusFilter === 'unstarted') {
-      return isUnstarted;
-    }
-    if (statusFilter === 'completed') {
-      return isFinished;
-    }
-    return true;
-  });
-
-  const unstartedCount = exams.filter(e => !e.attempt || e.attempt.status === 'not_started' || e.attempt.status === 'in_progress').length;
+  const unstartedCount = statSourceExams.filter(e => !e.attempt || e.attempt.status === 'not_started' || e.attempt.status === 'in_progress').length;
   const finishedCount = finishedExams.length;
 
   return (
@@ -431,7 +438,7 @@ export const StudentExamsPage: React.FC = () => {
                   </p>
                 </div>
                 <span className="text-xs text-slate-500 dark:text-gray-400 font-mono self-start sm:self-auto bg-slate-200/60 dark:bg-white/5 px-2.5 py-1 rounded-xl">
-                  {filteredExams.length} dari {exams.length} Jadwal
+                  {paginationMeta.total} Jadwal Ujian
                 </span>
               </div>
 
@@ -443,13 +450,19 @@ export const StudentExamsPage: React.FC = () => {
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      resetPage();
+                    }}
                     placeholder="Cari nama ujian, mata pelajaran, atau kode mapel..."
                     className="w-full pl-10 pr-9 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition shadow-xs"
                   />
                   {searchQuery && (
                     <button
-                      onClick={() => setSearchQuery('')}
+                      onClick={() => {
+                        setSearchQuery('');
+                        resetPage();
+                      }}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-gray-200 p-0.5 cursor-pointer"
                       title="Hapus pencarian"
                     >
@@ -461,7 +474,10 @@ export const StudentExamsPage: React.FC = () => {
                 {/* Filter Tabs: Semua, Belum Dikerjakan, Selesai */}
                 <div className="flex items-center p-1 bg-slate-200/60 dark:bg-slate-900/60 border border-slate-300/60 dark:border-white/10 rounded-2xl shrink-0 gap-1 overflow-x-auto">
                   <button
-                    onClick={() => setStatusFilter('all')}
+                    onClick={() => {
+                      setStatusFilter('all');
+                      resetPage();
+                    }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                       statusFilter === 'all'
                         ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
@@ -472,12 +488,15 @@ export const StudentExamsPage: React.FC = () => {
                     <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono ${
                       statusFilter === 'all' ? 'bg-indigo-100 text-indigo-700 dark:bg-white/20 dark:text-white' : 'bg-slate-300/60 dark:bg-white/10 text-slate-600 dark:text-gray-400'
                     }`}>
-                      {exams.length}
+                      {statSourceExams.length}
                     </span>
                   </button>
 
                   <button
-                    onClick={() => setStatusFilter('unstarted')}
+                    onClick={() => {
+                      setStatusFilter('unstarted');
+                      resetPage();
+                    }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                       statusFilter === 'unstarted'
                         ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
@@ -493,7 +512,10 @@ export const StudentExamsPage: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={() => setStatusFilter('completed')}
+                    onClick={() => {
+                      setStatusFilter('completed');
+                      resetPage();
+                    }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                       statusFilter === 'completed'
                         ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
@@ -513,17 +535,12 @@ export const StudentExamsPage: React.FC = () => {
               {loading ? (
                 <CardGridSkeleton count={2} cols="grid-cols-1 md:grid-cols-2" />
               ) : exams.length === 0 ? (
-                <div className="glass-panel text-center py-12 text-slate-500 dark:text-gray-400 rounded-3xl border border-slate-200/80 dark:border-white/5">
-                  <GraduationCap className="h-10 w-10 text-slate-400 dark:text-gray-600 mx-auto mb-2" />
-                  <p className="text-xs font-medium">Belum ada ujian terjadwal untuk akun Anda saat ini.</p>
-                </div>
-              ) : filteredExams.length === 0 ? (
                 <div className="glass-panel text-center py-10 px-4 text-slate-500 dark:text-gray-400 rounded-3xl border border-slate-200/80 dark:border-white/5 space-y-3">
                   <div className="p-3 bg-slate-100 dark:bg-white/5 rounded-2xl w-fit mx-auto text-slate-400">
                     <Search className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-800 dark:text-gray-200">Tidak ada jadwal ujian yang sesuai</p>
+                    <p className="text-sm font-bold text-slate-800 dark:text-gray-200">Tidak ada jadwal ujian yang ditemukan</p>
                     <p className="text-xs text-slate-500 dark:text-gray-400 mt-1">Coba sesuaikan kata kunci pencarian atau ubah tab status ujian.</p>
                   </div>
                   {(searchQuery || statusFilter !== 'all') && (
@@ -531,6 +548,7 @@ export const StudentExamsPage: React.FC = () => {
                       onClick={() => {
                         setSearchQuery('');
                         setStatusFilter('all');
+                        resetPage();
                       }}
                       className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-600/20 dark:hover:bg-indigo-600/30 dark:text-indigo-400 transition cursor-pointer"
                     >
@@ -540,7 +558,7 @@ export const StudentExamsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in">
-                  {filteredExams.map((exam) => {
+                  {exams.map((exam) => {
                     const attempt = exam.attempt;
                     const isFinished = attempt?.status === 'submitted' || attempt?.status === 'auto_submitted';
                     const isDisqualified = attempt?.status === 'disqualified';
@@ -668,6 +686,15 @@ export const StudentExamsPage: React.FC = () => {
                   })}
                 </div>
               )}
+
+              <Pagination
+                currentPage={paginationMeta.currentPage}
+                lastPage={paginationMeta.lastPage}
+                from={paginationMeta.from}
+                to={paginationMeta.to}
+                total={paginationMeta.total}
+                onPageChange={setPage}
+              />
             </div>
 
           </div>

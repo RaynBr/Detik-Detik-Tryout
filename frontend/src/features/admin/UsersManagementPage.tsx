@@ -6,6 +6,8 @@ import {
   Shield, UserPlus, Users, Eye, Search, X,
   Building2, Phone, Mail, MapPin, ChevronRight
 } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface UserItem {
   iduser_bo: string;
@@ -57,45 +59,59 @@ export const UsersManagementPage: React.FC = () => {
     nama: '', username: '', email: '', jenis_kelamin: '', telp: '', alamat: '', password: '', idkategori: ''
   });
 
-  const fetchSuperAdmins = async () => {
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchSuperAdmins = async (page = currentPage) => {
     setLoading(true);
     try {
-      const res = await apiClient.get('/admin/users/super-admins', { params: { search } });
-      setSuperAdmins(res.data || []);
+      const res = await apiClient.get('/admin/users/super-admins', { params: { search, page } });
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setSuperAdmins(list);
     } catch { toast.error('Gagal memuat data Super Admin.'); }
     finally { setLoading(false); }
   };
 
-  const fetchAdminInstansi = async () => {
+  const fetchAdminInstansi = async (page = currentPage) => {
     setLoading(true);
     try {
-      const res = await apiClient.get('/admin/users/admin-instansi', { params: { search } });
-      setAdminInstansi(res.data || []);
+      const res = await apiClient.get('/admin/users/admin-instansi', { params: { search, page } });
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setAdminInstansi(list);
     } catch { toast.error('Gagal memuat data Admin Instansi.'); }
     finally { setLoading(false); }
   };
 
-  const fetchMonitoring = async () => {
+  const fetchMonitoring = async (page = currentPage) => {
     setLoading(true);
     try {
-      const res = await apiClient.get('/admin/users/monitoring-guru-siswa');
-      setMonitoringData(res.data || []);
+      const res = await apiClient.get('/admin/users/monitoring-guru-siswa', { params: { page } });
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setMonitoringData(list);
     } catch { toast.error('Gagal memuat data monitoring.'); }
     finally { setLoading(false); }
   };
 
   const fetchInstansiList = async () => {
     try {
-      const res = await apiClient.get('/admin/instansi');
-      setInstansiList(res.data || []);
+      const res = await apiClient.get('/admin/instansi', { params: { all: true } });
+      setInstansiList(res.data?.data || (Array.isArray(res.data) ? res.data : []));
     } catch {}
   };
 
   useEffect(() => {
-    if (activeTab === 'super_admin') fetchSuperAdmins();
-    else if (activeTab === 'admin_instansi') fetchAdminInstansi();
-    else fetchMonitoring();
-  }, [activeTab, search]);
+    if (activeTab === 'super_admin') fetchSuperAdmins(currentPage);
+    else if (activeTab === 'admin_instansi') fetchAdminInstansi(currentPage);
+    else fetchMonitoring(currentPage);
+  }, [activeTab, search, currentPage]);
 
   const openCreateModal = () => {
     setForm({ nama: '', username: '', email: '', jenis_kelamin: '', telp: '', alamat: '', password: '', idkategori: '' });
@@ -224,7 +240,7 @@ export const UsersManagementPage: React.FC = () => {
           return (
             <button
               key={tab.key}
-              onClick={() => { setActiveTab(tab.key); setSearch(''); }}
+              onClick={() => { setActiveTab(tab.key); setSearch(''); resetPage(); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${
                 activeTab === tab.key
                   ? 'bg-white dark:bg-white/10 text-indigo-700 dark:text-indigo-300 shadow-sm'
@@ -240,20 +256,28 @@ export const UsersManagementPage: React.FC = () => {
 
       {/* Search (for Super Admin & Admin Instansi tabs) */}
       {activeTab !== 'monitoring' && (
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari berdasarkan nama, username, atau email..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-              <X className="h-4 w-4 text-slate-400 hover:text-slate-600" />
-            </button>
-          )}
+        <div className="flex items-center justify-between gap-4">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                resetPage();
+              }}
+              placeholder="Cari berdasarkan nama, username, atau email..."
+              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+            />
+            {search && (
+              <button onClick={() => { setSearch(''); resetPage(); }} className="absolute right-3 top-1/2 -translate-y-1/2">
+                <X className="h-4 w-4 text-slate-400 hover:text-slate-600" />
+              </button>
+            )}
+          </div>
+          <div className="text-xs text-slate-500 font-semibold px-2 shrink-0">
+            Total: {paginationMeta.total}
+          </div>
         </div>
       )}
 
@@ -360,6 +384,16 @@ export const UsersManagementPage: React.FC = () => {
           )}
         </div>
       )}
+
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
 
       {/* Create Modal */}
       {showModal && (

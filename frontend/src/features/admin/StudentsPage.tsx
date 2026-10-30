@@ -4,6 +4,8 @@ import { TableSkeleton } from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../shared/context/ToastContext';
 import { Plus, Edit2, Trash2, X, Users, Search, Upload, KeyRound } from 'lucide-react';
 import { StudentImportModal } from './components/StudentImportModal';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface Major {
   id: number;
@@ -62,17 +64,31 @@ export const StudentsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const fetchData = async () => {
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchData = async (page = currentPage) => {
     setLoadingData(true);
     try {
+      const params: any = { page };
+      if (search) params.search = search;
+      if (classFilter) params.class_id = classFilter;
+
       const [studentsRes, classesRes, majorsRes] = await Promise.all([
-        apiClient.get('/admin/students'),
-        apiClient.get('/admin/classes'),
-        apiClient.get('/admin/majors')
+        apiClient.get('/admin/students', { params }),
+        apiClient.get('/admin/classes', { params: { all: true } }),
+        apiClient.get('/admin/majors', { params: { all: true } })
       ]);
-      setStudents(studentsRes.data);
-      setClasses(classesRes.data);
-      setMajors(majorsRes.data);
+      setPaginationFromResponse(studentsRes.data);
+      const list = studentsRes.data?.data || (Array.isArray(studentsRes.data) ? studentsRes.data : []);
+      setStudents(list);
+      setClasses(classesRes.data?.data || (Array.isArray(classesRes.data) ? classesRes.data : []));
+      setMajors(majorsRes.data?.data || (Array.isArray(majorsRes.data) ? majorsRes.data : []));
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -81,8 +97,8 @@ export const StudentsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(currentPage);
+  }, [currentPage, search, classFilter]);
 
   const openAddModal = () => {
     setEditingStudent(null);
@@ -173,18 +189,8 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
-  // Filter students logic
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch = 
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.username.toLowerCase().includes(search.toLowerCase()) ||
-      (s.student?.nis && s.student.nis.includes(search));
-    
-    const matchesClass = classFilter === '' || s.student?.class_id === Number(classFilter);
-    const matchesMajor = majorFilter === '' || s.student?.major_id === Number(majorFilter);
-
-    return matchesSearch && matchesClass && matchesMajor;
-  });
+  // Filter students logic (handled server-side)
+  const filteredStudents = students;
 
   return (
     <div className="space-y-6">
@@ -230,7 +236,10 @@ export const StudentsPage: React.FC = () => {
             type="text"
             placeholder="Cari nama, NISN, atau NIS..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              resetPage();
+            }}
             className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
           />
         </div>
@@ -238,7 +247,10 @@ export const StudentsPage: React.FC = () => {
         <div>
           <select
             value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
+            onChange={(e) => {
+              setClassFilter(e.target.value);
+              resetPage();
+            }}
             className="w-full px-3.5 py-2.5 glass-input rounded-xl text-sm text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
           >
             <option value="">-- Semua Kelas --</option>
@@ -253,7 +265,10 @@ export const StudentsPage: React.FC = () => {
         <div>
           <select
             value={majorFilter}
-            onChange={(e) => setMajorFilter(e.target.value)}
+            onChange={(e) => {
+              setMajorFilter(e.target.value);
+              resetPage();
+            }}
             className="w-full px-3.5 py-2.5 glass-input rounded-xl text-sm text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
           >
             <option value="">-- Semua Jurusan --</option>
@@ -265,16 +280,22 @@ export const StudentsPage: React.FC = () => {
           </select>
         </div>
 
-        <button
-          onClick={() => {
-            setSearch('');
-            setClassFilter('');
-            setMajorFilter('');
-          }}
-          className="py-2.5 px-4 bg-slate-100 dark:bg-white/5 hover:bg-slate-200/80 dark:hover:bg-white/10 text-slate-700 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold transition"
-        >
-          Reset Filter
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setSearch('');
+              setClassFilter('');
+              setMajorFilter('');
+              resetPage();
+            }}
+            className="flex-1 py-2.5 px-4 bg-slate-100 dark:bg-white/5 hover:bg-slate-200/80 dark:hover:bg-white/10 text-slate-700 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold transition text-center"
+          >
+            Reset Filter
+          </button>
+          <div className="text-xs text-slate-500 font-semibold px-2 shrink-0">
+            Total: {paginationMeta.total}
+          </div>
+        </div>
       </div>
 
       {/* Table or Skeleton */}
@@ -352,6 +373,16 @@ export const StudentsPage: React.FC = () => {
         </div>
       </div>
       )}
+
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
 
       {/* CRUD Add/Edit Modal */}
       {modalOpen && (

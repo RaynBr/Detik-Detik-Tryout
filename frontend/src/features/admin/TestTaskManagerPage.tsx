@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   User
 } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface TestTask {
   id: number;
@@ -49,16 +51,26 @@ export const TestTaskManagerPage: React.FC = () => {
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [formError, setFormError] = useState<string | null>(null);
 
-  const fetchTasks = async () => {
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchTasks = async (page = currentPage) => {
     setLoading(true);
     try {
-      const params: any = {};
+      const params: any = { page };
       if (statusFilter) params.status = statusFilter;
       if (priorityFilter) params.priority = priorityFilter;
       if (search) params.search = search;
 
       const res = await apiClient.get('/admin/test-tasks', { params });
-      setTasks(res.data);
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setTasks(list);
     } catch (err: any) {
       console.error('Failed to fetch test tasks:', err);
       toast.error('Gagal memuat daftar Test Tasks.');
@@ -68,12 +80,13 @@ export const TestTaskManagerPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchTasks();
-  }, [statusFilter, priorityFilter]);
+    fetchTasks(currentPage);
+  }, [currentPage, statusFilter, priorityFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchTasks();
+    resetPage();
+    fetchTasks(1);
   };
 
   const openAddModal = () => {
@@ -213,7 +226,10 @@ export const TestTaskManagerPage: React.FC = () => {
         <div className="flex items-center gap-2 w-full md:w-auto">
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              resetPage();
+            }}
             className="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/50 text-xs font-semibold text-slate-700 dark:text-gray-300"
           >
             <option value="">Semua Status</option>
@@ -224,7 +240,10 @@ export const TestTaskManagerPage: React.FC = () => {
 
           <select
             value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
+            onChange={(e) => {
+              setPriorityFilter(e.target.value);
+              resetPage();
+            }}
             className="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/50 text-xs font-semibold text-slate-700 dark:text-gray-300"
           >
             <option value="">Semua Prioritas</option>
@@ -232,6 +251,10 @@ export const TestTaskManagerPage: React.FC = () => {
             <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
+
+          <span className="text-xs text-slate-500 font-semibold px-2 shrink-0">
+            Total: {paginationMeta.total}
+          </span>
         </div>
       </div>
 
@@ -343,6 +366,16 @@ export const TestTaskManagerPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
 
       {/* Modal Dialog for Add / Edit */}
       {modalOpen && (

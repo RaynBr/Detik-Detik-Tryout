@@ -34,10 +34,13 @@ class UserBo extends Authenticatable
         'status_remove',
         'jenis_kelamin',
         'nuptk',
+        'nip',
+        'idjenjang',
         'kode_referal',
         'sharing_fee_persen',
         'active_session_token',
         'last_login_at',
+        'force_change_password',
     ];
 
     protected $hidden = [
@@ -71,25 +74,23 @@ class UserBo extends Authenticatable
     }
 
     /**
-     * Resolves role: 'super_admin' | 'admin' | 'guru'
+     * Resolves role: 'super_admin' | 'admin' | 'guru' strictly from database fields
      */
     public function getRoleAttribute(): string
     {
-        if ($this->status_admin === '1' || $this->role_type === 'super_admin') {
+        if ($this->role_type === 'super_admin' || $this->status_admin === '1') {
             return 'super_admin';
-        }
-
-        if ($this->role_type === 'admin_sekolah') {
-            return 'admin';
         }
 
         if ($this->role_type === 'guru') {
             return 'guru';
         }
 
-        // Heuristic fallback for status_admin = '2'
-        $adminUsernames = ['testingpenyelenggara', 'pgrislcc', 'edulab.id', 'andioffset38'];
-        if (in_array(strtolower((string)$this->login_username), $adminUsernames)) {
+        if ($this->role_type === 'admin_sekolah' || $this->role_type === 'admin') {
+            return 'admin';
+        }
+
+        if ($this->status_admin === '2') {
             return 'admin';
         }
 
@@ -97,13 +98,26 @@ class UserBo extends Authenticatable
     }
 
     /**
-     * Decode 5x base64 or check bcrypt hash
+     * Verify password using standard Hash::check(), with transparent migration helper for legacy passwords.
      */
     public function verifyPassword(string $plainPassword): bool
     {
         $raw = (string) $this->login_password;
 
-        // 1. Try 5x base64 decode
+        // 1. Check if stored password is a standard bcrypt hash
+        $isBcrypt = str_starts_with($raw, '$2y$') || str_starts_with($raw, '$2a$') || str_starts_with($raw, '$2b$');
+        if ($isBcrypt) {
+            try {
+                if (\Illuminate\Support\Facades\Hash::check($plainPassword, $raw)) {
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                // Not a valid bcrypt hash, fall through to migration check
+            }
+        }
+
+        // 2. Migration helper: if legacy 5x base64 or plaintext matches,
+        // automatically upgrade stored password to standard bcrypt hash upon first login.
         $decoded = $raw;
         for ($i = 0; $i < 5; $i++) {
             $step = @base64_decode($decoded, true);
@@ -114,17 +128,12 @@ class UserBo extends Authenticatable
             }
         }
 
-        if ($decoded === $plainPassword) {
+        if ($decoded === $plainPassword || $raw === $plainPassword) {
+            $this->update(['login_password' => \Illuminate\Support\Facades\Hash::make($plainPassword)]);
             return true;
         }
 
-        // 2. Try standard bcrypt hash
-        if (password_verify($plainPassword, $raw)) {
-            return true;
-        }
-
-        // 3. Fallback direct comparison if raw plaintext
-        return $raw === $plainPassword;
+        return false;
     }
 
     public function kategori(): BelongsTo

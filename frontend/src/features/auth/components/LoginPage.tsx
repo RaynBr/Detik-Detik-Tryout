@@ -70,7 +70,9 @@ export const LoginPage: React.FC = () => {
       const user = await login(loginInput.trim(), password, roleParam || undefined);
       
       // Auto-redirect to respective dashboard based on authenticated role
-      if (user.role === 'super_admin' || user.role === 'admin') {
+      if (user.role === 'super_admin') {
+        navigate('/super-admin/dashboard', { replace: true });
+      } else if (user.role === 'admin') {
         navigate('/admin/dashboard', { replace: true });
       } else if (user.role === 'guru') {
         navigate('/teacher/dashboard', { replace: true });

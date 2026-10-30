@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../shared/api/client';
 import {
   ScrollText, Search, Filter, Calendar, User,
-  ChevronLeft, ChevronRight, X, Activity
+  X, Activity
 } from 'lucide-react';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface AuditLogItem {
   id: number;
@@ -17,14 +19,6 @@ interface AuditLogItem {
   metadata: Record<string, any> | null;
   ip_address: string | null;
   created_at: string;
-}
-
-interface PaginatedResponse {
-  data: AuditLogItem[];
-  current_page: number;
-  last_page: number;
-  per_page: number;
-  total: number;
 }
 
 const ACTION_COLORS: Record<string, string> = {
@@ -58,8 +52,6 @@ const ACTION_LABELS: Record<string, string> = {
 export const AuditTrailPage: React.FC = () => {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState({ last_page: 1, total: 0 });
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -67,19 +59,27 @@ export const AuditTrailPage: React.FC = () => {
   const [actions, setActions] = useState<string[]>([]);
   const [summary, setSummary] = useState({ total_logs: 0, today_logs: 0, week_logs: 0 });
 
-  const fetchLogs = async () => {
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchLogs = async (p = currentPage) => {
     setLoading(true);
     try {
-      const params: any = { page, per_page: 15 };
+      const params: any = { page: p, per_page: 15 };
       if (search) params.search = search;
       if (actionFilter) params.action = actionFilter;
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
 
       const res = await apiClient.get('/admin/audit-logs', { params });
-      const data: PaginatedResponse = res.data;
-      setLogs(data.data || []);
-      setPagination({ last_page: data.last_page, total: data.total });
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setLogs(list);
     } catch {
       setLogs([]);
     } finally {
@@ -99,7 +99,7 @@ export const AuditTrailPage: React.FC = () => {
   };
 
   useEffect(() => { fetchMeta(); }, []);
-  useEffect(() => { fetchLogs(); }, [page, search, actionFilter, dateFrom, dateTo]);
+  useEffect(() => { fetchLogs(currentPage); }, [currentPage, search, actionFilter, dateFrom, dateTo]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -136,7 +136,7 @@ export const AuditTrailPage: React.FC = () => {
             <input
               type="text"
               value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
               placeholder="Cari nama pengguna, label target, atau aksi..."
               className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
             />
@@ -146,7 +146,7 @@ export const AuditTrailPage: React.FC = () => {
             <Filter className="h-4 w-4 text-slate-400" />
             <select
               value={actionFilter}
-              onChange={e => { setActionFilter(e.target.value); setPage(1); }}
+              onChange={e => { setActionFilter(e.target.value); resetPage(); }}
               className="px-3 py-2.5 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
             >
               <option value="">Semua Aksi</option>
@@ -158,13 +158,13 @@ export const AuditTrailPage: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-slate-400" />
-            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} className="px-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white" />
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); resetPage(); }} className="px-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white" />
             <span className="text-xs text-slate-400">—</span>
-            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} className="px-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white" />
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); resetPage(); }} className="px-3 py-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white" />
           </div>
 
           {(search || actionFilter || dateFrom || dateTo) && (
-            <button onClick={() => { setSearch(''); setActionFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition" title="Reset Filter">
+            <button onClick={() => { setSearch(''); setActionFilter(''); setDateFrom(''); setDateTo(''); resetPage(); }} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition" title="Reset Filter">
               <X className="h-4 w-4 text-slate-400" />
             </button>
           )}
@@ -254,32 +254,17 @@ export const AuditTrailPage: React.FC = () => {
             </tbody>
           </table>
         </div>
-
-        {/* Pagination */}
-        {pagination.total > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200/80 dark:border-white/5">
-            <p className="text-xs text-slate-500 dark:text-gray-400">
-              Menampilkan halaman <span className="font-bold">{page}</span> dari <span className="font-bold">{pagination.last_page}</span> ({pagination.total} total)
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 disabled:opacity-30 transition"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                disabled={page >= pagination.last_page}
-                onClick={() => setPage(p => p + 1)}
-                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 disabled:opacity-30 transition"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
     </div>
   );
 };

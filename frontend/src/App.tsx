@@ -20,9 +20,11 @@ const QuestionBankPage = lazy(() => import('./features/teacher/QuestionBankPage'
 const ExamsPage = lazy(() => import('./features/teacher/ExamsPage').then(m => ({ default: m.ExamsPage })));
 const GradingPage = lazy(() => import('./features/teacher/GradingPage').then(m => ({ default: m.GradingPage })));
 const ExamReportPage = lazy(() => import('./features/teacher/ExamReportPage').then(m => ({ default: m.ExamReportPage })));
+const SuperAdminLayout = lazy(() => import('./features/admin/SuperAdminLayout').then(m => ({ default: m.SuperAdminLayout })));
+const SuperAdminDashboard = lazy(() => import('./features/admin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
+const SchoolUsersPage = lazy(() => import('./features/admin/SchoolUsersPage').then(m => ({ default: m.SchoolUsersPage })));
 const AdminLayout = lazy(() => import('./features/admin/AdminLayout').then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import('./features/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
-const SuperAdminDashboard = lazy(() => import('./features/admin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
 const LiveMonitoringPage = lazy(() => import('./features/admin/LiveMonitoringPage').then(m => ({ default: m.LiveMonitoringPage })));
 const JenjangPage = lazy(() => import('./features/admin/JenjangPage').then(m => ({ default: m.JenjangPage })));
 const MajorsPage = lazy(() => import('./features/admin/MajorsPage').then(m => ({ default: m.MajorsPage })));
@@ -81,7 +83,7 @@ export const App: React.FC = () => {
               </Route>
 
               {/* Teacher routes */}
-              <Route element={<ProtectedRoute allowedRoles={['guru', 'super_admin', 'admin']} />}>
+              <Route element={<ProtectedRoute allowedRoles={['guru']} />}>
                 <Route element={<TeacherLayout />}>
                   <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
                   <Route path="/teacher/questions" element={<QuestionBankPage />} />
@@ -92,36 +94,41 @@ export const App: React.FC = () => {
                 </Route>
               </Route>
 
-              {/* Admin routes */}
-              <Route element={<ProtectedRoute allowedRoles={['super_admin', 'admin']} />}>
+              {/* Super Admin Platform routes (/super-admin/*) */}
+              <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
+                <Route element={<SuperAdminLayout />}>
+                  <Route path="/super-admin/dashboard" element={<SuperAdminDashboard />} />
+                  <Route path="/super-admin/instansi" element={<InstansiPage />} />
+                  <Route path="/super-admin/users" element={<UsersManagementPage />} />
+                  <Route path="/super-admin/jenjang" element={<JenjangPage />} />
+                  <Route path="/super-admin/subjects" element={<SubjectsPage />} />
+                  <Route path="/super-admin/tahun-soal" element={<MasterTahunSoalPage />} />
+                  <Route path="/super-admin/test-tasks" element={<TestTaskManagerPage />} />
+                  <Route path="/super-admin/audit-logs" element={<AuditTrailPage />} />
+                  <Route path="/super-admin/profile" element={<AdminProfilePage />} />
+                </Route>
+              </Route>
+
+              {/* Admin Instansi / Sekolah routes (/admin/*) */}
+              <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin']} />}>
                 <Route element={<AdminLayout />}>
                   <Route path="/admin/dashboard" element={<AdminDashboard />} />
-                  <Route path="/admin/questions" element={<QuestionBankPage />} />
-                  <Route path="/admin/exams" element={<ExamsPage />} />
-                  <Route path="/admin/instansi" element={<InstansiPage />} />
-                  <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
-                  <Route path="/admin/reports" element={<ExamReportPage />} />
-                  <Route path="/admin/jenjang" element={<JenjangPage />} />
-                  <Route path="/admin/majors" element={<MajorsPage />} />
-                  <Route path="/admin/classes" element={<ClassesPage />} />
-                  <Route path="/admin/subjects" element={<SubjectsPage />} />
-                  <Route path="/admin/academic-years" element={<AcademicYearsPage />} />
-                  <Route path="/admin/tahun-soal" element={<MasterTahunSoalPage />} />
+                  <Route path="/admin/school-users" element={<SchoolUsersPage />} />
+                  <Route path="/admin/instansi" element={<SchoolUsersPage />} />
                   <Route path="/admin/teachers" element={<TeachersPage />} />
                   <Route path="/admin/students" element={<StudentsPage />} />
-                  <Route path="/admin/users" element={<UsersManagementPage />} />
-                  <Route path="/admin/audit-logs" element={<AuditTrailPage />} />
-                  <Route path="/admin/test-tasks" element={<TestTaskManagerPage />} />
+                  <Route path="/admin/classes" element={<ClassesPage />} />
+                  <Route path="/admin/academic-years" element={<AcademicYearsPage />} />
+                  <Route path="/admin/subjects" element={<SubjectsPage />} />
+                  <Route path="/admin/majors" element={<MajorsPage />} />
+                  <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
+                  <Route path="/admin/reports" element={<ExamReportPage />} />
                   <Route path="/admin/profile" element={<AdminProfilePage />} />
                 </Route>
               </Route>
 
-              {/* Super Admin routes */}
-              <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
-                <Route element={<AdminLayout />}>
-                  <Route path="/admin/super-dashboard" element={<SuperAdminDashboard />} />
-                </Route>
-              </Route>
+              {/* Backward compatibility redirects */}
+              <Route path="/admin/super-dashboard" element={<Navigate to="/super-admin/dashboard" replace />} />
 
               {/* Public utility pages */}
               <Route path="/unauthorized" element={<Unauthorized />} />

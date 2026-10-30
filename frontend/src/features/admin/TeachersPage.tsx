@@ -3,6 +3,8 @@ import { apiClient } from '../../shared/api/client';
 import { TableSkeleton } from '../../shared/components/LoadingSkeleton';
 import { Plus, Edit2, Trash2, X, Users, Search, BookOpen, Upload, KeyRound } from 'lucide-react';
 import { TeacherImportModal } from './components/TeacherImportModal';
+import { Pagination } from '../../shared/components/Pagination';
+import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
 interface Subject {
   id: number;
@@ -43,15 +45,25 @@ export const TeachersPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const fetchData = async () => {
+  const {
+    currentPage,
+    setPage,
+    resetPage,
+    paginationMeta,
+    setPaginationFromResponse
+  } = usePaginationUrl(15);
+
+  const fetchData = async (page = currentPage) => {
     setLoadingData(true);
     try {
       const [teachersRes, subjectsRes] = await Promise.all([
-        apiClient.get('/admin/teachers'),
-        apiClient.get('/admin/subjects')
+        apiClient.get('/admin/teachers', { params: { search, page } }),
+        apiClient.get('/admin/subjects', { params: { all: true } })
       ]);
-      setTeachers(teachersRes.data);
-      setSubjects(subjectsRes.data);
+      setPaginationFromResponse(teachersRes.data);
+      const list = teachersRes.data?.data || (Array.isArray(teachersRes.data) ? teachersRes.data : []);
+      setTeachers(list);
+      setSubjects(subjectsRes.data?.data || (Array.isArray(subjectsRes.data) ? subjectsRes.data : []));
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -60,8 +72,8 @@ export const TeachersPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(currentPage);
+  }, [currentPage, search]);
 
   const openAddModal = () => {
     setEditingTeacher(null);
@@ -151,12 +163,7 @@ export const TeachersPage: React.FC = () => {
     }
   };
 
-  const filteredTeachers = teachers.filter(
-    (t) =>
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.email.toLowerCase().includes(search.toLowerCase()) ||
-      (t.teacher?.nip && t.teacher.nip.includes(search))
-  );
+  const filteredTeachers = teachers;
 
   return (
     <div className="space-y-6">
@@ -203,9 +210,15 @@ export const TeachersPage: React.FC = () => {
             type="text"
             placeholder="Cari nama, email, atau NIP guru..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              resetPage();
+            }}
             className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
           />
+        </div>
+        <div className="text-xs text-slate-500 font-semibold">
+          Total: {paginationMeta.total} Guru
         </div>
       </div>
 
@@ -288,6 +301,16 @@ export const TeachersPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <Pagination
+        currentPage={paginationMeta.currentPage}
+        lastPage={paginationMeta.lastPage}
+        total={paginationMeta.total}
+        perPage={paginationMeta.perPage}
+        from={paginationMeta.from}
+        to={paginationMeta.to}
+        onPageChange={setPage}
+      />
 
       {/* Modal Dialog */}
       {modalOpen && (

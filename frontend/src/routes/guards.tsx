@@ -77,7 +77,7 @@ export const GuestRoute: React.FC = () => {
       case 'admin':
         return <Navigate to="/admin/dashboard" replace />;
       case 'pengawas':
-        return <Navigate to="/proctor/dashboard" replace />;
+        return <Navigate to="/admin/proctoring" replace />;
       default:
         return <Navigate to="/login" replace />;
     }

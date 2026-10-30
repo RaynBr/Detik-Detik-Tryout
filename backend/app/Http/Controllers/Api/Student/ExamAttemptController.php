@@ -28,7 +28,7 @@ class ExamAttemptController extends Controller
         $idkelas = $user->idkelas;
         $idkategori = $user->idkategori;
 
-        $assessments = Assessment::with(['mapel', 'jenjang', 'kelas', 'examGroups'])
+        $query = Assessment::with(['mapel', 'jenjang', 'kelas', 'examGroups'])
             ->where(function ($q) use ($idkelas, $idkategori, $user) {
                 if ($idkelas) {
                     $q->where('idkelas', $idkelas);
@@ -46,12 +46,37 @@ class ExamAttemptController extends Controller
                     }
                     $gq->orWhereJsonContains('student_ids', (string)$user->iduser);
                 });
-            })
-            ->orderBy('tanggal_input', 'desc')
-            ->orderBy('idassessment', 'desc')
-            ->get();
+            });
 
-        $mapped = $assessments->map(function ($a) use ($user) {
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama_assessment', 'like', "%{$search}%")
+                  ->orWhereHas('mapel', function ($mq) use ($search) {
+                      $mq->where('nama_mapel', 'like', "%{$search}%")
+                         ->orWhere('kode_mapel', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->filled('status')) {
+            $status = $request->status;
+            if ($status === 'completed') {
+                $query->whereHas('attempts', function ($jq) use ($user) {
+                    $jq->where('iduser', $user->iduser)
+                       ->where('komentar', 'submitted');
+                });
+            } elseif ($status === 'unstarted') {
+                $query->whereDoesntHave('attempts', function ($jq) use ($user) {
+                    $jq->where('iduser', $user->iduser)
+                       ->where('komentar', 'submitted');
+                });
+            }
+        }
+
+        $orderedQuery = $query->orderBy('tanggal_input', 'desc')->orderBy('idassessment', 'desc');
+
+        $mapExam = function ($a) use ($user) {
             $attempt = AssessmentJawabanPilgan::where('idassessment', $a->idassessment)
                 ->where('iduser', $user->iduser)
                 ->first();
@@ -123,9 +148,29 @@ class ExamAttemptController extends Controller
                     'is_session_ended' => $isSessionEnded,
                 ] : null
             ];
-        });
+        };
 
-        return response()->json($mapped);
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $assessments = $orderedQuery->get();
+            $mapped = $assessments->map($mapExam);
+            return response()->json([
+                'data' => $mapped,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $mapped->count(),
+                'total' => $mapped->count(),
+                'from' => $mapped->count() > 0 ? 1 : null,
+                'to' => $mapped->count() > 0 ? $mapped->count() : null,
+                'links' => []
+            ]);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $paginator = $orderedQuery->paginate($perPage);
+
+        $paginator->through($mapExam);
+
+        return response()->json($paginator);
     }
 
     /**
@@ -153,6 +198,26 @@ class ExamAttemptController extends Controller
         }
 
         $assessment = Assessment::findOrFail($idassessment);
+
+        // Authorization check: Verify student is eligible/enrolled for this exam (Requirement 1 IDOR)
+        $idkelas = $user->idkelas;
+        $idkategori = $user->idkategori;
+        $isClassTargeted = empty($assessment->idkelas) || ((string)$assessment->idkelas === (string)$idkelas);
+        $isInstansiTargeted = empty($assessment->idkategori) || ((string)$assessment->idkategori === (string)$idkategori) || ($assessment->idkategori === '27830150842287772');
+        
+        $isGroupTargeted = false;
+        if ($group) {
+            $classIds = $group->class_ids ?: [];
+            $studentIds = $group->student_ids ?: [];
+            $isGroupTargeted = in_array((string)$user->iduser, $studentIds) || 
+                               ($idkelas && (in_array($idkelas, $classIds) || in_array((string)$idkelas, $classIds)));
+        }
+
+        if (!$isClassTargeted && !$isInstansiTargeted && !$isGroupTargeted) {
+            return response()->json([
+                'message' => 'Akses ditolak: Anda tidak terdaftar sebagai peserta pada ujian ini.'
+            ], 403);
+        }
 
         // Check session timing window constraints
         $sessionStartTime = null;
@@ -262,8 +327,13 @@ class ExamAttemptController extends Controller
     public function showAttempt(Request $request, $attemptId)
     {
         $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
+        }
+
         $attempt = AssessmentJawabanPilgan::with(['assessment.mapel', 'details'])
             ->where('idassessment_jawaban_pilgan', $attemptId)
+            ->where('iduser', $user->iduser)
             ->firstOrFail();
 
         $assessment = $attempt->assessment;
@@ -456,8 +526,14 @@ class ExamAttemptController extends Controller
      */
     public function submit(Request $request, $attemptId)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
+        }
+
         $attempt = AssessmentJawabanPilgan::with(['assessment.soal', 'details'])
             ->where('idassessment_jawaban_pilgan', $attemptId)
+            ->where('iduser', $user->iduser)
             ->firstOrFail();
 
         $allQuestions = $attempt->assessment->soal;

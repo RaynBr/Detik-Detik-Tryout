@@ -5,7 +5,7 @@ import { apiClient } from '../../shared/api/client';
 import { 
   BookOpen, ShieldAlert, 
   Activity, ArrowRight, Building2, Layers,
-  GraduationCap, UserCheck
+  GraduationCap, UserCheck, Upload, Download, CheckCircle2
 } from 'lucide-react';
 import { 
   WelcomeBanner, 
@@ -16,6 +16,8 @@ import {
 } from '../../shared/components/dashboard';
 import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
 import { InstansiReportsSection } from './components/InstansiReportsSection';
+import { TeacherImportModal } from './components/TeacherImportModal';
+import { StudentImportModal } from './components/StudentImportModal';
 
 export const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -48,6 +50,52 @@ export const AdminDashboard: React.FC = () => {
 
   const [classesList, setClassesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal states for Mass Upload
+  const [isTeacherImportOpen, setIsTeacherImportOpen] = useState(false);
+  const [isStudentImportOpen, setIsStudentImportOpen] = useState(false);
+  const [downloadingTeacherTpl, setDownloadingTeacherTpl] = useState(false);
+  const [downloadingStudentTpl, setDownloadingStudentTpl] = useState(false);
+
+  const handleDownloadTeacherTemplate = async () => {
+    setDownloadingTeacherTpl(true);
+    try {
+      const res = await apiClient.get('/admin/teachers/template', { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'template_import_guru.csv';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download teacher template', err);
+    } finally {
+      setDownloadingTeacherTpl(false);
+    }
+  };
+
+  const handleDownloadStudentTemplate = async () => {
+    setDownloadingStudentTpl(true);
+    try {
+      const res = await apiClient.get('/admin/students/template', { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'template_import_siswa.csv';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download student template', err);
+    } finally {
+      setDownloadingStudentTpl(false);
+    }
+  };
 
   const fetchAllData = async () => {
     setLoading(true);
@@ -189,7 +237,163 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Laporan Khusus Instansi: Guru Mengajar, Siswa per Kelas, & Rekap Nilai Ujian */}
+      {/* 3. Pusat Impor & Upload Massal Guru & Siswa */}
+      <div className="glass-panel rounded-3xl p-6 border border-slate-200/80 dark:border-white/5 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-500/20">
+              <Upload className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                Pusat Impor & Upload Massal
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-gray-400 font-medium">
+                Tambah banyak guru dan siswa instansi secara kolektif dengan template spreadsheet terstandarisasi
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Validasi Exact Match & Preview
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          {/* Card Upload Massal Guru */}
+          <div className="relative overflow-hidden rounded-2xl p-5 border border-emerald-200/80 dark:border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-transparent dark:from-emerald-500/10 dark:via-teal-500/5 dark:to-transparent flex flex-col justify-between group hover:border-emerald-400/50 transition">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
+                    <UserCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      Upload Massal Guru
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+                        14 Kolom
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-gray-400">
+                      Impor data pengajar, NIP, NUPTK, Mata Pelajaran, & akun login
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 text-[10px] font-medium text-slate-600 dark:text-gray-400">
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">NIP & NUPTK</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">Mata Pelajaran</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">Auto Instansi</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">Akun Guru</span>
+              </div>
+            </div>
+
+            <div className="pt-4 mt-3 border-t border-emerald-200/60 dark:border-emerald-500/10 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTeacherImportOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-md shadow-emerald-600/20 transition active:scale-95"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload File Guru</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadTeacherTemplate}
+                  disabled={downloadingTeacherTpl}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-gray-300 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-200 dark:border-white/10 transition active:scale-95 disabled:opacity-50"
+                  title="Unduh format template CSV/Excel"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{downloadingTeacherTpl ? 'Mengunduh...' : 'Template'}</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate('/admin/teachers')}
+                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+              >
+                <span>Kelola Guru ({stats.teachers})</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* Card Upload Massal Siswa */}
+          <div className="relative overflow-hidden rounded-2xl p-5 border border-cyan-200/80 dark:border-cyan-500/20 bg-gradient-to-br from-cyan-500/5 via-indigo-500/5 to-transparent dark:from-cyan-500/10 dark:via-indigo-500/5 dark:to-transparent flex flex-col justify-between group hover:border-cyan-400/50 transition">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30">
+                    <GraduationCap className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      Upload Massal Siswa
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-cyan-100 text-cyan-800 dark:bg-cyan-500/20 dark:text-cyan-300">
+                        15 Kolom
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-gray-400">
+                      Impor data peserta didik, NIS, NISN, rombel kelas, & jenjang
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 text-[10px] font-medium text-slate-600 dark:text-gray-400">
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">NIS & NISN</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">Rombel Kelas</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">No Absen</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">Auto Enrol CBT</span>
+              </div>
+            </div>
+
+            <div className="pt-4 mt-3 border-t border-cyan-200/60 dark:border-cyan-500/10 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStudentImportOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 shadow-md shadow-cyan-600/20 transition active:scale-95"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload File Siswa</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadStudentTemplate}
+                  disabled={downloadingStudentTpl}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-gray-300 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-200 dark:border-white/10 transition active:scale-95 disabled:opacity-50"
+                  title="Unduh format template CSV/Excel"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{downloadingStudentTpl ? 'Mengunduh...' : 'Template'}</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate('/admin/students')}
+                className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1"
+              >
+                <span>Kelola Siswa ({stats.students})</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Laporan Khusus Instansi: Guru Mengajar, Siswa per Kelas, & Rekap Nilai Ujian */}
       <InstansiReportsSection />
 
       {/* 4. Real-Time Operational Analytics & Live Exam Monitoring */}
@@ -303,6 +507,26 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Teacher Import Modal */}
+      <TeacherImportModal
+        isOpen={isTeacherImportOpen}
+        onClose={() => setIsTeacherImportOpen(false)}
+        onSuccess={() => {
+          setIsTeacherImportOpen(false);
+          fetchAllData();
+        }}
+      />
+
+      {/* Student Import Modal */}
+      <StudentImportModal
+        isOpen={isStudentImportOpen}
+        onClose={() => setIsStudentImportOpen(false)}
+        onSuccess={() => {
+          setIsStudentImportOpen(false);
+          fetchAllData();
+        }}
+      />
 
     </div>
   );
