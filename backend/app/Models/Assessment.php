@@ -7,9 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+use Illuminate\Database\Eloquent\SoftDeletes;
+
 class Assessment extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'assessment';
     protected $primaryKey = 'idassessment';
@@ -45,6 +47,8 @@ class Assessment extends Model
         'idkelas',
         'idmapel',
         'id_tahun_ajaran',
+        'tahun_soal_id',
+        'status_aktif',
     ];
 
     protected $attributes = [
@@ -64,9 +68,29 @@ class Assessment extends Model
         'point_assessment_nama' => 'JPtest',
     ];
 
+    protected static function booted()
+    {
+        static::creating(function ($model) {
+            if (empty($model->tanggal_mulai_assessment)) {
+                $model->tanggal_mulai_assessment = now()->toDateString();
+            }
+            if (empty($model->tanggal_batas_assessment)) {
+                $model->tanggal_batas_assessment = now()->addYear()->toDateString();
+            }
+            if (empty($model->waktu_pengerjaan)) {
+                $model->waktu_pengerjaan = 90;
+            }
+        });
+    }
+
     public function academicYear(): BelongsTo
     {
         return $this->belongsTo(AcademicYear::class, 'id_tahun_ajaran', 'id');
+    }
+
+    public function tahunSoal(): BelongsTo
+    {
+        return $this->belongsTo(MasterTahunSoal::class, 'tahun_soal_id', 'id');
     }
 
     public function jenjang(): BelongsTo

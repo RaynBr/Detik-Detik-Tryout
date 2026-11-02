@@ -18,7 +18,8 @@ import {
   CalendarDays,
   UserCheck,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  History
 } from 'lucide-react';
 
 interface SubMenuItem {
@@ -53,12 +54,14 @@ export const AdminLayout: React.FC = () => {
     });
   };
 
-  // Submenu state for Admin Instansi Akademik Sekolah
-  const isSchoolAcademicsActive = [
-    '/admin/academic-years',
-    '/admin/subjects',
-    '/admin/majors'
-  ].includes(location.pathname);
+  // Submenu state for Admin Instansi Master Akademik
+  const isSchoolAcademicsActive = 
+    location.pathname.startsWith('/admin/master-akademik') ||
+    [
+      '/admin/academic-years',
+      '/admin/subjects',
+      '/admin/majors'
+    ].includes(location.pathname);
 
   const [academicsOpen, setAcademicsOpen] = React.useState<boolean>(isSchoolAcademicsActive);
 
@@ -76,13 +79,17 @@ export const AdminLayout: React.FC = () => {
     { name: 'Kelola Siswa', path: '/admin/students', icon: GraduationCap },
     { name: 'Kelola Kelas & Rombel', path: '/admin/classes', icon: School },
     { 
-      name: 'Akademik Sekolah', 
-      path: '/admin/academic-years', 
+      name: 'Master Akademik', 
+      path: '/admin/master-akademik/tahun-ajaran', 
       icon: Layers,
       subItems: [
-        { name: 'Tahun Ajaran Sekolah', path: '/admin/academic-years', icon: CalendarDays },
-        { name: 'Mata Pelajaran & KKM', path: '/admin/subjects', icon: BookOpen },
-        { name: 'Konsentrasi / Jurusan', path: '/admin/majors', icon: Layers },
+        { name: 'Tahun Ajaran', path: '/admin/master-akademik/tahun-ajaran', icon: CalendarDays },
+        { name: 'Semester', path: '/admin/master-akademik/semester', icon: History },
+        { name: 'Kurikulum', path: '/admin/master-akademik/kurikulum', icon: BookOpen },
+        { name: 'Jenjang', path: '/admin/master-akademik/jenjang', icon: Layers },
+        { name: 'Jurusan', path: '/admin/master-akademik/jurusan', icon: Layers },
+        { name: 'Tingkat/Kelas', path: '/admin/master-akademik/tingkat-kelas', icon: UserCheck },
+        { name: 'Mata Pelajaran', path: '/admin/master-akademik/mata-pelajaran', icon: BookOpen },
       ]
     },
     { name: 'Monitoring Ujian', path: '/admin/proctoring', icon: BarChart3 },

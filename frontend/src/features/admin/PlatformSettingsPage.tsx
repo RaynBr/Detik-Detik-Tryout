@@ -2,19 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
   Mail, 
-  ShieldCheck, 
   Database, 
   CheckCircle2, 
   Save, 
   Power, 
   Send,
   Lock,
-  Server
+  Server,
+  Globe
 } from 'lucide-react';
 import { apiClient } from '../../shared/api/client';
+import { toast } from '../../shared/context/ToastContext';
 
 export const PlatformSettingsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'smtp' | 'branding' | 'security' | 'backup'>('smtp');
+  const [activeTab, setActiveTab] = useState<'general' | 'smtp' | 'security' | 'backup'>('general');
   const [, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -26,8 +27,9 @@ export const PlatformSettingsPage: React.FC = () => {
       tagline: 'Platform Computer-Based Testing Terpadu & Terpercaya',
       logo_url: '/images/logo-cbt.png',
       favicon_url: '/favicon.ico',
+      copyright: '© 2026 Detik Detik TryOut. Hak Cipta Dilindungi.',
       support_email: 'support@sertidemi.com',
-      support_phone: '+62 21 5566 7788',
+      support_phone: '+62 812-3456-7890',
       maintenance_mode: false,
     },
     smtp: {
@@ -56,20 +58,29 @@ export const PlatformSettingsPage: React.FC = () => {
 
   const [testingSmtp, setTestingSmtp] = useState(false);
 
-  useEffect(() => {
-    const fetchSettings = async () => {
-      setLoading(true);
-      try {
-        const res = await apiClient.get('/super-admin/settings');
-        if (res.data) {
-          setSettings(res.data);
-        }
-      } catch (err) {
-        console.error('Failed to load settings', err);
-      } finally {
-        setLoading(false);
+  const fetchSettings = async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get('/super-admin/settings');
+      if (res.data) {
+        setSettings((prev) => ({
+          ...prev,
+          ...res.data,
+          platform: {
+            ...prev.platform,
+            ...(res.data.platform || {}),
+            copyright: res.data.platform?.copyright || prev.platform.copyright,
+          }
+        }));
       }
-    };
+    } catch (err) {
+      console.error('Failed to load settings', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchSettings();
   }, []);
 
@@ -79,9 +90,10 @@ export const PlatformSettingsPage: React.FC = () => {
     try {
       await apiClient.post('/super-admin/settings', settings);
       setSuccessMsg('Pengaturan sistem platform berhasil disimpan dan diterapkan.');
+      toast.success('Pengaturan sistem berhasil disimpan.');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal menyimpan pengaturan.');
+      toast.error(err.response?.data?.message || 'Gagal menyimpan pengaturan.');
     } finally {
       setSaving(false);
     }
@@ -91,7 +103,7 @@ export const PlatformSettingsPage: React.FC = () => {
     setTestingSmtp(true);
     setTimeout(() => {
       setTestingSmtp(false);
-      alert('Koneksi SMTP berhasil diverifikasi! Pesan tes berhasil dikirim.');
+      toast.success('Koneksi SMTP berhasil diverifikasi! Pesan tes berhasil dikirim.');
     }, 1200);
   };
 
@@ -104,23 +116,23 @@ export const PlatformSettingsPage: React.FC = () => {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-2 border-[#161C2D] dark:border-indigo-500/40 text-xs font-black mb-3 shadow-[2px_2px_0px_0px_#171717]">
               <Settings className="h-4 w-4" />
-              <span>Platform Owner Configuration</span>
+              <span>6. Pengaturan Platform Global</span>
             </div>
             <h1 className="text-2xl font-black text-[#161C2D] dark:text-white tracking-tight">
-              Pengaturan Sistem Platform
+              Konfigurasi Sistem & Mode Pemeliharaan
             </h1>
             <p className="text-xs text-slate-500 dark:text-gray-400 mt-1 font-semibold max-w-2xl">
-              Konfigurasi global platform multi-tenant, mail relay SMTP, keamanan session token, cadangan database, dan status mode pemeliharaan (Maintenance Mode).
+              Pengaturan metadata platform (Nama, Logo, Favicon, Copyright, Kontak Support) dan aktivasi mode pemeliharaan (Maintenance Mode).
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-black px-3 py-1.5 rounded-lg border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] ${
+            <span className={`text-xs font-black px-3.5 py-2 rounded-xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] ${
               settings.platform.maintenance_mode 
                 ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300' 
                 : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
             }`}>
-              {settings.platform.maintenance_mode ? '⚠️ Maintenance Mode AKTIF' : '● Platform Beroperasi Normal'}
+              {settings.platform.maintenance_mode ? '⚠️ Maintenance Mode: AKTIF' : '● Maintenance Mode: NON AKTIF'}
             </span>
           </div>
         </div>
@@ -133,13 +145,13 @@ export const PlatformSettingsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
+      {/* Tabs Selection */}
       <div className="flex flex-wrap gap-2 border-b-2 border-[#161C2D] dark:border-[#32363A] pb-3">
         {[
+          { id: 'general', label: 'Pengaturan Utama & Maintenance', icon: Server },
           { id: 'smtp', label: 'Mail Server (SMTP)', icon: Mail },
-          { id: 'branding', label: 'Branding & Identitas', icon: Server },
           { id: 'security', label: 'Kebijakan Keamanan', icon: Lock },
-          { id: 'backup', label: 'Backup & Pemeliharaan', icon: Database },
+          { id: 'backup', label: 'Backup & Penyimpanan', icon: Database },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -162,16 +174,195 @@ export const PlatformSettingsPage: React.FC = () => {
 
       <form onSubmit={handleSaveSettings} className="space-y-6">
         
-        {/* TAB 1: SMTP */}
+        {/* TAB 1: PENGATURAN UTAMA & MAINTENANCE */}
+        {activeTab === 'general' && (
+          <div className="space-y-6">
+            
+            {/* Maintenance Mode Card (Prominent & Explicit) */}
+            <div className={`p-6 rounded-2xl border-2 border-[#161C2D] dark:border-[#32363A] shadow-[4px_4px_0px_0px_#171717] transition-colors ${
+              settings.platform.maintenance_mode 
+                ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-600' 
+                : 'bg-white dark:bg-[#1A1E22]'
+            }`}>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className={`p-3 rounded-2xl border-2 border-[#161C2D] ${
+                    settings.platform.maintenance_mode ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    <Power className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-[#161C2D] dark:text-white">
+                        Status Maintenance Mode
+                      </h3>
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${
+                        settings.platform.maintenance_mode 
+                          ? 'bg-rose-200 text-rose-900 border-rose-300' 
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      }`}>
+                        {settings.platform.maintenance_mode ? 'Aktif' : 'Non Aktif'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-gray-400 mt-1 max-w-xl">
+                      Jika berstatus <strong>Aktif</strong>: Semua user selain Super Admin (Siswa, Guru, Admin Instansi) tidak dapat mengakses sistem dan akan dialihkan ke halaman maintenance. Super Admin tetap dapat login dan mengelola sistem.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSettings({
+                      ...settings,
+                      platform: {
+                        ...settings.platform,
+                        maintenance_mode: !settings.platform.maintenance_mode
+                      }
+                    })}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer shrink-0 ${
+                      settings.platform.maintenance_mode 
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white' 
+                        : 'bg-slate-100 hover:bg-slate-200 text-[#161C2D]'
+                    }`}
+                  >
+                    {settings.platform.maintenance_mode ? 'Nonaktifkan Maintenance Mode' : 'Aktifkan Maintenance Mode'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Identitas Platform Form */}
+            <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] space-y-5">
+              <div>
+                <h3 className="text-base font-black text-[#161C2D] dark:text-white flex items-center gap-2">
+                  <Globe className="h-5 w-5 text-indigo-600" />
+                  <span>Metadata & Identitas Platform</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-gray-400">
+                  Data branding yang tampil pada halaman login, title bar browser, serta footer sistem.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Nama Platform */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
+                    Nama Platform <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.platform.name}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      platform: { ...settings.platform, name: e.target.value }
+                    })}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[#161C2D] dark:text-white"
+                    placeholder="Detik Detik TryOut CBT"
+                    required
+                  />
+                </div>
+
+                {/* 2. Logo Platform */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
+                    Logo Platform (URL / Path)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.platform.logo_url}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      platform: { ...settings.platform, logo_url: e.target.value }
+                    })}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[#161C2D] dark:text-white"
+                    placeholder="/images/logo-cbt.png atau https://..."
+                  />
+                </div>
+
+                {/* 3. Favicon */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
+                    Favicon Platform (URL / Path)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.platform.favicon_url}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      platform: { ...settings.platform, favicon_url: e.target.value }
+                    })}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[#161C2D] dark:text-white"
+                    placeholder="/favicon.ico atau https://..."
+                  />
+                </div>
+
+                {/* 4. Copyright */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
+                    Teks Copyright Footer
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.platform.copyright}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      platform: { ...settings.platform, copyright: e.target.value }
+                    })}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[#161C2D] dark:text-white"
+                    placeholder="© 2026 Detik Detik TryOut. Hak Cipta Dilindungi."
+                  />
+                </div>
+
+                {/* 5. Email Support */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
+                    Email Support
+                  </label>
+                  <input
+                    type="email"
+                    value={settings.platform.support_email}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      platform: { ...settings.platform, support_email: e.target.value }
+                    })}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[#161C2D] dark:text-white"
+                    placeholder="support@sertidemi.com"
+                  />
+                </div>
+
+                {/* 6. Nomor WA Support */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
+                    Nomor WhatsApp Support
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.platform.support_phone}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      platform: { ...settings.platform, support_phone: e.target.value }
+                    })}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[#161C2D] dark:text-white"
+                    placeholder="+62 812-3456-7890"
+                  />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB 2: SMTP */}
         {activeTab === 'smtp' && (
-          <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] space-y-5">
+          <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] space-y-5">
             <div>
               <h3 className="text-base font-black text-[#161C2D] dark:text-white flex items-center gap-2">
                 <Mail className="h-5 w-5 text-indigo-600" />
                 <span>Konfigurasi SMTP Relay Email</span>
               </h3>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                Digunakan untuk notifikasi pendaftaran instansi baru, reset password staff, dan laporan terjadwal.
+                Pengiriman notifikasi pendaftaran, reset password akun, dan laporan otomatis.
               </p>
             </div>
 
@@ -187,9 +378,8 @@ export const PlatformSettingsPage: React.FC = () => {
                     ...settings,
                     smtp: { ...settings.smtp, host: e.target.value }
                   })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold"
                   placeholder="smtp.mailgun.org"
-                  required
                 />
               </div>
 
@@ -204,15 +394,14 @@ export const PlatformSettingsPage: React.FC = () => {
                     ...settings,
                     smtp: { ...settings.smtp, port: parseInt(e.target.value) || 587 }
                   })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold"
                   placeholder="587"
-                  required
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
-                  Nama Pengirim (Sender Name)
+                  Nama Pengirim
                 </label>
                 <input
                   type="text"
@@ -221,14 +410,13 @@ export const PlatformSettingsPage: React.FC = () => {
                     ...settings,
                     smtp: { ...settings.smtp, sender_name: e.target.value }
                   })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
-                  placeholder="CBT Detik Detik System"
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
-                  Email Pengirim (Sender Email)
+                  Email Pengirim
                 </label>
                 <input
                   type="email"
@@ -237,9 +425,7 @@ export const PlatformSettingsPage: React.FC = () => {
                     ...settings,
                     smtp: { ...settings.smtp, sender_email: e.target.value }
                   })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
-                  placeholder="noreply@sertidemi.com"
-                  required
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold"
                 />
               </div>
             </div>
@@ -249,7 +435,7 @@ export const PlatformSettingsPage: React.FC = () => {
                 type="button"
                 onClick={handleTestSmtp}
                 disabled={testingSmtp}
-                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-[#161C2D] dark:text-white border-2 border-[#161C2D] rounded-lg text-xs font-bold shadow-[2px_2px_0px_0px_#171717] flex items-center gap-1.5"
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 text-[#161C2D] dark:text-white border-2 border-[#161C2D] rounded-xl text-xs font-bold shadow-[2px_2px_0px_0px_#171717] flex items-center gap-1.5 cursor-pointer"
               >
                 <Send className="h-3.5 w-3.5" />
                 <span>{testingSmtp ? 'Menguji Koneksi...' : 'Kirim Email Uji Coba'}</span>
@@ -258,102 +444,24 @@ export const PlatformSettingsPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: BRANDING */}
-        {activeTab === 'branding' && (
-          <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] space-y-5">
-            <div>
-              <h3 className="text-base font-black text-[#161C2D] dark:text-white flex items-center gap-2">
-                <Server className="h-5 w-5 text-indigo-600" />
-                <span>Identitas & Branding Platform Nasional</span>
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-gray-400">
-                Nama platform dan informasi kontak yang tampil pada header aplikasi dan portal login.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
-                  Nama Resmi Platform
-                </label>
-                <input
-                  type="text"
-                  value={settings.platform.name}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    platform: { ...settings.platform, name: e.target.value }
-                  })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
-                  Tagline Platform
-                </label>
-                <input
-                  type="text"
-                  value={settings.platform.tagline}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    platform: { ...settings.platform, tagline: e.target.value }
-                  })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
-                  Email Dukungan / Support
-                </label>
-                <input
-                  type="email"
-                  value={settings.platform.support_email}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    platform: { ...settings.platform, support_email: e.target.value }
-                  })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
-                  Nomor Kontak Bantuan
-                </label>
-                <input
-                  type="text"
-                  value={settings.platform.support_phone}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    platform: { ...settings.platform, support_phone: e.target.value }
-                  })}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* TAB 3: SECURITY */}
         {activeTab === 'security' && (
-          <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] space-y-5">
+          <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] space-y-5">
             <div>
               <h3 className="text-base font-black text-[#161C2D] dark:text-white flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-indigo-600" />
-                <span>Kebijakan Keamanan & Anti-Cheat Platform</span>
+                <Lock className="h-5 w-5 text-indigo-600" />
+                <span>Kebijakan Keamanan & Anti-Curang CBT</span>
               </h3>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                Aturan pembatasan login tunggal (Single Session Lock), batas perpindahan tab siswa, dan durasi sesi login.
+                Pencegahan login ganda (Single Session Lock) dan batasan perpindahan tab ujian siswa.
               </p>
             </div>
 
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-[#0B1014]/50 border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl">
+              <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10">
                 <div>
-                  <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Single Session Lock (Mencegah Login Ganda)</h4>
-                  <p className="text-[11px] text-slate-500">Mencegah satu akun login bersamaan di perangkat atau peramban berbeda.</p>
+                  <h4 className="text-xs font-bold text-[#161C2D] dark:text-white">Single Session Lock Token</h4>
+                  <p className="text-[11px] text-slate-400">Otomatis mengeluarkan sesi lama jika user login di browser/perangkat baru.</p>
                 </div>
                 <input
                   type="checkbox"
@@ -362,14 +470,14 @@ export const PlatformSettingsPage: React.FC = () => {
                     ...settings,
                     security: { ...settings.security, single_session_lock: e.target.checked }
                   })}
-                  className="h-5 w-5 rounded border-2 border-[#161C2D] text-indigo-600 focus:ring-0 cursor-pointer"
+                  className="rounded border-[#161C2D] h-4 w-4"
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1.5">
-                    Batas Peringatan Pindah Tab (Tab Switch Limit)
+                    Batas Maksimal Perpindahan Tab Ujian
                   </label>
                   <input
                     type="number"
@@ -378,11 +486,10 @@ export const PlatformSettingsPage: React.FC = () => {
                       ...settings,
                       security: { ...settings.security, tab_switch_limit: parseInt(e.target.value) || 5 }
                     })}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold"
                     min={1}
                     max={20}
                   />
-                  <span className="text-[10px] text-slate-400">Siswa didiskualifikasi otomatis setelah melewati batas ini.</span>
                 </div>
 
                 <div>
@@ -396,7 +503,7 @@ export const PlatformSettingsPage: React.FC = () => {
                       ...settings,
                       security: { ...settings.security, session_lifetime_minutes: parseInt(e.target.value) || 120 }
                     })}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-lg text-xs font-bold"
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#0B1014] border-2 border-[#C3CCD8] dark:border-[#32363A] rounded-xl text-xs font-bold"
                     min={15}
                     max={1440}
                   />
@@ -406,55 +513,19 @@ export const PlatformSettingsPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 4: BACKUP & MAINTENANCE */}
+        {/* TAB 4: BACKUP & PENYIMPANAN */}
         {activeTab === 'backup' && (
-          <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] space-y-5">
+          <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-6 shadow-[4px_4px_0px_0px_#171717] space-y-5">
             <div>
               <h3 className="text-base font-black text-[#161C2D] dark:text-white flex items-center gap-2">
                 <Database className="h-5 w-5 text-indigo-600" />
-                <span>Backup Database & Mode Pemeliharaan</span>
+                <span>Status Basis Data & Backup</span>
               </h3>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                Pencadangan snapshot data ujian dan kontrol pembatasan akses sistem saat pemeliharaan server.
+                Pencadangan snapshot data ujian dan integritas penyimpanan basis data.
               </p>
             </div>
 
-            {/* Maintenance Mode Switch */}
-            <div className={`p-5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] flex items-center justify-between ${
-              settings.platform.maintenance_mode ? 'bg-rose-50 dark:bg-rose-950/30' : 'bg-slate-50 dark:bg-[#0B1014]/50'
-            }`}>
-              <div>
-                <div className="flex items-center gap-2">
-                  <Power className={`h-5 w-5 ${settings.platform.maintenance_mode ? 'text-rose-600' : 'text-slate-500'}`} />
-                  <h4 className="text-sm font-black text-[#161C2D] dark:text-white">
-                    Mode Pemeliharaan (Maintenance Mode)
-                  </h4>
-                </div>
-                <p className="text-xs text-slate-500 mt-1 max-w-xl">
-                  Jika diaktifkan, seluruh portal Siswa, Guru, dan Admin Instansi ditutup sementara dengan tampilan halaman pemeliharaan. Hanya Super Admin yang dapat mengakses sistem.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSettings({
-                  ...settings,
-                  platform: {
-                    ...settings.platform,
-                    maintenance_mode: !settings.platform.maintenance_mode
-                  }
-                })}
-                className={`px-4 py-2 rounded-xl text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] transition ${
-                  settings.platform.maintenance_mode 
-                    ? 'bg-rose-600 text-white' 
-                    : 'bg-white dark:bg-[#1A1E22] text-slate-700 dark:text-gray-200 hover:bg-slate-100'
-                }`}
-              >
-                {settings.platform.maintenance_mode ? 'Nonaktifkan Maintenance' : 'Aktifkan Mode Maintenance'}
-              </button>
-            </div>
-
-            {/* Backup Summary */}
             <div className="p-4 bg-slate-50 dark:bg-[#0B1014]/40 border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl text-xs space-y-2">
               <div className="flex justify-between font-bold">
                 <span className="text-slate-500">Ukuran Database Saat Ini:</span>
@@ -467,27 +538,26 @@ export const PlatformSettingsPage: React.FC = () => {
               <div className="flex justify-between font-bold">
                 <span className="text-slate-500">Integritas Storage:</span>
                 <span className="text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Sehat (103 GB Tersedia di Drive D)
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Sehat (MySQL Terhubung)
                 </span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Global Save Button */}
-        <div className="flex justify-end pt-4">
+        {/* Floating / Sticky Save Action Bar */}
+        <div className="flex items-center justify-end gap-3 pt-4 border-t-2 border-[#161C2D] dark:border-[#32363A]">
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl border-2 border-[#161C2D] shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] text-xs font-black hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition flex items-center gap-2 cursor-pointer disabled:opacity-60"
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs border-2 border-[#161C2D] shadow-[3px_3px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer disabled:opacity-50"
           >
             <Save className="h-4 w-4" />
-            <span>{saving ? 'Menyimpan Konfigurasi...' : 'Simpan Semua Pengaturan'}</span>
+            <span>{saving ? 'Menyimpan Pengaturan...' : 'Simpan Seluruh Pengaturan'}</span>
           </button>
         </div>
 
       </form>
-
     </div>
   );
 };

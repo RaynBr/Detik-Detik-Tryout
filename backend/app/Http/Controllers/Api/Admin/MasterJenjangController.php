@@ -10,7 +10,16 @@ class MasterJenjangController extends Controller
 {
     public function index(Request $request)
     {
-        $query = MasterJenjang::withCount(['kelas', 'mataPelajaran']);
+        $user = $request->user();
+        $query = MasterJenjang::query();
+
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+        } elseif ($request->filled('idkategori')) {
+            $query->where('idkategori', $request->idkategori);
+        }
+
+        $query->withCount(['kelas', 'mataPelajaran']);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -42,16 +51,37 @@ class MasterJenjangController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Super Administrator tidak diizinkan membuat data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
+            ], 403);
+        }
+
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json([
+                'message' => 'Akses ditolak: Hanya Admin Instansi yang berhak membuat data jenjang sekolah.'
+            ], 403);
+        }
+
         $validated = $request->validate([
-            'kode_jenjang' => 'required|string|max:20|unique:master_jenjang,kode_jenjang',
+            'kode_jenjang' => 'required|string|max:20',
             'nama_jenjang' => 'required|string|max:100',
             'urutan' => 'nullable|integer',
             'keterangan' => 'nullable|string',
             'status_aktif' => 'nullable|in:Y,N',
         ]);
 
+        $idkategori = $user->idkategori;
+        $kodeJenjang = strtoupper(trim($validated['kode_jenjang']));
+
+        if (MasterJenjang::where('idkategori', $idkategori)->where('kode_jenjang', $kodeJenjang)->exists()) {
+            return response()->json(['message' => 'Kode jenjang tersebut sudah terdaftar di instansi Anda.'], 422);
+        }
+
         $jenjang = MasterJenjang::create([
-            'kode_jenjang' => strtoupper(trim($validated['kode_jenjang'])),
+            'idkategori' => $idkategori,
+            'kode_jenjang' => $kodeJenjang,
             'nama_jenjang' => trim($validated['nama_jenjang']),
             'urutan' => $validated['urutan'] ?? 1,
             'keterangan' => $validated['keterangan'] ?? null,
@@ -66,26 +96,53 @@ class MasterJenjangController extends Controller
         ], 201);
     }
 
-    public function show(MasterJenjang $masterJenjang)
+    public function show(Request $request, $id)
     {
+        $user = $request->user();
+        $masterJenjang = $id instanceof MasterJenjang ? $id : MasterJenjang::findOrFail($id);
+
+        if ($user && $user->role === 'admin' && $masterJenjang->idkategori && $masterJenjang->idkategori !== $user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
         $masterJenjang->load(['kelas.waliKelas', 'mataPelajaran']);
         $masterJenjang->loadCount(['kelas', 'mataPelajaran']);
 
         return response()->json($masterJenjang);
     }
 
-    public function update(Request $request, MasterJenjang $masterJenjang)
+    public function update(Request $request, $id)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Super Administrator tidak diizinkan mengubah data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
+            ], 403);
+        }
+
+        $masterJenjang = $id instanceof MasterJenjang ? $id : MasterJenjang::findOrFail($id);
+
+        if ($user && $user->role === 'admin' && $masterJenjang->idkategori && $masterJenjang->idkategori !== $user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
         $validated = $request->validate([
-            'kode_jenjang' => 'required|string|max:20|unique:master_jenjang,kode_jenjang,' . $masterJenjang->id,
+            'kode_jenjang' => 'required|string|max:20',
             'nama_jenjang' => 'required|string|max:100',
             'urutan' => 'nullable|integer',
             'keterangan' => 'nullable|string',
             'status_aktif' => 'nullable|in:Y,N',
         ]);
 
+        $idkategori = $masterJenjang->idkategori ?: ($user?->idkategori ?? null);
+        $kodeJenjang = strtoupper(trim($validated['kode_jenjang']));
+
+        if ($idkategori && MasterJenjang::where('idkategori', $idkategori)->where('kode_jenjang', $kodeJenjang)->where('id', '!=', $masterJenjang->id)->exists()) {
+            return response()->json(['message' => 'Kode jenjang tersebut sudah terdaftar di instansi Anda.'], 422);
+        }
+
         $masterJenjang->update([
-            'kode_jenjang' => strtoupper(trim($validated['kode_jenjang'])),
+            'kode_jenjang' => $kodeJenjang,
             'nama_jenjang' => trim($validated['nama_jenjang']),
             'urutan' => $validated['urutan'] ?? $masterJenjang->urutan,
             'keterangan' => $validated['keterangan'] ?? $masterJenjang->keterangan,
@@ -100,8 +157,21 @@ class MasterJenjangController extends Controller
         ]);
     }
 
-    public function destroy(MasterJenjang $masterJenjang)
+    public function destroy(Request $request, $id)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Super Administrator tidak diizinkan menghapus data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
+            ], 403);
+        }
+
+        $masterJenjang = $id instanceof MasterJenjang ? $id : MasterJenjang::findOrFail($id);
+
+        if ($user && $user->role === 'admin' && $masterJenjang->idkategori && $masterJenjang->idkategori !== $user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
         if ($masterJenjang->kelas()->count() > 0) {
             return response()->json([
                 'message' => 'Tidak dapat menghapus Jenjang yang masih memiliki Kelas terhubung.'

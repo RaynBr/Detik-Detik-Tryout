@@ -10,6 +10,7 @@ class AcademicYear extends Model
     use HasFactory;
 
     protected $fillable = [
+        'idkategori',
         'name',
         'semester',
         'is_active',
@@ -18,4 +19,9 @@ class AcademicYear extends Model
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    public function kategori()
+    {
+        return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
 }

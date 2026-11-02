@@ -23,8 +23,9 @@ use App\Http\Controllers\Api\Student\ResultController;
 use App\Http\Controllers\Api\Proctoring\ViolationLogController;
 use Illuminate\Support\Facades\Route;
 
-// Public Auth routes (Requirement 7: Throttle login 5 req/min)
-Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:5,1');
+// Public Auth & Platform routes
+Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:5,1')->name('login');
+Route::get('/public/platform-settings', [\App\Http\Controllers\Api\SuperAdmin\PlatformSettingController::class, 'publicSettings']);
 
 // Protected routes (Requires Auth & Session Lock check)
 Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
@@ -39,6 +40,9 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::get('dashboard/stats', [DashboardController::class, 'stats']);
 
         // Kelola Instansi Multi-Tenant (CRUD Instansi, Admin, Masa Aktif, Suspend)
+        Route::patch('instansi/{idkategori}/status', [InstansiController::class, 'toggleStatus']);
+        Route::post('instansi/{idkategori}/toggle-status', [InstansiController::class, 'toggleStatus']);
+        Route::get('instansi/{idkategori}/academic-details', [InstansiController::class, 'academicDetails']);
         Route::post('instansi/{idkategori}/admins', [InstansiController::class, 'storeAdmin']);
         Route::put('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'updateAdmin']);
         Route::delete('instansi/{idkategori}/admins/{iduser_bo}', [InstansiController::class, 'destroyAdmin']);
@@ -50,26 +54,53 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::get('users/admin-instansi', [UserManagementController::class, 'adminInstansi']);
         Route::post('users/admin-instansi', [UserManagementController::class, 'storeAdminInstansi']);
         Route::get('users/monitoring-guru-siswa', [UserManagementController::class, 'monitoringGuruSiswa']);
+        Route::post('users/{id}/reset-password', [UserManagementController::class, 'resetPassword']);
+        Route::patch('users/{id}/status', [UserManagementController::class, 'toggleStatus']);
+        Route::post('users/{id}/toggle-status', [UserManagementController::class, 'toggleStatus']);
+        Route::apiResource('users', UserManagementController::class);
 
-        // Master Platform Nasional
+        // Master Akademik (8 Entitas)
+        Route::post('academic-years/{id}/activate', [AcademicYearController::class, 'activate']);
+        Route::apiResource('academic-years', AcademicYearController::class);
+        Route::apiResource('semesters', \App\Http\Controllers\Api\Admin\MasterSemesterController::class);
         Route::apiResource('jenjang', MasterJenjangController::class);
+        Route::apiResource('kurikulum', \App\Http\Controllers\Api\Admin\MasterKurikulumController::class);
         Route::apiResource('subjects', MasterMataPelajaranController::class);
+        Route::apiResource('classes', MasterKelasController::class)->parameters(['classes' => 'masterKela']);
+        Route::apiResource('majors', \App\Http\Controllers\Api\Admin\MajorController::class);
+        Route::apiResource('tingkat-kelas', \App\Http\Controllers\Api\Admin\MasterTingkatKelasController::class);
         Route::apiResource('tahun-soal', MasterTahunSoalController::class);
 
-        // Subscriptions & Kuota Instansi
+        // Kelola Bank Soal (Cascading Parameter Filter, List Soal, Detail, Edit, Hapus, Aktif/Nonaktif, Template & Import)
+        Route::get('question-bank/template', [\App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class, 'downloadTemplate']);
+        Route::post('question-bank/preview', [\App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class, 'preview']);
+        Route::post('question-bank/import', [\App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class, 'import']);
+        Route::get('question-bank/cascading-params', [\App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class, 'cascadingParams']);
+        Route::patch('question-bank/{id}/status', [\App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class, 'toggleStatus']);
+        Route::post('question-bank/{id}/toggle-status', [\App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class, 'toggleStatus']);
+        Route::apiResource('question-bank', \App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class);
+        Route::patch('questions/{id}/status', [\App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class, 'toggleStatus']);
+        Route::apiResource('questions', \App\Http\Controllers\Api\SuperAdmin\SuperAdminQuestionBankController::class);
+
+        // Subscriptions & Akses Instansi
         Route::get('subscriptions', [\App\Http\Controllers\Api\SuperAdmin\PlatformSubscriptionController::class, 'index']);
         Route::put('subscriptions/{idkategori}', [\App\Http\Controllers\Api\SuperAdmin\PlatformSubscriptionController::class, 'updateQuota']);
+        Route::post('subscriptions/{idkategori}/toggle', [\App\Http\Controllers\Api\SuperAdmin\PlatformSubscriptionController::class, 'toggleStatus']);
 
         // Monitoring & Audit Trail Global
+        Route::get('monitoring/stats', [\App\Http\Controllers\Api\SuperAdmin\PlatformMonitoringController::class, 'stats']);
+        Route::get('monitoring/audit-logs', [\App\Http\Controllers\Api\SuperAdmin\PlatformMonitoringController::class, 'auditLogs']);
+        Route::get('monitoring/modules', [\App\Http\Controllers\Api\SuperAdmin\PlatformMonitoringController::class, 'modules']);
         Route::get('audit-logs', [AuditTrailController::class, 'index']);
         Route::get('audit-logs/actions', [AuditTrailController::class, 'actions']);
         Route::get('audit-logs/summary', [AuditTrailController::class, 'summary']);
         Route::get('monitoring/activity', [\App\Http\Controllers\Api\SuperAdmin\PlatformMonitoringController::class, 'activity']);
         Route::get('monitoring/security', [\App\Http\Controllers\Api\SuperAdmin\PlatformMonitoringController::class, 'security']);
 
-        // Pengaturan Platform (SMTP, Logo, Maintenance, Backup)
+        // Pengaturan Platform (Logo, Maintenance, Favicon, Support)
         Route::get('settings', [\App\Http\Controllers\Api\SuperAdmin\PlatformSettingController::class, 'index']);
         Route::post('settings', [\App\Http\Controllers\Api\SuperAdmin\PlatformSettingController::class, 'update']);
+        Route::put('settings', [\App\Http\Controllers\Api\SuperAdmin\PlatformSettingController::class, 'update']);
 
         // Profil & Keamanan Super Admin
         Route::get('profile', [ProfileController::class, 'show']);
@@ -121,7 +152,7 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::delete('classes/{masterKela}/subject-teachers/{guruMapelId}', [MasterKelasController::class, 'removeSubjectTeacher']);
         Route::apiResource('classes', MasterKelasController::class)->parameters(['classes' => 'masterKela']);
 
-        // Akademik Sekolah (Tahun Ajaran, Mapel & KKM, Jenjang, Jurusan)
+        // Akademik Sekolah (Tahun Ajaran, Mapel & KKM, Jenjang, Jurusan, Semester, Kurikulum, Tingkat Kelas)
         Route::post('academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate']);
         Route::get('academic-years/{academicYear}/subjects', [AcademicYearController::class, 'subjects']);
         Route::post('academic-years/{academicYear}/subjects', [AcademicYearController::class, 'attachSubject']);
@@ -130,6 +161,9 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::post('academic-years/{academicYear}/students', [AcademicYearController::class, 'enrollStudents']);
         Route::delete('academic-years/{academicYear}/students/{iduser}', [AcademicYearController::class, 'removeStudent']);
         Route::apiResource('academic-years', AcademicYearController::class);
+        Route::apiResource('semesters', \App\Http\Controllers\Api\Admin\MasterSemesterController::class);
+        Route::apiResource('kurikulum', \App\Http\Controllers\Api\Admin\MasterKurikulumController::class);
+        Route::apiResource('tingkat-kelas', \App\Http\Controllers\Api\Admin\MasterTingkatKelasController::class);
         Route::post('subjects/{masterMataPelajaran}/teachers', [MasterMataPelajaranController::class, 'assignTeacher']);
         Route::delete('subjects/{masterMataPelajaran}/teachers/{iduser_bo}', [MasterMataPelajaranController::class, 'removeTeacher']);
         Route::apiResource('subjects', MasterMataPelajaranController::class);

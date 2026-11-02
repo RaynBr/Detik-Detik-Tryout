@@ -5,7 +5,8 @@ import { apiClient } from '../../shared/api/client';
 import { 
   BookOpen, ShieldAlert, 
   Activity, ArrowRight, Building2, Layers,
-  GraduationCap, UserCheck, Upload, Download, CheckCircle2
+  GraduationCap, UserCheck, Upload, Download, CheckCircle2,
+  Calendar, BookMarked, Compass
 } from 'lucide-react';
 import { 
   WelcomeBanner, 
@@ -32,6 +33,9 @@ export const AdminDashboard: React.FC = () => {
     subjects: 0,
     teachers: 0,
     students: 0,
+    academic_years: 0,
+    kurikulum: 0,
+    jurusan: 0,
   });
 
   const [liveData, setLiveData] = useState<{
@@ -123,9 +127,12 @@ export const AdminDashboard: React.FC = () => {
         instansi: sData.total_instansi ?? 7,
         jenjang: sData.total_jenjang ?? 4,
         classes: sData.total_classes ?? cList.length,
-        subjects: sData.total_subjects ?? subList.length,
+        subjects: sData.total_subjects ?? sData.total_mata_pelajaran ?? subList.length,
         teachers: sData.total_teachers ?? tList.length,
         students: sData.total_students ?? stList.length,
+        academic_years: sData.total_academic_years ?? sData.jumlah_tahun_ajaran ?? 0,
+        kurikulum: sData.total_kurikulum ?? sData.jumlah_kurikulum ?? 0,
+        jurusan: sData.total_jurusan ?? sData.jumlah_jurusan ?? 0,
       });
 
       setClassesList(cList);
@@ -232,6 +239,120 @@ export const AdminDashboard: React.FC = () => {
           />
         </div>
       )}
+
+      {/* 2.5 Master Akademik Instansi (Realtime Database Statistics) */}
+      <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-5 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-500/20">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                Master Akademik Instansi
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30">
+                  Realtime
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-gray-400 font-medium">
+                Ringkasan data struktur akademik sekolah yang dikelola penuh oleh instansi
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* 1. Jumlah Tahun Ajaran */}
+          <div 
+            onClick={() => navigate('/admin/master-akademik/tahun-ajaran')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300">Tahun Ajaran</span>
+              <Calendar className="w-3.5 h-3.5 text-amber-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.academic_years}
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Periode Terdaftar</span>
+          </div>
+
+          {/* 2. Jumlah Kurikulum */}
+          <div 
+            onClick={() => navigate('/admin/master-akademik/kurikulum')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-emerald-800 dark:text-emerald-300">Kurikulum</span>
+              <BookMarked className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.kurikulum}
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Kurikulum Aktif</span>
+          </div>
+
+          {/* 3. Jumlah Jenjang */}
+          <div 
+            onClick={() => navigate('/admin/master-akademik/jenjang')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-blue-50 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-blue-800 dark:text-blue-300">Jenjang</span>
+              <Layers className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.jenjang}
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Jenjang Sekolah</span>
+          </div>
+
+          {/* 4. Jumlah Jurusan */}
+          <div 
+            onClick={() => navigate('/admin/master-akademik/jurusan')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100/60 dark:hover:bg-purple-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-purple-800 dark:text-purple-300">Jurusan</span>
+              <Compass className="w-3.5 h-3.5 text-purple-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.jurusan}
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Program / Jurusan</span>
+          </div>
+
+          {/* 5. Jumlah Kelas */}
+          <div 
+            onClick={() => navigate('/admin/classes')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-cyan-50 dark:bg-cyan-950/20 hover:bg-cyan-100/60 dark:hover:bg-cyan-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-cyan-800 dark:text-cyan-300">Kelas</span>
+              <Building2 className="w-3.5 h-3.5 text-cyan-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.classes}
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Rombongan Belajar</span>
+          </div>
+
+          {/* 6. Jumlah Mata Pelajaran */}
+          <div 
+            onClick={() => navigate('/admin/master-akademik/mata-pelajaran')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-rose-800 dark:text-rose-300">Mata Pelajaran</span>
+              <BookOpen className="w-3.5 h-3.5 text-rose-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.subjects}
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Mapel Kurikulum</span>
+          </div>
+        </div>
+      </div>
 
       {/* 3. Pusat Impor & Upload Massal Guru & Siswa */}
       <div className="glass-panel rounded-3xl p-6 border border-slate-200/80 dark:border-white/5 space-y-4 shadow-sm">

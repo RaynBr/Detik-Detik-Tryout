@@ -8,32 +8,21 @@ import {
   LogOut, 
   Menu, 
   X,
-  Layers,
   Building2,
   PanelLeftClose,
   PanelLeftOpen,
   History,
   Users,
-  CalendarDays,
   UserCheck,
-  ChevronDown,
-  ChevronRight,
   ShieldAlert,
   CreditCard,
   Settings
 } from 'lucide-react';
 
-interface SubMenuItem {
-  name: string;
-  path: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
 interface MenuItem {
   name: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
-  subItems?: SubMenuItem[];
 }
 
 export const SuperAdminLayout: React.FC = () => {
@@ -55,40 +44,16 @@ export const SuperAdminLayout: React.FC = () => {
     });
   };
 
-  // Submenu state for Master Platform Nasional
-  const isMasterPlatformActive = [
-    '/super-admin/jenjang',
-    '/super-admin/subjects',
-    '/super-admin/tahun-soal'
-  ].includes(location.pathname);
-
-  const [masterPlatformOpen, setMasterPlatformOpen] = React.useState<boolean>(isMasterPlatformActive);
-
-  React.useEffect(() => {
-    if (isMasterPlatformActive) {
-      setMasterPlatformOpen(true);
-    }
-  }, [location.pathname, isMasterPlatformActive]);
-
-  // Menu items strictly for SUPER ADMIN PLATFORM OWNER
+  // Menu items strictly for SUPER ADMIN PLATFORM OWNER (Without numbering)
   const superAdminMenus: MenuItem[] = [
-    { name: 'Dashboard Platform', path: '/super-admin/dashboard', icon: LayoutDashboard },
-    { name: '1. Kelola Instansi', path: '/super-admin/instansi', icon: Building2 },
-    { name: '2. Kelola Pengguna Platform', path: '/super-admin/users', icon: Users },
-    { 
-      name: '3. Master Platform Nasional', 
-      path: '/super-admin/jenjang', 
-      icon: Layers,
-      subItems: [
-        { name: 'Jenjang Nasional', path: '/super-admin/jenjang', icon: Layers },
-        { name: 'Mata Pelajaran Nasional', path: '/super-admin/subjects', icon: BookOpen },
-        { name: 'Tahun Soal Nasional', path: '/super-admin/tahun-soal', icon: CalendarDays },
-      ]
-    },
-    { name: '4. Subscription & Kuota', path: '/super-admin/subscriptions', icon: CreditCard },
-    { name: '5. Monitoring Platform', path: '/super-admin/audit-logs', icon: History },
-    { name: '6. Pengaturan Platform', path: '/super-admin/settings', icon: Settings },
-    { name: '7. Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },
+    { name: 'Dashboard', path: '/super-admin/dashboard', icon: LayoutDashboard },
+    { name: 'Kelola Instansi', path: '/super-admin/instansi', icon: Building2 },
+    { name: 'Kelola Pengguna', path: '/super-admin/users', icon: Users },
+    { name: 'Kelola Bank Soal', path: '/super-admin/bank-soal', icon: BookOpen },
+    { name: 'Monitoring', path: '/super-admin/monitoring', icon: History },
+    { name: 'Subscription', path: '/super-admin/subscriptions', icon: CreditCard },
+    { name: 'Pengaturan Platform', path: '/super-admin/settings', icon: Settings },
+    { name: 'Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },
   ];
 
   return (
@@ -146,68 +111,6 @@ export const SuperAdminLayout: React.FC = () => {
         <nav className={`flex-1 space-y-2 w-full ${isCollapsed ? 'px-1' : ''}`}>
           {superAdminMenus.map((item) => {
             const Icon = item.icon;
-            
-            // Accordion menu for sub-items
-            if (item.subItems) {
-              const isParentActive = isMasterPlatformActive;
-              return (
-                <div key={item.name} className="space-y-1">
-                  <button
-                    onClick={() => {
-                      if (isCollapsed) {
-                        navigate(item.path);
-                      } else {
-                        setMasterPlatformOpen((prev) => !prev);
-                      }
-                    }}
-                    title={isCollapsed ? item.name : undefined}
-                    className={`w-full flex items-center ${
-                      isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'
-                    } rounded-xl text-sm font-bold transition duration-150 cursor-pointer ${
-                      isParentActive && !masterPlatformOpen
-                        ? 'bg-indigo-600 text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]'
-                        : isParentActive
-                        ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 border-2 border-[#161C2D] dark:border-indigo-500'
-                        : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <Icon className={`${isCollapsed ? 'h-5 w-5' : 'h-4 w-4'} shrink-0 stroke-[2.5]`} />
-                      {!isCollapsed && <span className="truncate">{item.name}</span>}
-                    </div>
-                    {!isCollapsed && (
-                      <span className="shrink-0 text-slate-500">
-                        {masterPlatformOpen ? <ChevronDown className="h-4 w-4 stroke-[2.5]" /> : <ChevronRight className="h-4 w-4 stroke-[2.5]" />}
-                      </span>
-                    )}
-                  </button>
-
-                  {!isCollapsed && masterPlatformOpen && (
-                    <div className="pl-4 space-y-1 pt-0.5 border-l-2 border-[#161C2D] dark:border-[#32363A] ml-5">
-                      {item.subItems.map((sub) => {
-                        const SubIcon = sub.icon;
-                        const isSubActive = location.pathname === sub.path;
-                        return (
-                          <button
-                            key={sub.name}
-                            onClick={() => navigate(sub.path)}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition duration-150 cursor-pointer ${
-                              isSubActive
-                                ? 'bg-indigo-600 text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]'
-                                : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5'
-                            }`}
-                          >
-                            <SubIcon className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
-                            <span className="truncate">{sub.name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
             const isActive = location.pathname === item.path;
             return (
               <button
@@ -217,9 +120,9 @@ export const SuperAdminLayout: React.FC = () => {
                 className={`w-full flex items-center ${
                   isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3.5 py-2.5'
                 } rounded-xl text-sm font-bold transition duration-150 cursor-pointer ${
-                  isActive 
-                    ? 'bg-indigo-600 text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]' 
-                    : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5'
+                  isActive
+                    ? 'bg-indigo-600 text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]'
+                    : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5 border border-transparent hover:border-[#161C2D] dark:hover:border-[#32363A]'
                 }`}
               >
                 <Icon className={`${isCollapsed ? 'h-5 w-5' : 'h-4 w-4'} shrink-0 stroke-[2.5]`} />
@@ -308,41 +211,6 @@ export const SuperAdminLayout: React.FC = () => {
               <nav className="flex-1 space-y-1.5 overflow-y-auto">
                 {superAdminMenus.map((item) => {
                   const Icon = item.icon;
-                  if (item.subItems) {
-                    return (
-                      <div key={item.name} className="space-y-1">
-                        <button
-                          onClick={() => setMasterPlatformOpen(!masterPlatformOpen)}
-                          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-gray-300"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <Icon className="h-4 w-4" />
-                            <span>{item.name}</span>
-                          </div>
-                          {masterPlatformOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </button>
-                        {masterPlatformOpen && (
-                          <div className="pl-6 space-y-1">
-                            {item.subItems.map((sub) => (
-                              <button
-                                key={sub.name}
-                                onClick={() => {
-                                  navigate(sub.path);
-                                  setMobileMenuOpen(false);
-                                }}
-                                className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold ${
-                                  location.pathname === sub.path ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-gray-400'
-                                }`}
-                              >
-                                {sub.name}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-
                   const isActive = location.pathname === item.path;
                   return (
                     <button

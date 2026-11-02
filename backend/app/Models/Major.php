@@ -11,9 +11,21 @@ class Major extends Model
     use HasFactory;
 
     protected $fillable = [
+        'idkategori',
         'name',
         'code',
+        'jenjang',
+        'is_active',
     ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
+    public function kategori()
+    {
+        return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
 
     public function classes(): HasMany
     {

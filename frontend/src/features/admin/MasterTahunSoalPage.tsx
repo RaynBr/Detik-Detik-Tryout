@@ -29,7 +29,7 @@ export const MasterTahunSoalPage: React.FC = () => {
   const fetchData = async (page = currentPage) => {
     setLoading(true);
     try {
-      const res = await apiClient.get('/admin/tahun-soal', { params: { page } });
+      const res = await apiClient.get('/super-admin/tahun-soal', { params: { page } });
       setPaginationFromResponse(res.data);
       const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
       setData(list);
@@ -54,10 +54,10 @@ export const MasterTahunSoalPage: React.FC = () => {
   const handleSubmit = async () => {
     try {
       if (editingId) {
-        await apiClient.put(`/admin/tahun-soal/${editingId}`, form);
+        await apiClient.put(`/super-admin/tahun-soal/${editingId}`, form);
         toast.success('Tahun soal berhasil diperbarui!');
       } else {
-        await apiClient.post('/admin/tahun-soal', form);
+        await apiClient.post('/super-admin/tahun-soal', form);
         toast.success('Tahun soal berhasil ditambahkan!');
       }
       setShowModal(false);
@@ -70,7 +70,7 @@ export const MasterTahunSoalPage: React.FC = () => {
   const handleDelete = async (id: number) => {
     if (!confirm('Yakin ingin menghapus tahun soal ini?')) return;
     try {
-      await apiClient.delete(`/admin/tahun-soal/${id}`);
+      await apiClient.delete(`/super-admin/tahun-soal/${id}`);
       toast.success('Tahun soal berhasil dihapus.');
       fetchData();
     } catch { toast.error('Gagal menghapus data.'); }
@@ -78,7 +78,7 @@ export const MasterTahunSoalPage: React.FC = () => {
 
   const handleToggleActive = async (item: TahunSoal) => {
     try {
-      await apiClient.put(`/admin/tahun-soal/${item.id}`, {
+      await apiClient.put(`/super-admin/tahun-soal/${item.id}`, {
         tahun: item.tahun,
         keterangan: item.keterangan,
         is_active: !item.is_active,

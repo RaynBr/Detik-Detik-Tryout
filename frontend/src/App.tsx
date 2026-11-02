@@ -5,8 +5,8 @@ import { ThemeProvider } from './shared/context/ThemeContext';
 import { GuestRoute, ProtectedRoute } from './routes/guards';
 import { Unauthorized } from './shared/components/Unauthorized';
 import { RefreshCw } from 'lucide-react';
-
 import { ToastProvider } from './shared/context/ToastContext';
+import { ErrorBoundary } from './shared/components/ErrorBoundary';
 
 // Code-splitting via React.lazy for high-performance loading
 const LandingPage = lazy(() => import('./features/landing/LandingPage').then(m => ({ default: m.LandingPage })));
@@ -26,7 +26,6 @@ const SchoolUsersPage = lazy(() => import('./features/admin/SchoolUsersPage').th
 const AdminLayout = lazy(() => import('./features/admin/AdminLayout').then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import('./features/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const LiveMonitoringPage = lazy(() => import('./features/admin/LiveMonitoringPage').then(m => ({ default: m.LiveMonitoringPage })));
-const JenjangPage = lazy(() => import('./features/admin/JenjangPage').then(m => ({ default: m.JenjangPage })));
 const MajorsPage = lazy(() => import('./features/admin/MajorsPage').then(m => ({ default: m.MajorsPage })));
 const ClassesPage = lazy(() => import('./features/admin/ClassesPage').then(m => ({ default: m.ClassesPage })));
 const SubjectsPage = lazy(() => import('./features/admin/SubjectsPage').then(m => ({ default: m.SubjectsPage })));
@@ -40,6 +39,19 @@ const AdminProfilePage = lazy(() => import('./features/admin/AdminProfilePage').
 const MasterTahunSoalPage = lazy(() => import('./features/admin/MasterTahunSoalPage').then(m => ({ default: m.MasterTahunSoalPage })));
 const PlatformSubscriptionsPage = lazy(() => import('./features/admin/PlatformSubscriptionsPage').then(m => ({ default: m.PlatformSubscriptionsPage })));
 const PlatformSettingsPage = lazy(() => import('./features/admin/PlatformSettingsPage').then(m => ({ default: m.PlatformSettingsPage })));
+const SuperAdminQuestionBankPage = lazy(() => import('./features/admin/SuperAdminQuestionBankPage').then(m => ({ default: m.SuperAdminQuestionBankPage })));
+
+const AcademicMasterPage = lazy(() => import('./features/admin/AcademicMasterPage').then(m => ({ default: m.AcademicMasterPage })));
+const MasterTahunAjaranPage = lazy(() => import('./features/admin/academic/MasterTahunAjaranPage').then(m => ({ default: m.MasterTahunAjaranPage })));
+const MasterSemesterPage = lazy(() => import('./features/admin/academic/MasterSemesterPage').then(m => ({ default: m.MasterSemesterPage })));
+const MasterJenjangPage = lazy(() => import('./features/admin/academic/MasterJenjangPage').then(m => ({ default: m.MasterJenjangPage })));
+const MasterKurikulumPage = lazy(() => import('./features/admin/academic/MasterKurikulumPage').then(m => ({ default: m.MasterKurikulumPage })));
+const MasterMataPelajaranPage = lazy(() => import('./features/admin/academic/MasterMataPelajaranPage').then(m => ({ default: m.MasterMataPelajaranPage })));
+const MasterKelasPage = lazy(() => import('./features/admin/academic/MasterKelasPage').then(m => ({ default: m.MasterKelasPage })));
+const MasterJurusanPage = lazy(() => import('./features/admin/academic/MasterJurusanPage').then(m => ({ default: m.MasterJurusanPage })));
+const MasterTingkatKelasPage = lazy(() => import('./features/admin/academic/MasterTingkatKelasPage').then(m => ({ default: m.MasterTingkatKelasPage })));
+const MaintenancePage = lazy(() => import('./features/landing/MaintenancePage').then(m => ({ default: m.MaintenancePage })));
+const SubscriptionInactivePage = lazy(() => import('./features/landing/SubscriptionInactivePage').then(m => ({ default: m.SubscriptionInactivePage })));
 
 const PageLoader = () => (
   <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#070a13] text-slate-800 dark:text-white space-y-4 p-4 transition-colors">
@@ -63,10 +75,13 @@ export const App: React.FC = () => {
       <ThemeProvider>
         <ToastProvider>
           <BrowserRouter>
-          <Suspense fallback={<PageLoader />}>
+            <ErrorBoundary>
+              <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* Public Landing Page */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/maintenance" element={<MaintenancePage />} />
+              <Route path="/subscription-inactive" element={<SubscriptionInactivePage />} />
 
               {/* Unified Guest routes (Redirect to respective dashboard if already logged in) */}
               <Route element={<GuestRoute />}>
@@ -101,10 +116,38 @@ export const App: React.FC = () => {
                   <Route path="/super-admin/dashboard" element={<SuperAdminDashboard />} />
                   <Route path="/super-admin/instansi" element={<InstansiPage />} />
                   <Route path="/super-admin/users" element={<UsersManagementPage />} />
-                  <Route path="/super-admin/jenjang" element={<JenjangPage />} />
-                  <Route path="/super-admin/subjects" element={<SubjectsPage />} />
+                  
+                  {/* Master Akademik - Rute Submenu Spesifik */}
+                  <Route path="/super-admin/master-akademik" element={<Navigate to="/super-admin/master-akademik/tahun-ajaran" replace />} />
+                  <Route path="/super-admin/master-akademik/tahun-ajaran" element={<MasterTahunAjaranPage />} />
+                  <Route path="/super-admin/master-akademik/semester" element={<MasterSemesterPage />} />
+                  <Route path="/super-admin/master-akademik/jenjang" element={<MasterJenjangPage />} />
+                  <Route path="/super-admin/master-akademik/kurikulum" element={<MasterKurikulumPage />} />
+                  <Route path="/super-admin/master-akademik/mata-pelajaran" element={<MasterMataPelajaranPage />} />
+                  <Route path="/super-admin/master-akademik/kelas" element={<MasterKelasPage />} />
+                  <Route path="/super-admin/master-akademik/jurusan" element={<MasterJurusanPage />} />
+                  <Route path="/super-admin/master-akademik/tingkat-kelas" element={<MasterTingkatKelasPage />} />
+
+                  {/* Master Akademik - Backward-compatible routes */}
+                  <Route path="/super-admin/academic-master" element={<AcademicMasterPage />} />
+                  <Route path="/super-admin/academic-years" element={<MasterTahunAjaranPage />} />
+                  <Route path="/super-admin/semesters" element={<MasterSemesterPage />} />
+                  <Route path="/super-admin/jenjang" element={<MasterJenjangPage />} />
+                  <Route path="/super-admin/kurikulum" element={<MasterKurikulumPage />} />
+                  <Route path="/super-admin/subjects" element={<MasterMataPelajaranPage />} />
+                  <Route path="/super-admin/classes" element={<MasterKelasPage />} />
+                  <Route path="/super-admin/majors" element={<MasterJurusanPage />} />
+                  <Route path="/super-admin/tingkat-kelas" element={<MasterTingkatKelasPage />} />
                   <Route path="/super-admin/tahun-soal" element={<MasterTahunSoalPage />} />
+
+                  {/* Kelola Bank Soal */}
+                  <Route path="/super-admin/bank-soal" element={<SuperAdminQuestionBankPage />} />
+                  <Route path="/super-admin/question-bank" element={<SuperAdminQuestionBankPage />} />
+                  <Route path="/super-admin/questions" element={<SuperAdminQuestionBankPage />} />
+
+                  {/* Subscription, Monitoring, Pengaturan, Profil */}
                   <Route path="/super-admin/subscriptions" element={<PlatformSubscriptionsPage />} />
+                  <Route path="/super-admin/monitoring" element={<AuditTrailPage />} />
                   <Route path="/super-admin/audit-logs" element={<AuditTrailPage />} />
                   <Route path="/super-admin/settings" element={<PlatformSettingsPage />} />
                   <Route path="/super-admin/profile" element={<AdminProfilePage />} />
@@ -123,6 +166,18 @@ export const App: React.FC = () => {
                   <Route path="/admin/academic-years" element={<AcademicYearsPage />} />
                   <Route path="/admin/subjects" element={<SubjectsPage />} />
                   <Route path="/admin/majors" element={<MajorsPage />} />
+                  
+                  {/* Master Akademik untuk Admin Instansi */}
+                  <Route path="/admin/master-akademik" element={<Navigate to="/admin/master-akademik/tahun-ajaran" replace />} />
+                  <Route path="/admin/master-akademik/tahun-ajaran" element={<MasterTahunAjaranPage />} />
+                  <Route path="/admin/master-akademik/semester" element={<MasterSemesterPage />} />
+                  <Route path="/admin/master-akademik/kurikulum" element={<MasterKurikulumPage />} />
+                  <Route path="/admin/master-akademik/jenjang" element={<MasterJenjangPage />} />
+                  <Route path="/admin/master-akademik/jurusan" element={<MasterJurusanPage />} />
+                  <Route path="/admin/master-akademik/tingkat-kelas" element={<MasterTingkatKelasPage />} />
+                  <Route path="/admin/master-akademik/mata-pelajaran" element={<MasterMataPelajaranPage />} />
+                  <Route path="/admin/master-akademik/kelas" element={<MasterKelasPage />} />
+
                   <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
                   <Route path="/admin/reports" element={<ExamReportPage />} />
                   <Route path="/admin/profile" element={<AdminProfilePage />} />
@@ -136,7 +191,8 @@ export const App: React.FC = () => {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
-        </BrowserRouter>
+        </ErrorBoundary>
+      </BrowserRouter>
         </ToastProvider>
       </ThemeProvider>
     </AuthProvider>

@@ -13,12 +13,18 @@ class MasterJenjang extends Model
     protected $table = 'master_jenjang';
 
     protected $fillable = [
+        'idkategori',
         'kode_jenjang',
         'nama_jenjang',
         'urutan',
         'keterangan',
         'status_aktif',
     ];
+
+    public function kategori()
+    {
+        return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
 
     public function kelas(): HasMany
     {

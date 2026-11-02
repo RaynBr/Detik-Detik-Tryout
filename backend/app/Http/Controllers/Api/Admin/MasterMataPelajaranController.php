@@ -11,7 +11,14 @@ class MasterMataPelajaranController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
         $query = MasterMataPelajaran::with(['jenjang', 'guruPengampu.guru', 'guruPengampu.kelas']);
+
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+        } elseif ($request->filled('idkategori')) {
+            $query->where('idkategori', $request->idkategori);
+        }
 
         if ($request->filled('idjenjang')) {
             $query->where('idjenjang', $request->idjenjang);
@@ -67,11 +74,19 @@ class MasterMataPelajaranController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk menambah/mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data mata pelajaran.'], 403);
+        }
+
         $validated = $request->validate([
             'nama_mapel' => 'nullable|string|max:100',
             'name' => 'nullable|string|max:100', // alias
-            'kode_mapel' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel',
-            'code' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel', // alias
+            'kode_mapel' => 'nullable|string|max:30',
+            'code' => 'nullable|string|max:30', // alias
             'idjenjang' => 'nullable|exists:master_jenjang,id',
             'tahun_ajaran' => 'nullable|string|max:20',
             'kelompok' => 'nullable|string|max:50',
@@ -80,13 +95,19 @@ class MasterMataPelajaranController extends Controller
         ]);
 
         $nama = $validated['nama_mapel'] ?? $validated['name'] ?? 'Mata Pelajaran Baru';
-        $kode = $validated['kode_mapel'] ?? $validated['code'] ?? ('MPL-' . strtoupper(substr(uniqid(), -5)));
+        $kode = strtoupper(trim($validated['kode_mapel'] ?? $validated['code'] ?? ('MPL-' . substr(uniqid(), -5))));
+
+        if (MasterMataPelajaran::where('idkategori', $user->idkategori)->where('kode_mapel', $kode)->exists()) {
+            return response()->json(['message' => 'Kode mata pelajaran sudah digunakan di instansi Anda.'], 422);
+        }
+
         $idjenjang = $validated['idjenjang'] ?? 1;
-        $tahunAjaran = $validated['tahun_ajaran'] ?? (\App\Models\AcademicYear::where('is_active', true)->value('name') ?: '2026/2027');
+        $tahunAjaran = $validated['tahun_ajaran'] ?? (\App\Models\AcademicYear::where('is_active', true)->where('idkategori', $user->idkategori)->value('name') ?: '2026/2027');
 
         $mapel = MasterMataPelajaran::create([
+            'idkategori' => $user->idkategori,
             'nama_mapel' => trim($nama),
-            'kode_mapel' => strtoupper(trim($kode)),
+            'kode_mapel' => $kode,
             'idjenjang' => $idjenjang,
             'tahun_ajaran' => $tahunAjaran,
             'kelompok' => $validated['kelompok'] ?? 'Wajib',
@@ -105,8 +126,14 @@ class MasterMataPelajaranController extends Controller
         ], 201);
     }
 
-    public function show(MasterMataPelajaran $masterMataPelajaran)
+    public function show($id)
     {
+        $masterMataPelajaran = $id instanceof MasterMataPelajaran ? $id : MasterMataPelajaran::findOrFail($id);
+        $user = request()->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterMataPelajaran->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki akses ke mata pelajaran instansi lain.'], 403);
+        }
+
         $masterMataPelajaran->load(['jenjang', 'guruPengampu.guru', 'guruPengampu.kelas']);
         $masterMataPelajaran->name = $masterMataPelajaran->nama_mapel;
         $masterMataPelajaran->code = $masterMataPelajaran->kode_mapel;
@@ -114,13 +141,25 @@ class MasterMataPelajaranController extends Controller
         return response()->json($masterMataPelajaran);
     }
 
-    public function update(Request $request, MasterMataPelajaran $masterMataPelajaran)
+    public function update(Request $request, $id)
     {
+        $masterMataPelajaran = $id instanceof MasterMataPelajaran ? $id : MasterMataPelajaran::findOrFail($id);
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk menambah/mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data mata pelajaran.'], 403);
+        }
+        if ((string)$masterMataPelajaran->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah mata pelajaran instansi lain.'], 403);
+        }
+
         $validated = $request->validate([
             'nama_mapel' => 'nullable|string|max:100',
             'name' => 'nullable|string|max:100',
-            'kode_mapel' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel,' . $masterMataPelajaran->id,
-            'code' => 'nullable|string|max:30|unique:master_mata_pelajaran,kode_mapel,' . $masterMataPelajaran->id,
+            'kode_mapel' => 'nullable|string|max:30',
+            'code' => 'nullable|string|max:30',
             'idjenjang' => 'nullable|exists:master_jenjang,id',
             'tahun_ajaran' => 'nullable|string|max:20',
             'kelompok' => 'nullable|string|max:50',
@@ -129,9 +168,17 @@ class MasterMataPelajaranController extends Controller
             'status_aktif' => 'nullable|in:Y,N',
         ]);
 
+        $kodeBaru = strtoupper(trim($validated['kode_mapel'] ?? $validated['code'] ?? $masterMataPelajaran->kode_mapel));
+        if (MasterMataPelajaran::where('idkategori', $masterMataPelajaran->idkategori)
+            ->where('kode_mapel', $kodeBaru)
+            ->where('id', '!=', $masterMataPelajaran->id)
+            ->exists()) {
+            return response()->json(['message' => 'Kode mata pelajaran sudah digunakan di instansi Anda.'], 422);
+        }
+
         $masterMataPelajaran->update([
             'nama_mapel' => $validated['nama_mapel'] ?? $validated['name'] ?? $masterMataPelajaran->nama_mapel,
-            'kode_mapel' => strtoupper(trim($validated['kode_mapel'] ?? $validated['code'] ?? $masterMataPelajaran->kode_mapel)),
+            'kode_mapel' => $kodeBaru,
             'idjenjang' => $validated['idjenjang'] ?? $masterMataPelajaran->idjenjang,
             'tahun_ajaran' => $validated['tahun_ajaran'] ?? $masterMataPelajaran->tahun_ajaran,
             'kelompok' => $validated['kelompok'] ?? $masterMataPelajaran->kelompok,
@@ -150,8 +197,20 @@ class MasterMataPelajaranController extends Controller
         ]);
     }
 
-    public function destroy(MasterMataPelajaran $masterMataPelajaran)
+    public function destroy($id)
     {
+        $masterMataPelajaran = $id instanceof MasterMataPelajaran ? $id : MasterMataPelajaran::findOrFail($id);
+        $user = request()->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk menghapus data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data mata pelajaran.'], 403);
+        }
+        if ((string)$masterMataPelajaran->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses menghapus mata pelajaran instansi lain.'], 403);
+        }
+
         $masterMataPelajaran->delete();
 
         return response()->json([
@@ -162,8 +221,20 @@ class MasterMataPelajaranController extends Controller
     /**
      * Assign teacher to this subject
      */
-    public function assignTeacher(Request $request, MasterMataPelajaran $masterMataPelajaran)
+    public function assignTeacher(Request $request, $id)
     {
+        $masterMataPelajaran = $id instanceof MasterMataPelajaran ? $id : MasterMataPelajaran::findOrFail($id);
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data mata pelajaran.'], 403);
+        }
+        if ((string)$masterMataPelajaran->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah mata pelajaran instansi lain.'], 403);
+        }
+
         $request->validate([
             'iduser_bo' => 'required|exists:user_bo,iduser_bo',
             'idkelas' => 'nullable|exists:master_kelas,id',
@@ -190,8 +261,20 @@ class MasterMataPelajaranController extends Controller
     /**
      * Remove teacher assignment
      */
-    public function removeTeacher(MasterMataPelajaran $masterMataPelajaran, $iduser_bo)
+    public function removeTeacher($id, $iduser_bo)
     {
+        $masterMataPelajaran = $id instanceof MasterMataPelajaran ? $id : MasterMataPelajaran::findOrFail($id);
+        $user = request()->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data mata pelajaran.'], 403);
+        }
+        if ((string)$masterMataPelajaran->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah mata pelajaran instansi lain.'], 403);
+        }
+
         GuruMataPelajaran::where('idmapel', $masterMataPelajaran->id)
             ->where('iduser_bo', $iduser_bo)
             ->delete();

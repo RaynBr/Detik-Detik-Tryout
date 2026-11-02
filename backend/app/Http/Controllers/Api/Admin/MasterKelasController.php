@@ -85,12 +85,19 @@ class MasterKelasController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk menambah/mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+
         $validated = $request->validate([
             'nama_kelas' => 'nullable|string|max:100',
             'name' => 'nullable|string|max:100', // fallback alias
             'idjenjang' => 'nullable|exists:master_jenjang,id',
             'major_id' => 'nullable', // fallback alias
-            'idkategori' => 'nullable|string|max:25',
             'tingkat' => 'nullable|integer',
             'level' => 'nullable|integer', // fallback alias
             'jurusan' => 'nullable|string|max:100',
@@ -102,12 +109,10 @@ class MasterKelasController extends Controller
         $namaKelas = $validated['nama_kelas'] ?? $validated['name'] ?? 'Kelas Baru';
         $tingkat = $validated['tingkat'] ?? $validated['level'] ?? 10;
         $idjenjang = $validated['idjenjang'] ?? $validated['major_id'] ?? 1;
+        $idkategori = $user->idkategori;
 
-        $user = $request->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
-            $idkategori = $user->idkategori;
-        } else {
-            $idkategori = $validated['idkategori'] ?? ($user && !empty($user->idkategori) ? $user->idkategori : '27830150842287772');
+        if (MasterKelas::where('nama_kelas', trim($namaKelas))->where('idkategori', $idkategori)->where('tingkat', $tingkat)->exists()) {
+            return response()->json(['message' => 'Kelas dengan nama, tingkat, dan instansi tersebut sudah terdaftar.'], 422);
         }
 
         $kelas = MasterKelas::create([
@@ -176,7 +181,13 @@ class MasterKelasController extends Controller
         }
 
         $user = $request->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk menambah/mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+        if ((string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses mengubah kelas instansi lain.'], 403);
         }
 
@@ -193,6 +204,12 @@ class MasterKelasController extends Controller
             'keterangan' => 'nullable|string',
             'status_aktif' => 'nullable|in:Y,N',
         ]);
+
+        $newName = $validated['nama_kelas'] ?? $validated['name'] ?? $masterKela->nama_kelas;
+        $newTingkat = $validated['tingkat'] ?? $validated['level'] ?? $masterKela->tingkat;
+        if (MasterKelas::where('nama_kelas', trim($newName))->where('idkategori', $masterKela->idkategori)->where('tingkat', $newTingkat)->where('id', '!=', $masterKela->id)->exists()) {
+            return response()->json(['message' => 'Kelas dengan nama, tingkat, dan instansi tersebut sudah terdaftar.'], 422);
+        }
 
         $masterKela->update([
             'nama_kelas' => $validated['nama_kelas'] ?? $validated['name'] ?? $masterKela->nama_kelas,
@@ -228,7 +245,13 @@ class MasterKelasController extends Controller
         }
 
         $user = request()->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk menghapus data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+        if ((string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses menghapus kelas instansi lain.'], 403);
         }
 
@@ -249,7 +272,13 @@ class MasterKelasController extends Controller
         }
 
         $user = $request->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+        if ((string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
         }
 
@@ -289,7 +318,13 @@ class MasterKelasController extends Controller
         }
 
         $user = request()->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+        if ((string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
         }
 
@@ -337,7 +372,13 @@ class MasterKelasController extends Controller
         }
 
         $user = $request->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+        if ((string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
         }
 
@@ -381,7 +422,13 @@ class MasterKelasController extends Controller
         }
 
         $user = $request->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+        if ((string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
         }
 
@@ -419,7 +466,13 @@ class MasterKelasController extends Controller
         }
 
         $user = request()->user();
-        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$masterKela->idkategori !== (string)$user->idkategori) {
+        if ($user && $user->role === 'super_admin') {
+            return response()->json(['message' => 'Super Admin tidak memiliki akses untuk mengubah data Master Akademik. Kelola data dilakukan oleh Admin Instansi.'], 403);
+        }
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi yang dapat mengelola data kelas.'], 403);
+        }
+        if ((string)$masterKela->idkategori !== (string)$user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki hak akses pada kelas instansi lain.'], 403);
         }
 

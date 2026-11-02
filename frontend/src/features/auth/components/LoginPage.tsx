@@ -83,7 +83,16 @@ export const LoginPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Kredensial yang Anda masukkan salah atau akun dinonaktifkan.');
+      const code = err.response?.data?.code;
+      if (code === 'MAINTENANCE_MODE') {
+        navigate('/maintenance', { replace: true });
+        return;
+      }
+      if (code === 'SUBSCRIPTION_INACTIVE') {
+        navigate('/subscription-inactive', { replace: true });
+        return;
+      }
+      setError(err.response?.data?.message || err.message || 'Kredensial yang Anda masukkan salah atau akun dinonaktifkan.');
     } finally {
       setLoading(false);
     }

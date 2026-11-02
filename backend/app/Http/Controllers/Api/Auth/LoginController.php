@@ -43,13 +43,41 @@ class LoginController extends Controller
             ->first();
 
         if ($userBo && $userBo->verifyPassword($password)) {
+            $role = $userBo->role; // 'super_admin' | 'admin' | 'guru'
+
+            // 1. Maintenance Mode check (Super Admin can always log in)
+            $isMaintenance = \App\Models\PlatformSetting::get('maintenance_mode', '0');
+            if (($isMaintenance === '1' || $isMaintenance === 'true') && $role !== 'super_admin') {
+                return response()->json([
+                    'message' => 'Sistem sedang dalam mode pemeliharaan (Maintenance Mode). Hanya Super Administrator yang dapat mengakses sistem saat ini.',
+                    'code' => 'MAINTENANCE_MODE',
+                ], 503);
+            }
+
             if ($userBo->status_aktif !== 'Y') {
                 return response()->json([
                     'message' => 'Akun staff/guru Anda sedang dinonaktifkan. Silakan hubungi super administrator.',
                 ], 403);
             }
 
-            $role = $userBo->role; // 'super_admin' | 'admin' | 'guru'
+            // 2. Subscription / Status check for institution
+            if ($role !== 'super_admin' && !empty($userBo->idkategori)) {
+                $instansi = $userBo->kategori;
+                if ($instansi) {
+                    $isExpired = false;
+                    if ($instansi->tanggal_berakhir) {
+                        $isExpired = now()->startOfDay()->greaterThan(\Carbon\Carbon::parse($instansi->tanggal_berakhir)->endOfDay());
+                    }
+
+                    if ($instansi->subscription_status === 'nonaktif' || $instansi->status_remove === 'Y' || $instansi->status_aktif === 'N' || $isExpired) {
+                        return response()->json([
+                            'message' => 'Masa penggunaan platform untuk instansi ' . $instansi->nama_kategori . ' telah dinonaktifkan atau masa aktif telah berakhir. Silakan hubungi Super Administrator.',
+                            'code' => 'SUBSCRIPTION_INACTIVE',
+                            'instansi' => $instansi->nama_kategori,
+                        ], 403);
+                    }
+                }
+            }
 
             // Enforce expected role if passed from UI
             if ($expectedRole) {
@@ -132,10 +160,37 @@ class LoginController extends Controller
             ->first();
 
         if ($userSiswa && $userSiswa->verifyPassword($password)) {
+            // Maintenance check
+            $isMaintenance = \App\Models\PlatformSetting::get('maintenance_mode', '0');
+            if ($isMaintenance === '1' || $isMaintenance === 'true') {
+                return response()->json([
+                    'message' => 'Sistem sedang dalam mode pemeliharaan (Maintenance Mode). Silakan coba beberapa saat lagi.',
+                    'code' => 'MAINTENANCE_MODE',
+                ], 503);
+            }
+
             if ($userSiswa->status_aktif !== 'Y') {
                 return response()->json([
                     'message' => 'Akun siswa Anda belum aktif atau telah dinonaktifkan.',
                 ], 403);
+            }
+
+            // Instansi subscription check
+            $idkategoriSiswa = $userSiswa->idkategori ?? $userSiswa->kelas?->idkategori;
+            if ($idkategoriSiswa) {
+                $instansi = $userSiswa->kategori ?? $userSiswa->kelas?->kategori;
+                if ($instansi) {
+                    $isExpired = false;
+                    if ($instansi->tanggal_berakhir) {
+                        $isExpired = now()->startOfDay()->greaterThan(\Carbon\Carbon::parse($instansi->tanggal_berakhir)->endOfDay());
+                    }
+                    if ($instansi->subscription_status === 'nonaktif' || $instansi->status_remove === 'Y' || $instansi->status_aktif === 'N' || $isExpired) {
+                        return response()->json([
+                            'message' => 'Masa penggunaan platform untuk sekolah Anda telah dinonaktifkan. Silakan hubungi admin sekolah Anda.',
+                            'code' => 'SUBSCRIPTION_INACTIVE',
+                        ], 403);
+                    }
+                }
             }
 
             // Enforce expected role if passed

@@ -14,6 +14,7 @@ class MasterMataPelajaran extends Model
     protected $table = 'master_mata_pelajaran';
 
     protected $fillable = [
+        'idkategori',
         'idjenjang',
         'tahun_ajaran',
         'kode_mapel',
@@ -31,6 +32,11 @@ class MasterMataPelajaran extends Model
     public function jenjang(): BelongsTo
     {
         return $this->belongsTo(MasterJenjang::class, 'idjenjang', 'id');
+    }
+
+    public function kategori(): BelongsTo
+    {
+        return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
     }
 
     public function guruPengampu(): HasMany

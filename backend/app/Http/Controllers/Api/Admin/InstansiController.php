@@ -60,14 +60,14 @@ class InstansiController extends Controller
     }
 
     /**
-     * List institutions with aggregated counts.
-     * - Super Admin sees all institutions.
+     * List institutions with aggregated counts, filters, search and pagination.
+     * - Super Admin sees all institutions with filters and search.
      * - Admin Instansi ONLY sees their own institution.
      */
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = KategoriUserBo::where('status_remove', 'N');
+        $query = KategoriUserBo::query();
 
         // Non-super_admin (Admin Instansi / Guru) CANNOT see or access other institutions
         if ($user && $user->role !== 'super_admin') {
@@ -77,25 +77,54 @@ class InstansiController extends Controller
             $query->where('idkategori', $user->idkategori);
         }
 
-        if ($request->filled('search')) {
-            $query->where('nama_kategori', 'like', '%' . $request->search . '%');
+        // Filter by status (aktif / nonaktif / all)
+        if ($request->filled('status')) {
+            $status = strtolower($request->status);
+            if ($status === 'aktif') {
+                $query->where('status_remove', '!=', 'Y')
+                      ->where(function ($q) {
+                          $q->whereNull('status_aktif')->orWhere('status_aktif', 'Y');
+                      });
+            } elseif ($status === 'nonaktif') {
+                $query->where(function ($q) {
+                    $q->where('status_remove', 'Y')->orWhere('status_aktif', 'N');
+                });
+            }
+        } elseif (!$request->boolean('include_deleted')) {
+            // By default hide deleted unless requested or filtered
+            $query->where('status_remove', '!=', 'Y');
         }
 
-        if ($request->boolean('all') || $request->input('per_page') === 'all') {
-            $items = $query->orderBy('nama_kategori', 'asc')->get();
+        // Filter by jenis_instansi (SD, SMP, SMA, SMK, Bimbel, dll.)
+        if ($request->filled('jenis_instansi')) {
+            $query->where('jenis_instansi', $request->jenis_instansi);
+        }
+
+        // Search by nama_kategori, npsn, email, kota
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('nama_kategori', 'like', "%{$s}%")
+                  ->orWhere('npsn', 'like', "%{$s}%")
+                  ->orWhere('email', 'like', "%{$s}%")
+                  ->orWhere('kota', 'like', "%{$s}%");
+            });
+        }
+
+        $processCollection = function ($items) {
             $idkategoriList = $items->pluck('idkategori')->filter()->toArray();
 
             $adminCounts = UserBo::whereIn('idkategori', $idkategoriList)
-                ->where('status_remove', 'N')
+                ->where('status_remove', '!=', 'Y')
                 ->where(function ($q) {
-                    $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin');
+                    $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin')->orWhere('status_admin', '2');
                 })
                 ->groupBy('idkategori')
                 ->selectRaw('idkategori, count(*) as count')
                 ->pluck('count', 'idkategori');
 
             $guruCounts = UserBo::whereIn('idkategori', $idkategoriList)
-                ->where('status_remove', 'N')
+                ->where('status_remove', '!=', 'Y')
                 ->where('role_type', 'guru')
                 ->groupBy('idkategori')
                 ->selectRaw('idkategori, count(*) as count')
@@ -111,17 +140,46 @@ class InstansiController extends Controller
                 ->selectRaw('idkategori, count(*) as count')
                 ->pluck('count', 'idkategori');
 
-            $result = $items->map(function ($item) use ($adminCounts, $guruCounts, $kelasCounts, $siswaCounts) {
+            $paketSoalCounts = Assessment::whereIn('idkategori', $idkategoriList)
+                ->groupBy('idkategori')
+                ->selectRaw('idkategori, count(*) as count')
+                ->pluck('count', 'idkategori');
+
+            return $items->map(function ($item) use ($adminCounts, $guruCounts, $kelasCounts, $siswaCounts, $paketSoalCounts) {
+                $isAktif = ($item->status_remove !== 'Y') && ($item->status_aktif !== 'N');
                 return [
-                    'idkategori' => $item->idkategori,
+                    'idkategori' => (string) $item->idkategori,
                     'nama_kategori' => $item->nama_kategori,
+                    'jenis_instansi' => $item->jenis_instansi ?? 'Umum',
+                    'npsn' => $item->npsn,
+                    'email' => $item->email,
+                    'telp' => $item->telp,
+                    'alamat' => $item->alamat,
+                    'kota' => $item->kota,
+                    'provinsi' => $item->provinsi,
+                    'status_aktif' => $isAktif ? 'Y' : 'N',
+                    'status' => $isAktif ? 'aktif' : 'nonaktif',
+                    'logo' => $item->logo,
                     'tgl_input' => $item->tgl_input,
                     'admin_count' => (int) ($adminCounts->get($item->idkategori) ?? 0),
                     'guru_count' => (int) ($guruCounts->get($item->idkategori) ?? 0),
                     'siswa_count' => (int) ($siswaCounts->get($item->idkategori) ?? 0),
                     'kelas_count' => (int) ($kelasCounts->get($item->idkategori) ?? 0),
+                    'total_guru' => (int) ($guruCounts->get($item->idkategori) ?? 0),
+                    'total_siswa' => (int) ($siswaCounts->get($item->idkategori) ?? 0),
+                    'total_kelas' => (int) ($kelasCounts->get($item->idkategori) ?? 0),
+                    'total_paket_soal' => (int) ($paketSoalCounts->get($item->idkategori) ?? 0),
+                    'total_ujian' => (int) ($paketSoalCounts->get($item->idkategori) ?? 0),
+                    'subscription_status' => $item->subscription_status ?? 'aktif',
+                    'tanggal_aktif' => $item->tanggal_aktif,
+                    'tanggal_berakhir' => $item->tanggal_berakhir,
                 ];
             });
+        };
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->orderBy('nama_kategori', 'asc')->get();
+            $result = $processCollection($items);
 
             return response()->json([
                 'data' => $result,
@@ -137,46 +195,8 @@ class InstansiController extends Controller
 
         $perPage = (int) $request->input('per_page', 15);
         $paginator = $query->orderBy('nama_kategori', 'asc')->paginate($perPage);
-
-        $idkategoriList = $paginator->getCollection()->pluck('idkategori')->filter()->toArray();
-
-        $adminCounts = UserBo::whereIn('idkategori', $idkategoriList)
-            ->where('status_remove', 'N')
-            ->where(function ($q) {
-                $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin');
-            })
-            ->groupBy('idkategori')
-            ->selectRaw('idkategori, count(*) as count')
-            ->pluck('count', 'idkategori');
-
-        $guruCounts = UserBo::whereIn('idkategori', $idkategoriList)
-            ->where('status_remove', 'N')
-            ->where('role_type', 'guru')
-            ->groupBy('idkategori')
-            ->selectRaw('idkategori, count(*) as count')
-            ->pluck('count', 'idkategori');
-
-        $kelasCounts = MasterKelas::whereIn('idkategori', $idkategoriList)
-            ->groupBy('idkategori')
-            ->selectRaw('idkategori, count(*) as count')
-            ->pluck('count', 'idkategori');
-
-        $siswaCounts = UserSiswa::whereIn('idkategori', $idkategoriList)
-            ->groupBy('idkategori')
-            ->selectRaw('idkategori, count(*) as count')
-            ->pluck('count', 'idkategori');
-
-        $paginator->through(function ($item) use ($adminCounts, $guruCounts, $kelasCounts, $siswaCounts) {
-            return [
-                'idkategori' => $item->idkategori,
-                'nama_kategori' => $item->nama_kategori,
-                'tgl_input' => $item->tgl_input,
-                'admin_count' => (int) ($adminCounts->get($item->idkategori) ?? 0),
-                'guru_count' => (int) ($guruCounts->get($item->idkategori) ?? 0),
-                'siswa_count' => (int) ($siswaCounts->get($item->idkategori) ?? 0),
-                'kelas_count' => (int) ($kelasCounts->get($item->idkategori) ?? 0),
-            ];
-        });
+        $processed = $processCollection($paginator->getCollection());
+        $paginator->setCollection($processed);
 
         return response()->json($paginator);
     }
@@ -184,49 +204,59 @@ class InstansiController extends Controller
     /**
      * Create a new institution.
      * ONLY Super Admin can create institutions.
-     * Supports: Kode/Nama, Email, Telp, Alamat, Status, Masa Berlaku, Encrypt ID, and First Admin creation.
      */
     public function store(Request $request)
     {
         $user = $request->user();
         if (!$user || $user->role !== 'super_admin') {
             return response()->json([
-                'message' => 'Akses ditolak: Hanya Super Administrator IP yang berhak menambahkan instansi baru.'
+                'message' => 'Akses ditolak: Hanya Super Administrator yang berhak menambahkan instansi baru.'
             ], 403);
         }
 
         $request->validate([
             'nama_kategori' => 'required|string|max:255',
-            'kode_instansi' => 'nullable|string|max:50',
+            'jenis_instansi' => 'nullable|string|max:50',
+            'npsn' => 'nullable|string|max:30',
             'email' => 'nullable|email|max:100',
             'telp' => 'nullable|string|max:50',
             'alamat' => 'nullable|string|max:500',
-            'masa_berlaku' => 'nullable|date',
-            'encrypt_id' => 'nullable|string|max:100',
-            'status' => 'nullable|string|in:aktif,nonaktif',
+            'kota' => 'nullable|string|max:100',
+            'provinsi' => 'nullable|string|max:100',
+            'status' => 'nullable|string|in:aktif,nonaktif,Y,N',
+            'status_aktif' => 'nullable|string|in:aktif,nonaktif,Y,N',
+            'logo' => 'nullable|string|max:255',
+            'kode_instansi' => 'nullable|string|max:50|unique:kategori_user_bo,idkategori',
             'admin_username' => 'nullable|string|max:100|unique:user_bo,login_username',
             'admin_password' => 'nullable|string|min:4',
             'admin_name' => 'nullable|string|max:255',
         ]);
 
         $idkategori = $request->input('kode_instansi') ?: (string) (time() . rand(1000000, 9999999));
-        $encryptId = $request->input('encrypt_id') ?: md5($idkategori . '_' . time());
+        $encryptId = md5($idkategori . '_' . time());
 
-        $instansiData = [
+        $statusInput = $request->input('status_aktif') ?? $request->input('status') ?? 'aktif';
+        $isNonaktif = in_array(strtolower($statusInput), ['nonaktif', 'n']);
+
+        $instansi = KategoriUserBo::create([
             'idkategori' => $idkategori,
-            'nama_kategori' => $request->nama_kategori,
+            'nama_kategori' => trim($request->nama_kategori),
+            'jenis_instansi' => $request->jenis_instansi ?? 'SMA',
+            'npsn' => $request->npsn,
+            'email' => $request->email,
+            'telp' => $request->telp,
+            'alamat' => $request->alamat,
+            'kota' => $request->kota,
+            'provinsi' => $request->provinsi,
+            'status_aktif' => $isNonaktif ? 'N' : 'Y',
+            'status_remove' => $isNonaktif ? 'Y' : 'N',
+            'logo' => $request->logo,
+            'encrypt_id' => $encryptId,
+            'subscription_status' => $isNonaktif ? 'nonaktif' : 'aktif',
+            'tanggal_aktif' => now()->toDateString(),
+            'tanggal_berakhir' => now()->addYear()->toDateString(),
             'tgl_input' => now(),
-            'status_remove' => ($request->input('status') === 'nonaktif') ? 'Y' : 'N',
-        ];
-
-        if (Schema::hasColumn('kategori_user_bo', 'masa_berlaku') && $request->filled('masa_berlaku')) {
-            $instansiData['masa_berlaku'] = $request->input('masa_berlaku');
-        }
-        if (Schema::hasColumn('kategori_user_bo', 'encrypt_id')) {
-            $instansiData['encrypt_id'] = $encryptId;
-        }
-
-        $item = KategoriUserBo::create($instansiData);
+        ]);
 
         // Optional first admin creation
         $createdAdmin = null;
@@ -249,30 +279,33 @@ class InstansiController extends Controller
             ]);
         }
 
-        // Audit Trail: CREATE_INSTANSI & ADMIN
         AuditLog::record(
-            'CREATE_INSTANSI & ADMIN',
+            'Tambah Data',
             'kategori_user_bo',
             $idkategori,
-            $request->nama_kategori,
+            "Menambahkan instansi baru: {$instansi->nama_kategori}",
             [
                 'created_by' => $user->name,
-                'masa_berlaku' => $request->input('masa_berlaku'),
-                'encrypt_id' => $encryptId,
+                'jenis_instansi' => $instansi->jenis_instansi,
+                'npsn' => $instansi->npsn,
                 'admin_created' => $createdAdmin ? $createdAdmin->login_username : null,
-            ]
+            ],
+            null,
+            null,
+            null,
+            'Kelola Instansi',
+            $instansi->nama_kategori
         );
 
         return response()->json([
-            'message' => 'Instansi berhasil ditambahkan' . ($createdAdmin ? ' beserta akun Admin Instansi pertama' : ''),
-            'data' => $item,
+            'message' => 'Instansi berhasil ditambahkan' . ($createdAdmin ? ' beserta akun Admin Instansi' : ''),
+            'data' => $instansi,
             'admin' => $createdAdmin,
         ], 201);
     }
 
     /**
-     * Show detail of an institution and all its members.
-     * Admin Instansi can only view their own institution.
+     * Show detail of an institution and all its members with full statistics.
      */
     public function show(Request $request, $idkategori)
     {
@@ -280,14 +313,12 @@ class InstansiController extends Controller
             return $deny;
         }
 
-        $instansi = KategoriUserBo::where('idkategori', $idkategori)
-            ->where('status_remove', 'N')
-            ->firstOrFail();
+        $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
 
         $admins = UserBo::where('idkategori', $idkategori)
-            ->where('status_remove', 'N')
+            ->where('status_remove', '!=', 'Y')
             ->where(function ($q) {
-                $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin');
+                $q->where('role_type', 'admin_sekolah')->orWhere('role_type', 'admin')->orWhere('status_admin', '2');
             })
             ->get(['iduser_bo', 'nama', 'login_username', 'login_email', 'telp', 'alamat', 'status_aktif', 'role_type'])
             ->map(function ($a) {
@@ -305,7 +336,7 @@ class InstansiController extends Controller
             });
 
         $gurus = UserBo::where('idkategori', $idkategori)
-            ->where('status_remove', 'N')
+            ->where('status_remove', '!=', 'Y')
             ->where('role_type', 'guru')
             ->with(['mapelAjar.mataPelajaran'])
             ->get(['iduser_bo', 'nama', 'login_username', 'login_email', 'telp', 'alamat', 'status_aktif', 'role_type'])
@@ -346,29 +377,63 @@ class InstansiController extends Controller
             ->withCount('siswa')
             ->get();
 
-        // 4 Dimensi Statistik Instansi: Total Guru, Siswa, Bank Soal, Paket Soal
+        // 5 Dimensi Statistik Lengkap Sesuai Permintaan
         $totalGuru = $gurus->count();
         $totalSiswa = $siswas->count();
+        $totalKelas = $kelas->count();
         $totalPaketSoal = Assessment::where('idkategori', $idkategori)->count();
+        $totalUjian = Assessment::where('idkategori', $idkategori)->count();
         $totalBankSoal = AssessmentSoalPilgan::whereHas('assessment', function ($q) use ($idkategori) {
             $q->where('idkategori', $idkategori);
         })->count();
 
+        $isAktif = ($instansi->status_remove !== 'Y') && ($instansi->status_aktif !== 'N');
+
         return response()->json([
             'instansi' => [
-                'idkategori' => $instansi->idkategori,
+                'idkategori' => (string) $instansi->idkategori,
                 'nama_kategori' => $instansi->nama_kategori,
-                'masa_berlaku' => $instansi->masa_berlaku ?? null,
-                'encrypt_id' => $instansi->encrypt_id ?? md5($instansi->idkategori),
+                'jenis_instansi' => $instansi->jenis_instansi ?? 'Umum',
+                'npsn' => $instansi->npsn,
+                'email' => $instansi->email,
+                'telp' => $instansi->telp,
+                'alamat' => $instansi->alamat,
+                'kota' => $instansi->kota,
+                'provinsi' => $instansi->provinsi,
+                'status_aktif' => $isAktif ? 'Y' : 'N',
+                'status' => $isAktif ? 'aktif' : 'nonaktif',
+                'logo' => $instansi->logo,
                 'tgl_input' => $instansi->tgl_input,
-                'status' => ($instansi->status_remove === 'Y') ? 'nonaktif' : 'aktif',
+                'tanggal_aktif' => $instansi->tanggal_aktif,
+                'tanggal_berakhir' => $instansi->tanggal_berakhir,
+                'keterangan_subscription' => $instansi->keterangan_subscription,
+                'subscription_status' => $instansi->subscription_status ?? 'aktif',
             ],
             'statistics' => [
                 'total_guru' => $totalGuru,
                 'total_siswa' => $totalSiswa,
-                'total_bank_soal' => $totalBankSoal,
+                'total_kelas' => $totalKelas,
                 'total_paket_soal' => $totalPaketSoal,
-                'total_kelas' => $kelas->count(),
+                'total_ujian' => $totalUjian,
+                'total_bank_soal' => $totalBankSoal,
+            ],
+            'master_akademik_summary' => [
+                'tahun_ajaran' => \App\Models\AcademicYear::where('idkategori', $idkategori)->count(),
+                'semester' => \App\Models\MasterSemester::where('idkategori', $idkategori)->count(),
+                'kurikulum' => \App\Models\MasterKurikulum::where('idkategori', $idkategori)->count(),
+                'jenjang' => \App\Models\MasterJenjang::where('idkategori', $idkategori)->count(),
+                'jurusan' => \App\Models\Major::where('idkategori', $idkategori)->count(),
+                'tingkat_kelas' => \App\Models\MasterTingkatKelas::where('idkategori', $idkategori)->count(),
+                'mata_pelajaran' => \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)->count(),
+                'kelas' => $totalKelas,
+                'total_tahun_ajaran' => \App\Models\AcademicYear::where('idkategori', $idkategori)->count(),
+                'total_semester' => \App\Models\MasterSemester::where('idkategori', $idkategori)->count(),
+                'total_kurikulum' => \App\Models\MasterKurikulum::where('idkategori', $idkategori)->count(),
+                'total_jenjang' => \App\Models\MasterJenjang::where('idkategori', $idkategori)->count(),
+                'total_jurusan' => \App\Models\Major::where('idkategori', $idkategori)->count(),
+                'total_tingkat_kelas' => \App\Models\MasterTingkatKelas::where('idkategori', $idkategori)->count(),
+                'total_mata_pelajaran' => \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)->count(),
+                'total_kelas' => $totalKelas,
             ],
             'admins' => $admins,
             'gurus' => $gurus,
@@ -378,89 +443,179 @@ class InstansiController extends Controller
     }
 
     /**
+     * Read-only Academic Masters detail for an institution (used by Super Admin detail view)
+     */
+    public function academicDetails(Request $request, $idkategori)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $academicYears = \App\Models\AcademicYear::where('idkategori', $idkategori)->orderBy('id', 'desc')->get();
+        $semesters = \App\Models\MasterSemester::where('idkategori', $idkategori)->orderBy('id', 'desc')->get();
+        $kurikulums = \App\Models\MasterKurikulum::where('idkategori', $idkategori)->orderBy('nama_kurikulum', 'asc')->get();
+        $jenjangs = \App\Models\MasterJenjang::where('idkategori', $idkategori)->orderBy('nama_jenjang', 'asc')->get();
+        $majors = \App\Models\Major::where('idkategori', $idkategori)->orderBy('name', 'asc')->get();
+        $tingkatKelas = \App\Models\MasterTingkatKelas::where('idkategori', $idkategori)->orderBy('tingkat', 'asc')->get();
+        $mataPelajarans = \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)->orderBy('nama_mapel', 'asc')->get();
+        $kelas = \App\Models\MasterKelas::where('idkategori', $idkategori)->orderBy('nama_kelas', 'asc')->get();
+
+        return response()->json([
+            'academic_years' => $academicYears,
+            'semesters' => $semesters,
+            'kurikulum' => $kurikulums,
+            'kurikulums' => $kurikulums,
+            'jenjang' => $jenjangs,
+            'jenjangs' => $jenjangs,
+            'majors' => $majors,
+            'tingkat_kelas' => $tingkatKelas,
+            'mata_pelajaran' => $mataPelajarans,
+            'mata_pelajarans' => $mataPelajarans,
+            'kelas' => $kelas,
+            'classes' => $kelas,
+        ]);
+    }
+
+    /**
      * Update an institution.
-     * ONLY Super Admin can update master institution details.
-     * Supports: Status Aktif/Nonaktif, Masa Berlaku & Encrypt ID.
      */
     public function update(Request $request, $idkategori)
     {
         $user = $request->user();
         if (!$user || $user->role !== 'super_admin') {
             return response()->json([
-                'message' => 'Akses ditolak: Hanya Super Administrator IP yang berhak mengubah nama master instansi.'
+                'message' => 'Akses ditolak: Hanya Super Administrator yang berhak mengubah data master instansi.'
             ], 403);
         }
 
         $request->validate([
             'nama_kategori' => 'required|string|max:255',
-            'status' => 'nullable|string|in:aktif,nonaktif',
-            'masa_berlaku' => 'nullable|date',
-            'encrypt_id' => 'nullable|string|max:100',
+            'jenis_instansi' => 'nullable|string|max:50',
+            'npsn' => 'nullable|string|max:30',
+            'email' => 'nullable|email|max:100',
+            'telp' => 'nullable|string|max:50',
+            'alamat' => 'nullable|string|max:500',
+            'kota' => 'nullable|string|max:100',
+            'provinsi' => 'nullable|string|max:100',
+            'status' => 'nullable|string|in:aktif,nonaktif,Y,N',
+            'status_aktif' => 'nullable|string|in:aktif,nonaktif,Y,N',
+            'logo' => 'nullable|string|max:255',
         ]);
 
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
         $updates = [
-            'nama_kategori' => $request->nama_kategori,
+            'nama_kategori' => trim($request->nama_kategori),
         ];
 
-        if ($request->has('status')) {
-            $updates['status_remove'] = ($request->status === 'nonaktif') ? 'Y' : 'N';
-        }
-        if (Schema::hasColumn('kategori_user_bo', 'masa_berlaku') && $request->filled('masa_berlaku')) {
-            $updates['masa_berlaku'] = $request->masa_berlaku;
-        }
-        if (Schema::hasColumn('kategori_user_bo', 'encrypt_id') && $request->filled('encrypt_id')) {
-            $updates['encrypt_id'] = $request->encrypt_id;
+        if ($request->has('jenis_instansi')) $updates['jenis_instansi'] = $request->jenis_instansi;
+        if ($request->has('npsn')) $updates['npsn'] = $request->npsn;
+        if ($request->has('email')) $updates['email'] = $request->email;
+        if ($request->has('telp')) $updates['telp'] = $request->telp;
+        if ($request->has('alamat')) $updates['alamat'] = $request->alamat;
+        if ($request->has('kota')) $updates['kota'] = $request->kota;
+        if ($request->has('provinsi')) $updates['provinsi'] = $request->provinsi;
+        if ($request->has('logo')) $updates['logo'] = $request->logo;
+
+        $statusInput = $request->input('status_aktif') ?? $request->input('status');
+        if ($statusInput !== null) {
+            $isNonaktif = in_array(strtolower($statusInput), ['nonaktif', 'n']);
+            $updates['status_aktif'] = $isNonaktif ? 'N' : 'Y';
+            $updates['status_remove'] = $isNonaktif ? 'Y' : 'N';
         }
 
         $instansi->update($updates);
 
-        // Audit Trail: EDIT_INSTANSI
         AuditLog::record(
-            'EDIT_INSTANSI',
+            'Edit Data',
             'kategori_user_bo',
             $idkategori,
-            $instansi->nama_kategori,
-            [
-                'updated_by' => $user->name,
-                'masa_berlaku' => $instansi->masa_berlaku ?? null,
-                'encrypt_id' => $instansi->encrypt_id ?? null,
-                'status' => ($instansi->status_remove === 'Y') ? 'nonaktif' : 'aktif',
-            ]
+            "Memperbarui data instansi: {$instansi->nama_kategori}",
+            $updates,
+            null,
+            null,
+            null,
+            'Kelola Instansi',
+            $instansi->nama_kategori
         );
 
         return response()->json([
-            'message' => 'Data instansi berhasil diperbarui',
+            'message' => 'Data instansi berhasil diperbarui.',
             'data' => $instansi
         ]);
     }
 
     /**
-     * Delete an institution (soft delete).
-     * ONLY Super Admin can deactivate an institution.
+     * Delete an institution (soft delete) or toggle active status.
      */
     public function destroy(Request $request, $idkategori)
     {
         $user = $request->user();
         if (!$user || $user->role !== 'super_admin') {
             return response()->json([
-                'message' => 'Akses ditolak: Hanya Super Administrator IP yang berhak menonaktifkan instansi.'
+                'message' => 'Akses ditolak: Hanya Super Administrator yang berhak menonaktifkan instansi.'
             ], 403);
         }
 
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
-        $instansi->update(['status_remove' => 'Y']);
+        $instansi->update([
+            'status_remove' => 'Y',
+            'status_aktif' => 'N',
+        ]);
 
         AuditLog::record(
-            'EDIT_INSTANSI',
+            'Hapus Data',
             'kategori_user_bo',
             $idkategori,
-            $instansi->nama_kategori,
-            ['action' => 'deactivate', 'deactivated_by' => $user->name]
+            "Menonaktifkan instansi (soft delete): {$instansi->nama_kategori}",
+            ['action' => 'soft_delete'],
+            null,
+            null,
+            null,
+            'Kelola Instansi',
+            $instansi->nama_kategori
         );
 
         return response()->json([
-            'message' => 'Instansi berhasil dinonaktifkan'
+            'message' => "Instansi {$instansi->nama_kategori} berhasil dinonaktifkan."
+        ]);
+    }
+
+    /**
+     * Toggle status aktif / nonaktif
+     */
+    public function toggleStatus(Request $request, $idkategori)
+    {
+        $user = $request->user();
+        if (!$user || $user->role !== 'super_admin') {
+            return response()->json(['message' => 'Akses ditolak.'], 403);
+        }
+
+        $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
+        $isCurrentlyActive = ($instansi->status_remove !== 'Y') && ($instansi->status_aktif !== 'N');
+        $newStatus = $isCurrentlyActive ? 'nonaktif' : 'aktif';
+
+        $instansi->update([
+            'status_remove' => $isCurrentlyActive ? 'Y' : 'N',
+            'status_aktif' => $isCurrentlyActive ? 'N' : 'Y',
+        ]);
+
+        AuditLog::record(
+            $isCurrentlyActive ? 'Nonaktif Instansi' : 'Aktivasi Instansi',
+            'kategori_user_bo',
+            $idkategori,
+            "Mengubah status instansi {$instansi->nama_kategori} menjadi {$newStatus}",
+            ['new_status' => $newStatus],
+            null,
+            null,
+            null,
+            'Kelola Instansi',
+            $instansi->nama_kategori
+        );
+
+        return response()->json([
+            'message' => "Status instansi {$instansi->nama_kategori} berhasil diubah menjadi {$newStatus}.",
+            'status' => $newStatus,
+            'status_aktif' => $isCurrentlyActive ? 'N' : 'Y'
         ]);
     }
 

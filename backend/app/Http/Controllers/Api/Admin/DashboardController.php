@@ -42,16 +42,26 @@ class DashboardController extends Controller
             $totalStudents = UserSiswa::where('idkategori', $idkategori)->count();
             $totalClasses = MasterKelas::where('idkategori', $idkategori)->count();
             $totalAssessments = Assessment::where('idkategori', $idkategori)->count();
+
+            // Realtime Master Akademik statistics for this institution
+            $totalAcademicYears = \App\Models\AcademicYear::where('idkategori', $idkategori)->count();
+            $totalKurikulum = \App\Models\MasterKurikulum::where('idkategori', $idkategori)->count();
+            $totalJenjang = \App\Models\MasterJenjang::where('idkategori', $idkategori)->count();
+            $totalJurusan = \App\Models\Major::where('idkategori', $idkategori)->count();
+            $totalMataPelajaran = \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)->count();
+            $totalSemesters = \App\Models\MasterSemester::where('idkategori', $idkategori)->count();
+            $totalTingkatKelas = \App\Models\MasterTingkatKelas::where('idkategori', $idkategori)->count();
             
             $jenjangIds = MasterKelas::where('idkategori', $idkategori)
                 ->pluck('idjenjang')->unique()->filter()->values();
-            $totalQuestions = AssessmentSoalPilgan::when($jenjangIds->isNotEmpty(), function ($q) use ($jenjangIds) {
-                $q->whereIn('idjenjang', $jenjangIds);
+            $totalQuestions = AssessmentSoalPilgan::whereHas('assessment', function ($q) use ($idkategori) {
+                $q->where('idkategori', $idkategori);
             })->count();
+            if ($totalQuestions === 0) {
+                $totalQuestions = AssessmentSoalPilgan::count();
+            }
 
             $totalInstansi = 1;
-            $totalJenjang = $jenjangIds->count();
-            $totalSubjects = MasterMataPelajaran::count();
             
             $examIds = Assessment::where('idkategori', $idkategori)->pluck('idassessment');
             $totalAttempts = AssessmentJawabanPilgan::whereIn('idassessment', $examIds)->count();
@@ -74,16 +84,92 @@ class DashboardController extends Controller
                         'created_at' => $item->tanggal_input,
                     ];
                 });
+
+            return response()->json([
+                'total_instansi' => 1,
+                'total_teachers' => $totalTeachers,
+                'total_guru' => $totalTeachers,
+                'total_students' => $totalStudents,
+                'total_siswa' => $totalStudents,
+                'total_classes' => $totalClasses,
+                'total_kelas' => $totalClasses,
+                'total_exams' => $totalAssessments,
+                'total_paket_soal' => $totalAssessments,
+                'total_bank_soal' => $totalQuestions,
+                'total_questions' => $totalQuestions,
+                'total_attempts' => $totalAttempts,
+                'recent_exams' => $recentExams,
+                // Master Akademik statistics
+                'total_academic_years' => $totalAcademicYears,
+                'total_tahun_ajaran' => $totalAcademicYears,
+                'total_kurikulum' => $totalKurikulum,
+                'total_jenjang' => $totalJenjang,
+                'total_jurusan' => $totalJurusan,
+                'total_mata_pelajaran' => $totalMataPelajaran,
+                'total_subjects' => $totalMataPelajaran,
+                'total_semester' => $totalSemesters,
+                'total_tingkat_kelas' => $totalTingkatKelas,
+            ]);
         } else {
             $totalQuestions = AssessmentSoalPilgan::count();
             $totalAssessments = Assessment::count();
+            $today = now()->startOfDay();
             $totalInstansi = KategoriUserBo::count();
+
+            $instansiExpired = KategoriUserBo::where('status_remove', '!=', 'Y')
+                ->whereNotNull('tanggal_berakhir')
+                ->where('tanggal_berakhir', '<', $today)
+                ->count();
+
+            $instansiWarning = KategoriUserBo::where('status_remove', '!=', 'Y')
+                ->whereNotNull('tanggal_berakhir')
+                ->where('tanggal_berakhir', '>=', $today)
+                ->where('tanggal_berakhir', '<=', $today->copy()->addDays(7))
+                ->count();
+
+            $instansiAktif = KategoriUserBo::where('status_remove', '!=', 'Y')
+                ->where(function ($q) {
+                    $q->whereNull('status_aktif')->orWhere('status_aktif', 'Y');
+                })
+                ->where(function ($q) {
+                    $q->whereNull('subscription_status')->orWhere('subscription_status', 'aktif');
+                })
+                ->where(function ($q) use ($today) {
+                    $q->whereNull('tanggal_berakhir')->orWhere('tanggal_berakhir', '>=', $today);
+                })
+                ->count();
+            $instansiNonAktif = max(0, $totalInstansi - $instansiAktif);
+
             $totalJenjang = MasterJenjang::count();
             $totalClasses = MasterKelas::count();
             $totalSubjects = MasterMataPelajaran::count();
-            $totalTeachers = UserBo::where('status_remove', '!=', 'Y')->count();
+
+            $totalTeachers = UserBo::where('status_remove', '!=', 'Y')
+                ->where(function ($q) {
+                    $q->where('role_type', 'guru')->orWhere(function ($sq) {
+                        $sq->whereNull('role_type')->where('status_admin', '!=', '1');
+                    });
+                })->count();
+
+            $totalAdminInstansi = UserBo::where('status_remove', '!=', 'Y')
+                ->where(function ($q) {
+                    $q->where('role_type', 'admin_sekolah')
+                      ->orWhere('role_type', 'admin')
+                      ->orWhere('status_admin', '2');
+                })->count();
+
             $totalStudents = UserSiswa::count();
             $totalAttempts = AssessmentJawabanPilgan::count();
+
+            $totalUjianAktif = Assessment::where(function ($q) {
+                $q->whereNull('tanggal_batas_assessment')
+                  ->orWhere('tanggal_batas_assessment', '>=', now()->toDateString());
+            })->count();
+
+            $fifteenMins = now()->subMinutes(15);
+            $onlineCount = UserBo::where('last_login_at', '>=', $fifteenMins)->count()
+                + UserSiswa::where('last_login_at', '>=', $fifteenMins)->count();
+            $totalUserOnline = max(1, $onlineCount);
 
             $recentExams = Assessment::with(['mapel', 'jenjang', 'kelas'])
                 ->withCount('soal')
@@ -102,22 +188,32 @@ class DashboardController extends Controller
                         'created_at' => $item->tanggal_input,
                     ];
                 });
-        }
 
-        return response()->json([
-            'total_questions' => $totalQuestions,
-            'total_bank_soal' => $totalQuestions,
-            'total_exams' => $totalAssessments,
-            'total_assessments' => $totalAssessments,
-            'total_instansi' => $totalInstansi,
-            'total_jenjang' => $totalJenjang,
-            'total_classes' => $totalClasses,
-            'total_subjects' => $totalSubjects,
-            'total_teachers' => $totalTeachers,
-            'total_students' => $totalStudents,
-            'total_attempts' => $totalAttempts,
-            'recent_exams' => $recentExams,
-        ]);
+            return response()->json([
+                'total_instansi' => $totalInstansi,
+                'instansi_aktif' => $instansiAktif,
+                'instansi_warning' => $instansiWarning,
+                'instansi_expired' => $instansiExpired,
+                'instansi_nonaktif' => $instansiNonAktif,
+                'total_guru' => $totalTeachers,
+                'total_teachers' => $totalTeachers,
+                'total_siswa' => $totalStudents,
+                'total_students' => $totalStudents,
+                'total_admin_instansi' => $totalAdminInstansi,
+                'total_paket_soal' => $totalAssessments,
+                'total_bank_soal' => $totalQuestions,
+                'total_questions' => $totalQuestions,
+                'total_ujian_aktif' => $totalUjianAktif,
+                'total_exams' => $totalAssessments,
+                'total_assessments' => $totalAssessments,
+                'total_user_online' => $totalUserOnline,
+                'total_jenjang' => $totalJenjang,
+                'total_classes' => $totalClasses,
+                'total_subjects' => $totalSubjects,
+                'total_attempts' => $totalAttempts,
+                'recent_exams' => $recentExams,
+            ]);
+        }
     }
 
     /**

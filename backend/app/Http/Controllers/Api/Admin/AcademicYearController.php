@@ -14,9 +14,18 @@ class AcademicYearController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $idkategori = ($user && $user->role !== 'super_admin') ? $user->idkategori : null;
-
         $query = AcademicYear::query();
+
+        // Multi-tenant scope
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+            $idkategori = $user->idkategori;
+        } elseif ($request->filled('idkategori')) {
+            $query->where('idkategori', $request->idkategori);
+            $idkategori = $request->idkategori;
+        } else {
+            $idkategori = null;
+        }
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -26,7 +35,9 @@ class AcademicYearController extends Controller
         $attachCounts = function ($items) use ($idkategori) {
             foreach ($items as $item) {
                 // Mapel count in this academic year
-                $item->subjects_count = MasterMataPelajaran::where('tahun_ajaran', $item->name)->count();
+                $item->subjects_count = MasterMataPelajaran::where('tahun_ajaran', $item->name)
+                    ->when($idkategori, fn($q) => $q->where('idkategori', $idkategori))
+                    ->count();
 
                 // Students count in this academic year
                 $stQuery = DB::table('siswa_kelas')->where('siswa_kelas.tahun_ajaran', $item->name);
@@ -63,17 +74,37 @@ class AcademicYearController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Super Administrator tidak diizinkan membuat data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
+            ], 403);
+        }
+
+        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+            return response()->json([
+                'message' => 'Akses ditolak: Hanya Admin Instansi yang berhak membuat data tahun ajaran sekolah.'
+            ], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'semester' => 'required|in:odd,even',
             'is_active' => 'boolean',
         ]);
 
-        $academicYear = DB::transaction(function () use ($validated) {
+        $idkategori = $user->idkategori;
+        $validated['idkategori'] = $idkategori;
+
+        if (AcademicYear::where('idkategori', $idkategori)->where('name', $validated['name'])->where('semester', $validated['semester'])->exists()) {
+            return response()->json(['message' => 'Tahun ajaran dan semester tersebut sudah terdaftar di instansi Anda.'], 422);
+        }
+
+        $academicYear = DB::transaction(function () use ($validated, $idkategori) {
             $is_active = $validated['is_active'] ?? false;
 
             if ($is_active) {
-                AcademicYear::query()->update(['is_active' => false]);
+                AcademicYear::where('idkategori', $idkategori)->update(['is_active' => false]);
             }
 
             return AcademicYear::create($validated);
@@ -85,35 +116,64 @@ class AcademicYearController extends Controller
         ], 201);
     }
 
-    public function show(AcademicYear $academicYear)
+    public function show(Request $request, $id)
     {
-        $academicYear->subjects_count = MasterMataPelajaran::where('tahun_ajaran', $academicYear->name)->count();
+        $user = $request->user();
+        $academicYear = $id instanceof AcademicYear ? $id : AcademicYear::findOrFail($id);
+
+        if ($user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
+        $idkategori = $academicYear->idkategori ?: ($user?->idkategori ?? null);
+        $academicYear->subjects_count = MasterMataPelajaran::where('tahun_ajaran', $academicYear->name)
+            ->when($idkategori, fn($q) => $q->where('idkategori', $idkategori))
+            ->count();
         $academicYear->students_count = DB::table('siswa_kelas')->where('tahun_ajaran', $academicYear->name)->count();
         return response()->json($academicYear);
     }
 
-    public function update(Request $request, AcademicYear $academicYear)
+    public function update(Request $request, $id)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Super Administrator tidak diizinkan mengubah data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
+            ], 403);
+        }
+
+        $academicYear = $id instanceof AcademicYear ? $id : AcademicYear::findOrFail($id);
+
+        if ($user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'semester' => 'required|in:odd,even',
             'is_active' => 'boolean',
         ]);
 
+        $idkategori = $academicYear->idkategori ?: ($user?->idkategori ?? null);
+
+        if (AcademicYear::where('idkategori', $idkategori)->where('name', $validated['name'])->where('semester', $validated['semester'])->where('id', '!=', $academicYear->id)->exists()) {
+            return response()->json(['message' => 'Tahun ajaran dan semester tersebut sudah terdaftar di instansi Anda.'], 422);
+        }
+
         $oldName = $academicYear->name;
 
-        $academicYear = DB::transaction(function () use ($validated, $academicYear, $oldName) {
+        $academicYear = DB::transaction(function () use ($validated, $academicYear, $oldName, $idkategori) {
             $is_active = $validated['is_active'] ?? false;
 
-            if ($is_active) {
-                AcademicYear::query()->where('id', '!=', $academicYear->id)->update(['is_active' => false]);
+            if ($is_active && $idkategori) {
+                AcademicYear::where('idkategori', $idkategori)->where('id', '!=', $academicYear->id)->update(['is_active' => false]);
             }
 
             $academicYear->update($validated);
 
-            // If name changed, update relations
+            // If name changed, update relations scoped by idkategori
             if ($oldName !== $validated['name']) {
-                MasterMataPelajaran::where('tahun_ajaran', $oldName)->update(['tahun_ajaran' => $validated['name']]);
+                MasterMataPelajaran::where('tahun_ajaran', $oldName)->when($idkategori, fn($q) => $q->where('idkategori', $idkategori))->update(['tahun_ajaran' => $validated['name']]);
                 DB::table('siswa_kelas')->where('tahun_ajaran', $oldName)->update(['tahun_ajaran' => $validated['name']]);
                 DB::table('guru_mata_pelajaran')->where('tahun_ajaran', $oldName)->update(['tahun_ajaran' => $validated['name']]);
             }
@@ -127,8 +187,21 @@ class AcademicYearController extends Controller
         ]);
     }
 
-    public function destroy(AcademicYear $academicYear)
+    public function destroy(Request $request, $id)
     {
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Super Administrator tidak diizinkan menghapus data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
+            ], 403);
+        }
+
+        $academicYear = $id instanceof AcademicYear ? $id : AcademicYear::findOrFail($id);
+
+        if ($user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
         if ($academicYear->is_active) {
             return response()->json([
                 'message' => 'Tidak dapat menghapus tahun ajaran yang sedang aktif.'
@@ -142,10 +215,29 @@ class AcademicYearController extends Controller
         ]);
     }
 
-    public function activate(AcademicYear $academicYear)
+    public function activate(Request $request, $id)
     {
-        DB::transaction(function () use ($academicYear) {
-            AcademicYear::query()->update(['is_active' => false]);
+        $user = $request->user();
+        if ($user && $user->role === 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Super Administrator tidak diizinkan mengubah status aktif tahun ajaran. Fitur ini dikelola penuh oleh Admin Instansi.'
+            ], 403);
+        }
+
+        $academicYear = $id instanceof AcademicYear ? $id : AcademicYear::findOrFail($id);
+
+        if ($user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
+        $idkategori = $academicYear->idkategori ?: ($user?->idkategori ?? null);
+
+        DB::transaction(function () use ($academicYear, $idkategori) {
+            if ($idkategori) {
+                AcademicYear::where('idkategori', $idkategori)->update(['is_active' => false]);
+            } else {
+                AcademicYear::query()->update(['is_active' => false]);
+            }
             $academicYear->update(['is_active' => true]);
         });
 
