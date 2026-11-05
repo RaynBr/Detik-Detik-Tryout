@@ -131,14 +131,11 @@ class DashboardController extends Controller
                 ->where(function ($q) {
                     $q->whereNull('status_aktif')->orWhere('status_aktif', 'Y');
                 })
-                ->where(function ($q) {
-                    $q->whereNull('subscription_status')->orWhere('subscription_status', 'aktif');
-                })
-                ->where(function ($q) use ($today) {
-                    $q->whereNull('tanggal_berakhir')->orWhere('tanggal_berakhir', '>=', $today);
-                })
                 ->count();
-            $instansiNonAktif = max(0, $totalInstansi - $instansiAktif);
+            $instansiNonAktif = KategoriUserBo::where(function ($q) {
+                $q->where('status_remove', 'Y')->orWhere('status_aktif', 'N');
+            })->count();
+            $totalInstansi = $instansiAktif + $instansiNonAktif;
 
             $totalJenjang = MasterJenjang::count();
             $totalClasses = MasterKelas::count();
@@ -167,8 +164,15 @@ class DashboardController extends Controller
             })->count();
 
             $fifteenMins = now()->subMinutes(15);
-            $onlineCount = UserBo::where('last_login_at', '>=', $fifteenMins)->count()
-                + UserSiswa::where('last_login_at', '>=', $fifteenMins)->count();
+            $onlineCount = UserBo::where('status_remove', '!=', 'Y')
+                ->where(function ($q) use ($fifteenMins) {
+                    $q->where('last_login_at', '>=', $fifteenMins)
+                      ->orWhereNotNull('active_session_token');
+                })->count()
+                + UserSiswa::where(function ($q) use ($fifteenMins) {
+                    $q->where('last_login_at', '>=', $fifteenMins)
+                      ->orWhereNotNull('active_session_token');
+                })->count();
             $totalUserOnline = max(1, $onlineCount);
 
             $recentExams = Assessment::with(['mapel', 'jenjang', 'kelas'])
@@ -194,6 +198,7 @@ class DashboardController extends Controller
                 'instansi_aktif' => $instansiAktif,
                 'instansi_warning' => $instansiWarning,
                 'instansi_expired' => $instansiExpired,
+                'instansi_non_aktif' => $instansiNonAktif,
                 'instansi_nonaktif' => $instansiNonAktif,
                 'total_guru' => $totalTeachers,
                 'total_teachers' => $totalTeachers,

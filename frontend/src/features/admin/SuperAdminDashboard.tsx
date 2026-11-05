@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../shared/context/AuthContext';
 import { apiClient } from '../../shared/api/client';
+import { toast } from '../../shared/context/ToastContext';
 import { 
   Building2, 
   CheckCircle2, 
@@ -18,7 +19,10 @@ import {
   History, 
   ArrowRight,
   RefreshCw,
-  Eye
+  Eye,
+  Clock,
+  Pause,
+  Play
 } from 'lucide-react';
 import { WelcomeBanner } from '../../shared/components/dashboard';
 
@@ -40,6 +44,11 @@ export const SuperAdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const isFetchingRef = useRef(false);
+
   const [stats, setStats] = useState<DashboardStats>({
     total_instansi: 0,
     instansi_aktif: 0,
@@ -54,7 +63,11 @@ export const SuperAdminDashboard: React.FC = () => {
   });
   const [instansiList, setInstansiList] = useState<any[]>([]);
 
-  const fetchData = async () => {
+  const fetchData = async (isManual = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (isManual) setRefreshing(true);
+
     try {
       const [statsRes, instansiRes] = await Promise.all([
         apiClient.get('/super-admin/dashboard/stats').catch(() => ({ data: {} })),
@@ -65,7 +78,7 @@ export const SuperAdminDashboard: React.FC = () => {
         setStats({
           total_instansi: statsRes.data.total_instansi ?? 0,
           instansi_aktif: statsRes.data.instansi_aktif ?? 0,
-          instansi_non_aktif: statsRes.data.instansi_non_aktif ?? 0,
+          instansi_non_aktif: statsRes.data.instansi_non_aktif ?? statsRes.data.instansi_nonaktif ?? 0,
           total_guru: statsRes.data.total_guru ?? statsRes.data.total_teachers ?? 0,
           total_siswa: statsRes.data.total_siswa ?? statsRes.data.total_students ?? 0,
           total_admin_instansi: statsRes.data.total_admin_instansi ?? 0,
@@ -79,21 +92,45 @@ export const SuperAdminDashboard: React.FC = () => {
       const raw = instansiRes.data;
       const list = Array.isArray(raw) ? raw : (raw?.data && Array.isArray(raw.data) ? raw.data : []);
       setInstansiList(list);
+      setLastUpdated(new Date());
     } catch (e) {
       console.error('Error fetching dashboard stats:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      isFetchingRef.current = false;
     }
   };
 
   useEffect(() => {
     fetchData();
-  }, []);
+
+    if (!autoRefresh) return;
+
+    // Real-time polling every 5 seconds
+    const interval = setInterval(() => {
+      fetchData(false);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
 
   const handleRefresh = () => {
-    setRefreshing(true);
-    fetchData();
+    fetchData(true);
+  };
+
+  const handleToggleInstansiStatus = async (instansi: any) => {
+    try {
+      setTogglingId(instansi.idkategori);
+      const res = await apiClient.post(`/super-admin/instansi/${instansi.idkategori}/toggle-status`);
+      toast.success(res.data?.message || `Status instansi ${instansi.nama_kategori} berhasil diubah.`);
+      // Refetch immediately to sync all statistics and tables
+      await fetchData(false);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mengubah status instansi.');
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const statCards = [
@@ -128,7 +165,7 @@ export const SuperAdminDashboard: React.FC = () => {
       textColor: 'text-rose-600 dark:text-rose-400',
       bgColor: 'bg-rose-50 dark:bg-rose-950/30',
       borderColor: 'border-rose-200 dark:border-rose-800',
-      onClick: () => navigate('/super-admin/instansi?status=non_aktif'),
+      onClick: () => navigate('/super-admin/instansi?status=nonaktif'),
     },
     {
       title: 'Total Guru',
@@ -226,21 +263,52 @@ export const SuperAdminDashboard: React.FC = () => {
         />
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400">
-            Metrik Database Real-Time
-          </span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl px-4 py-2.5 shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-3 w-3">
+              {autoRefresh && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              )}
+              <span className={`relative inline-flex rounded-full h-3 w-3 ${autoRefresh ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-gray-600'}`}></span>
+            </span>
+            <span className="text-xs font-black uppercase tracking-wider text-[#161C2D] dark:text-white">
+              {autoRefresh ? 'Real-Time Aktif' : 'Real-Time Dijeda'}
+            </span>
+          </div>
+          <span className="text-slate-300 dark:text-white/20">|</span>
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-gray-400 font-medium">
+            <Clock className="h-3.5 w-3.5" />
+            <span>Pembaruan tiap 5 detik</span>
+            <span className="hidden md:inline text-slate-400 dark:text-gray-500">
+              (Terakhir: {lastUpdated.toLocaleTimeString('id-ID')})
+            </span>
+          </div>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-[#1A1E22] hover:bg-slate-50 dark:hover:bg-white/5 border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000] cursor-pointer transition active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          <span>Segarkan Data</span>
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer active:scale-95 ${
+              autoRefresh 
+                ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700' 
+                : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'
+            }`}
+            title={autoRefresh ? 'Jeda sinkronisasi otomatis' : 'Aktifkan sinkronisasi otomatis'}
+          >
+            {autoRefresh ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            <span>{autoRefresh ? 'Jeda Real-Time' : 'Lanjutkan Real-Time'}</span>
+          </button>
+
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#161C2D] text-white hover:bg-slate-800 dark:bg-white dark:text-[#161C2D] dark:hover:bg-slate-200 border border-transparent shadow-[1px_1px_0px_0px_#000000] cursor-pointer transition active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Memperbarui...' : 'Segarkan Data'}</span>
+          </button>
+        </div>
       </div>
 
       {/* 10 Real Metric Cards Grid */}
@@ -392,7 +460,8 @@ export const SuperAdminDashboard: React.FC = () => {
               ) : instansiList.length === 0 ? (
                 <tr><td colSpan={8} className="py-6 text-center font-bold text-slate-500">Belum ada instansi mitra terdaftar.</td></tr>
               ) : instansiList.map((i: any) => {
-                const isAktif = (i.status_aktif || 'aktif').toLowerCase() === 'aktif';
+                const isAktif = i.status === 'aktif' || i.status_aktif === 'Y' || String(i.status_aktif).toLowerCase() === 'aktif';
+                const isToggling = togglingId === String(i.idkategori);
                 return (
                   <tr key={i.idkategori} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
                     <td className="py-3 px-3 font-bold text-[#161C2D] dark:text-white">
@@ -411,13 +480,19 @@ export const SuperAdminDashboard: React.FC = () => {
                     <td className="py-3 px-3 text-center font-bold">{i.kelas_count ?? i.total_kelas ?? 0}</td>
                     <td className="py-3 px-3 text-center font-bold">{i.ujian_count ?? i.total_ujian ?? 0}</td>
                     <td className="py-3 px-3 text-center">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                        isAktif 
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700' 
-                          : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-700'
-                      }`}>
-                        {isAktif ? 'Aktif' : 'Non Aktif'}
-                      </span>
+                      <button
+                        onClick={() => handleToggleInstansiStatus(i)}
+                        disabled={isToggling}
+                        title={`Klik untuk mengubah status menjadi ${isAktif ? 'Non Aktif' : 'Aktif'}`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border transition cursor-pointer hover:opacity-80 active:scale-95 disabled:opacity-50 ${
+                          isAktif 
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700' 
+                            : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-700'
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${isAktif ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                        {isToggling ? 'Menyimpan...' : isAktif ? 'Aktif' : 'Non Aktif'}
+                      </button>
                     </td>
                     <td className="py-3 px-3 text-right">
                       <button

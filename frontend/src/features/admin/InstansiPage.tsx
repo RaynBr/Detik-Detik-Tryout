@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '../../shared/api/client';
 import { toast } from '../../shared/context/ToastContext';
 import { 
@@ -47,11 +48,24 @@ export interface InstansiItem {
 const JENIS_OPTIONS = ['SD', 'SMP', 'SMA', 'SMK', 'Bimbel', 'Perguruan Tinggi', 'Umum'];
 
 export const InstansiPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const urlStatus = searchParams.get('status');
+
   const [instansiList, setInstansiList] = useState<InstansiItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(() => {
+    if (urlStatus === 'non_aktif' || urlStatus === 'nonaktif') return 'nonaktif';
+    if (urlStatus === 'aktif') return 'aktif';
+    return '';
+  });
   const [jenisFilter, setJenisFilter] = useState('');
+
+  useEffect(() => {
+    if (urlStatus) {
+      setStatusFilter(urlStatus === 'non_aktif' || urlStatus === 'nonaktif' ? 'nonaktif' : urlStatus);
+    }
+  }, [urlStatus]);
 
   // Detail Modal
   const [selectedInstansi, setSelectedInstansi] = useState<InstansiItem | null>(null);

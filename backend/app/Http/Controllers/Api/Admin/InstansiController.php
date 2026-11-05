@@ -85,7 +85,7 @@ class InstansiController extends Controller
                       ->where(function ($q) {
                           $q->whereNull('status_aktif')->orWhere('status_aktif', 'Y');
                       });
-            } elseif ($status === 'nonaktif') {
+            } elseif ($status === 'nonaktif' || $status === 'non_aktif') {
                 $query->where(function ($q) {
                     $q->where('status_remove', 'Y')->orWhere('status_aktif', 'N');
                 });
