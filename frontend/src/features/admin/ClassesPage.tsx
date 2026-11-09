@@ -7,36 +7,84 @@ import {
   Edit2, 
   Trash2, 
   X, 
-  GraduationCap, 
   Search, 
   Users, 
   UserPlus, 
-  UserMinus,
-  Filter,
-  Eye,
-  BookOpen,
-  School
+  UserMinus, 
+  Eye, 
+  BookOpen, 
+  School, 
+  RotateCcw,
+  Upload,
+  Power,
+  Clock
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
+import { StudentImportModal } from './components/StudentImportModal';
+
+interface AcademicYear {
+  id: number;
+  name: string;
+  is_active: boolean | number;
+}
+
+interface MasterSemester {
+  id: number;
+  academic_year_id: number;
+  nama_semester: string;
+  kode_semester: string;
+  status_aktif: string;
+}
+
+interface MasterKurikulum {
+  id: number;
+  nama_kurikulum: string;
+  kode_kurikulum: string;
+  tahun?: string;
+  status_aktif?: string;
+}
 
 interface MasterJenjang {
   id: number;
   kode_jenjang: string;
   nama_jenjang: string;
+  status_aktif?: string;
+}
+
+interface Major {
+  id: number;
+  name: string;
+  code: string;
+  idjenjang?: number;
+  status_aktif?: string;
+}
+
+interface MasterTingkatKelas {
+  id: number;
+  nama_tingkat: string;
+  tingkat: number;
+  idjenjang: number;
+  idjurusan?: number | null;
+  status_aktif?: string;
+}
+
+interface Teacher {
+  id: string;
+  name: string;
+  email: string;
+  nip?: string;
 }
 
 interface MasterMataPelajaran {
   id: number;
   kode_mapel: string;
   nama_mapel: string;
-  name?: string;
-  code?: string;
-}
-
-interface Teacher {
-  id: string;
-  name: string;
+  kkm?: number;
+  idkurikulum?: number;
+  idjenjang?: number;
+  idjurusan?: number | null;
+  idtingkat?: number | null;
 }
 
 interface StudentInClass {
@@ -48,7 +96,7 @@ interface StudentInClass {
     iduser: string;
     nama: string;
     login_email: string;
-    telp: string;
+    telp?: string;
   };
 }
 
@@ -57,79 +105,130 @@ interface GuruPengampuItem {
   idkelas: number;
   idmapel: number;
   iduser_bo: string;
+  academic_year_id?: number;
+  semester_id?: number;
   tahun_ajaran: string;
   status: string;
   guru?: {
     iduser_bo: string;
     nama: string;
     login_email: string;
-    telp?: string;
   };
   mata_pelajaran?: {
     id: number;
     nama_mapel: string;
     kode_mapel: string;
+    kkm?: number;
   };
+  academic_year?: AcademicYear;
+  semester?: MasterSemester;
 }
 
 interface ClassRoom {
   id: number;
   nama_kelas: string;
   name?: string;
-  tingkat: number;
-  level?: number;
-  jurusan: string;
+  academic_year_id?: number;
+  academic_year?: AcademicYear | null;
+  semester_id?: number;
+  semester?: MasterSemester | null;
+  kurikulum_id?: number;
+  kurikulum?: MasterKurikulum | null;
   idjenjang: number;
   jenjang?: MasterJenjang | null;
+  idjurusan?: number | null;
+  jurusan_relation?: Major | null;
+  jurusan: string;
+  idtingkat?: number;
+  tingkat_kelas?: MasterTingkatKelas | null;
+  tingkat: number;
   wali_kelas_id: string | null;
-  wali_kelas?: { nama: string; login_email: string } | null;
+  wali_kelas?: { iduser_bo?: string; nama: string; login_email: string } | null;
   kapasitas: number;
+  status_aktif: string;
   siswa_count?: number;
+  guru_mata_pelajaran_count?: number;
   siswa?: StudentInClass[];
+  guru_mata_pelajaran?: GuruPengampuItem[];
 }
 
 export const ClassesPage: React.FC = () => {
   const { toast } = useToast();
+
+  // Data states
   const [classes, setClasses] = useState<ClassRoom[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [semesters, setSemesters] = useState<MasterSemester[]>([]);
+  const [kurikulumList, setKurikulumList] = useState<MasterKurikulum[]>([]);
   const [jenjangList, setJenjangList] = useState<MasterJenjang[]>([]);
+  const [majorsList, setMajorsList] = useState<Major[]>([]);
+  const [tingkatList, setTingkatList] = useState<MasterTingkatKelas[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [subjectsList, setSubjectsList] = useState<MasterMataPelajaran[]>([]);
   const [allStudents, setAllStudents] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  
+
   // Filters & Search
   const [search, setSearch] = useState('');
-  const [selectedJenjangFilter, setSelectedJenjangFilter] = useState<string>('all');
+  const [filterAcademicYear, setFilterAcademicYear] = useState<string>('all');
+  const [filterSemester, setFilterSemester] = useState<string>('all');
+  const [filterKurikulum, setFilterKurikulum] = useState<string>('all');
+  const [filterJenjang, setFilterJenjang] = useState<string>('all');
+  const [filterTingkat, setFilterTingkat] = useState<string>('all');
 
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClass, setEditingClass] = useState<ClassRoom | null>(null);
 
-  // Detail Modal & Tabs ('info' | 'students' | 'teachers')
+  // Detail Modal & Tabs ('info' | 'students' | 'teachers' | 'history')
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [detailTab, setDetailTab] = useState<'info' | 'students' | 'teachers'>('info');
-  const [activeClassDetail, setActiveClassDetail] = useState<any | null>(null);
+  const [detailTab, setDetailTab] = useState<'info' | 'students' | 'teachers' | 'history'>('info');
+  const [activeClassDetail, setActiveClassDetail] = useState<ClassRoom | null>(null);
   const [subjectTeachers, setSubjectTeachers] = useState<GuruPengampuItem[]>([]);
   const [studentSearchInModal, setStudentSearchInModal] = useState('');
-
-  // Form states for class create/edit
-  const [namaKelas, setNamaKelas] = useState('');
-  const [idjenjang, setIdjenjang] = useState<number>(1);
-  const [tingkat, setTingkat] = useState(10);
-  const [jurusan, setJurusan] = useState('Umum');
-  const [waliKelasId, setWaliKelasId] = useState<string>('');
-  const [kapasitas, setKapasitas] = useState(36);
   const [selectedStudentToAdd, setSelectedStudentToAdd] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  // Student Import Modal for Kelas/Rombel (Requirement 18)
+  const [studentImportModalOpen, setStudentImportModalOpen] = useState(false);
+  const [targetClassForImport, setTargetClassForImport] = useState<number | undefined>(undefined);
+  const [targetAcademicYearForImport, setTargetAcademicYearForImport] = useState<number | undefined>(undefined);
+
+  const handleToggleClassStatus = async (classItem: ClassRoom) => {
+    try {
+      const res = await apiClient.patch(`/admin/classes/${classItem.id}/toggle-status`);
+      toast.success(res.data.message || 'Status kelas berhasil diperbarui');
+      if (activeClassDetail && activeClassDetail.id === classItem.id) {
+        setActiveClassDetail(prev => prev ? { ...prev, status_aktif: res.data.status_aktif } : null);
+      }
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mengubah status kelas');
+    }
+  };
+
+  // Form states for class create/edit (Foreign keys to Master Akademik)
+  const [formAcademicYearId, setFormAcademicYearId] = useState<number | ''>('');
+  const [formSemesterId, setFormSemesterId] = useState<number | ''>('');
+  const [formKurikulumId, setFormKurikulumId] = useState<number | ''>('');
+  const [formJenjangId, setFormJenjangId] = useState<number | ''>('');
+  const [formJurusanId, setFormJurusanId] = useState<number | ''>('');
+  const [formTingkatId, setFormTingkatId] = useState<number | ''>('');
+  const [formNamaKelas, setFormNamaKelas] = useState('');
+  const [formKapasitas, setFormKapasitas] = useState(36);
+  const [formWaliKelasId, setFormWaliKelasId] = useState<string>('');
+  const [formStatusAktif, setFormStatusAktif] = useState<'Y' | 'N'>('Y');
+  const [formKeterangan, setFormKeterangan] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [savingClass, setSavingClass] = useState(false);
 
   // Form states for Guru Pengampu
   const [showSubjectTeacherForm, setShowSubjectTeacherForm] = useState(false);
   const [editingSubjectTeacherId, setEditingSubjectTeacherId] = useState<number | null>(null);
   const [formMapelId, setFormMapelId] = useState<number | ''>('');
   const [formTeacherId, setFormTeacherId] = useState<string>('');
-  const [formTahunAjaran, setFormTahunAjaran] = useState<string>('2026/2027');
-  const [formStatus, setFormStatus] = useState<string>('aktif');
+  const [formTeacherAyId, setFormTeacherAyId] = useState<number | ''>('');
+  const [formTeacherSemId, setFormTeacherSemId] = useState<number | ''>('');
+  const [formTeacherStatus, setFormTeacherStatus] = useState<string>('aktif');
   const [savingSubjectTeacher, setSavingSubjectTeacher] = useState(false);
 
   const {
@@ -140,68 +239,169 @@ export const ClassesPage: React.FC = () => {
     setPaginationFromResponse
   } = usePaginationUrl(15);
 
+  // Load options once on mount
+  const loadOptions = async () => {
+    try {
+      const res = await apiClient.get('/admin/classes-options');
+      const data = res.data;
+      setAcademicYears(data.academic_years || []);
+      setSemesters(data.semesters || []);
+      setKurikulumList(data.kurikulum || []);
+      setJenjangList(data.jenjang || []);
+      setMajorsList(data.majors || []);
+      setTingkatList(data.tingkat_kelas || []);
+      setTeachers(data.teachers || []);
+      setSubjectsList(data.subjects || []);
+    } catch (err: any) {
+      console.error('Failed to load class options:', err);
+    }
+  };
+
   const fetchData = async (page = currentPage) => {
     setLoadingData(true);
     try {
       const params: any = { page };
       if (search) params.search = search;
-      if (selectedJenjangFilter !== 'all') params.idjenjang = selectedJenjangFilter;
+      if (filterAcademicYear !== 'all') params.academic_year_id = filterAcademicYear;
+      if (filterSemester !== 'all') params.semester_id = filterSemester;
+      if (filterKurikulum !== 'all') params.kurikulum_id = filterKurikulum;
+      if (filterJenjang !== 'all') params.idjenjang = filterJenjang;
+      if (filterTingkat !== 'all') params.idtingkat = filterTingkat;
 
-      const [classesRes, jenjangRes, teachersRes, subjectsRes] = await Promise.all([
-        apiClient.get('/admin/classes', { params }),
-        apiClient.get('/admin/jenjang', { params: { all: true } }),
-        apiClient.get('/admin/teachers', { params: { all: true } }),
-        apiClient.get('/admin/subjects', { params: { all: true } }),
-      ]);
+      const classesRes = await apiClient.get('/admin/classes', { params });
       setPaginationFromResponse(classesRes.data);
       const list = classesRes.data?.data || (Array.isArray(classesRes.data) ? classesRes.data : []);
       setClasses(list);
-      setJenjangList(jenjangRes.data?.data || (Array.isArray(jenjangRes.data) ? jenjangRes.data : []));
-      setTeachers(teachersRes.data?.data || (Array.isArray(teachersRes.data) ? teachersRes.data : []));
-      setSubjectsList(subjectsRes.data?.data || (Array.isArray(subjectsRes.data) ? subjectsRes.data : []));
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Gagal memuat data kelas.');
-      toast.error('Gagal memuat data kelas.');
+      toast.error(err.response?.data?.message || 'Gagal memuat data kelas.');
     } finally {
       setLoadingData(false);
     }
   };
 
   useEffect(() => {
-    fetchData(currentPage);
-  }, [currentPage, search, selectedJenjangFilter]);
+    loadOptions();
+  }, []);
 
+  useEffect(() => {
+    fetchData(currentPage);
+  }, [
+    currentPage, 
+    search, 
+    filterAcademicYear, 
+    filterSemester, 
+    filterKurikulum, 
+    filterJenjang, 
+    filterTingkat
+  ]);
+
+  // Dependent Semesters for Form
+  const availableSemestersForForm = semesters.filter(
+    (s) => !formAcademicYearId || Number(s.academic_year_id) === Number(formAcademicYearId)
+  );
+
+  // Filter Tingkat by Jenjang in Form
+  const availableTingkatForForm = tingkatList.filter(
+    (t) => !formJenjangId || Number(t.idjenjang) === Number(formJenjangId)
+  );
+
+  // Filter Majors by Jenjang in Form (SMA / SMK)
+  const selectedJenjangObj = jenjangList.find((j) => Number(j.id) === Number(formJenjangId));
+  const isJenjangNeedsMajor = selectedJenjangObj 
+    ? ['SMA', 'SMK', 'MA', 'MAK'].some((code) => selectedJenjangObj.kode_jenjang.toUpperCase().includes(code) || selectedJenjangObj.nama_jenjang.toUpperCase().includes(code))
+    : false;
+
+  const availableMajorsForForm = majorsList.filter(
+    (m) => !formJenjangId || !m.idjenjang || Number(m.idjenjang) === Number(formJenjangId)
+  );
+
+  // Dependent Semesters for Filter Bar
+  const availableSemestersForFilter = semesters.filter(
+    (s) => filterAcademicYear === 'all' || Number(s.academic_year_id) === Number(filterAcademicYear)
+  );
+
+  // Open Modal to Add Class
   const openAddModal = () => {
     setEditingClass(null);
-    setNamaKelas('');
-    setIdjenjang(jenjangList[0]?.id || 1);
-    setTingkat(10);
-    setJurusan('Umum');
-    setWaliKelasId('');
-    setKapasitas(36);
-    setError(null);
+    setFormError(null);
+
+    // Auto-select active academic year
+    const activeAy = academicYears.find((ay) => ay.is_active) || academicYears[0];
+    const initialAyId = activeAy ? activeAy.id : '';
+    setFormAcademicYearId(initialAyId);
+
+    // Auto-select active semester for this year
+    const activeSem = semesters.find(
+      (s) => Number(s.academic_year_id) === Number(initialAyId) && s.status_aktif === 'Y'
+    ) || semesters.find((s) => Number(s.academic_year_id) === Number(initialAyId));
+    setFormSemesterId(activeSem ? activeSem.id : '');
+
+    // Active Kurikulum
+    const activeKur = kurikulumList.find((k) => k.status_aktif === 'Y') || kurikulumList[0];
+    setFormKurikulumId(activeKur ? activeKur.id : '');
+
+    // Default Jenjang
+    const defaultJenjang = jenjangList[0];
+    const initialJenjangId = defaultJenjang ? defaultJenjang.id : '';
+    setFormJenjangId(initialJenjangId);
+
+    // Default Tingkat for this jenjang
+    const initialTingkat = tingkatList.find((t) => Number(t.idjenjang) === Number(initialJenjangId));
+    setFormTingkatId(initialTingkat ? initialTingkat.id : '');
+
+    setFormJurusanId('');
+    setFormNamaKelas('');
+    setFormKapasitas(36);
+    setFormWaliKelasId('');
+    setFormStatusAktif('Y');
+    setFormKeterangan('');
     setModalOpen(true);
   };
 
+  // Open Modal to Edit Class
   const openEditModal = (c: ClassRoom) => {
     setEditingClass(c);
-    setNamaKelas(c.nama_kelas || c.name || '');
-    setIdjenjang(c.idjenjang || c.jenjang?.id || 1);
-    setTingkat(c.tingkat || c.level || 10);
-    setJurusan(c.jurusan || 'Umum');
-    setWaliKelasId(c.wali_kelas_id || '');
-    setKapasitas(c.kapasitas || 36);
-    setError(null);
+    setFormError(null);
+
+    setFormAcademicYearId(c.academic_year_id || c.academic_year?.id || '');
+    setFormSemesterId(c.semester_id || c.semester?.id || '');
+    setFormKurikulumId(c.kurikulum_id || c.kurikulum?.id || '');
+    setFormJenjangId(c.idjenjang || c.jenjang?.id || '');
+    setFormJurusanId(c.idjurusan || c.jurusan_relation?.id || '');
+    setFormTingkatId(c.idtingkat || c.tingkat_kelas?.id || '');
+    setFormNamaKelas(c.nama_kelas || c.name || '');
+    setFormKapasitas(c.kapasitas || 36);
+    setFormWaliKelasId(c.wali_kelas_id || c.wali_kelas?.iduser_bo || '');
+    setFormStatusAktif((c.status_aktif as 'Y' | 'N') || 'Y');
+    setFormKeterangan('');
     setModalOpen(true);
   };
 
-  // Open Detail Modal with chosen tab
-  const openDetailModal = async (c: ClassRoom, initialTab: 'info' | 'students' | 'teachers' = 'info') => {
+  // Handle Academic Year change in Form -> sync Semester
+  const handleFormAcademicYearChange = (newAyId: number) => {
+    setFormAcademicYearId(newAyId);
+    const matchingSem = semesters.find(
+      (s) => Number(s.academic_year_id) === Number(newAyId) && s.status_aktif === 'Y'
+    ) || semesters.find((s) => Number(s.academic_year_id) === Number(newAyId));
+    setFormSemesterId(matchingSem ? matchingSem.id : '');
+  };
+
+  // Handle Jenjang change in Form -> sync Tingkat & Jurusan
+  const handleFormJenjangChange = (newJenjangId: number) => {
+    setFormJenjangId(newJenjangId);
+    setFormJurusanId('');
+    const matchingTingkat = tingkatList.find((t) => Number(t.idjenjang) === Number(newJenjangId));
+    setFormTingkatId(matchingTingkat ? matchingTingkat.id : '');
+  };
+
+  // Open Detail Modal
+  const openDetailModal = async (c: ClassRoom, initialTab: 'info' | 'students' | 'teachers' | 'history' = 'info') => {
     setDetailTab(initialTab);
     setDetailModalOpen(true);
     setShowSubjectTeacherForm(false);
     setEditingSubjectTeacherId(null);
     setStudentSearchInModal('');
+    setSelectedStudentToAdd('');
     try {
       const [classDetailsRes, studentsRes, subjectTeachersRes] = await Promise.all([
         apiClient.get(`/admin/classes/${c.id}`),
@@ -217,39 +417,58 @@ export const ClassesPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Save Class (Create / Update)
+  const handleSaveClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
+    if (!formNamaKelas.trim()) {
+      setFormError('Nama Rombel / Nama Kelas wajib diisi.');
+      return;
+    }
+    if (!formAcademicYearId || !formSemesterId) {
+      setFormError('Tahun Ajaran dan Semester dari Master Akademik wajib dipilih.');
+      return;
+    }
+    if (!formKurikulumId || !formJenjangId || !formTingkatId) {
+      setFormError('Kurikulum, Jenjang, dan Tingkat dari Master Akademik wajib dipilih.');
+      return;
+    }
+
+    setSavingClass(true);
+    setFormError(null);
 
     const payload = {
-      nama_kelas: namaKelas.trim(),
-      idjenjang,
-      tingkat,
-      jurusan: jurusan.trim(),
-      wali_kelas_id: waliKelasId ? waliKelasId : null,
-      kapasitas,
+      nama_kelas: formNamaKelas.trim(),
+      academic_year_id: formAcademicYearId,
+      semester_id: formSemesterId,
+      kurikulum_id: formKurikulumId,
+      idjenjang: formJenjangId,
+      idjurusan: formJurusanId ? formJurusanId : null,
+      idtingkat: formTingkatId,
+      wali_kelas_id: formWaliKelasId ? formWaliKelasId : null,
+      kapasitas: formKapasitas,
+      status_aktif: formStatusAktif,
+      keterangan: formKeterangan || null,
     };
 
     try {
       if (editingClass) {
         await apiClient.put(`/admin/classes/${editingClass.id}`, payload);
-        toast.success(`Kelas ${namaKelas} berhasil diperbarui.`);
+        toast.success(`Kelas ${formNamaKelas} berhasil diperbarui.`);
       } else {
         await apiClient.post('/admin/classes', payload);
-        toast.success(`Kelas ${namaKelas} berhasil ditambahkan.`);
+        toast.success(`Kelas ${formNamaKelas} berhasil ditambahkan.`);
       }
       setModalOpen(false);
       fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Gagal menyimpan data kelas.');
+      setFormError(err.response?.data?.message || 'Gagal menyimpan data kelas.');
     } finally {
-      setLoading(false);
+      setSavingClass(false);
     }
   };
 
   const handleDelete = async (c: ClassRoom) => {
-    if (!window.confirm(`Hapus kelas ${c.nama_kelas || c.name}?`)) return;
+    if (!window.confirm(`Hapus kelas ${c.nama_kelas || c.name}? Seluruh riwayat penugasan guru pengampu dan penempatan siswa akan disesuaikan.`)) return;
 
     try {
       await apiClient.delete(`/admin/classes/${c.id}`);
@@ -260,16 +479,15 @@ export const ClassesPage: React.FC = () => {
     }
   };
 
-  // Student management in class
+  // Student management in Class
   const handleAddStudentToClass = async () => {
     if (!activeClassDetail || !selectedStudentToAdd) return;
     try {
       await apiClient.post(`/admin/classes/${activeClassDetail.id}/students`, {
         iduser: selectedStudentToAdd,
       });
-      toast.success('Siswa berhasil ditambahkan ke kelas.');
+      toast.success('Siswa berhasil dimasukkan ke kelas.');
       setSelectedStudentToAdd('');
-      // Refresh modal
       const res = await apiClient.get(`/admin/classes/${activeClassDetail.id}`);
       setActiveClassDetail(res.data);
       fetchData();
@@ -297,8 +515,9 @@ export const ClassesPage: React.FC = () => {
     setEditingSubjectTeacherId(null);
     setFormMapelId(subjectsList[0]?.id || '');
     setFormTeacherId(teachers[0]?.id || '');
-    setFormTahunAjaran('2026/2027');
-    setFormStatus('aktif');
+    setFormTeacherAyId(activeClassDetail?.academic_year_id || academicYears[0]?.id || '');
+    setFormTeacherSemId(activeClassDetail?.semester_id || semesters[0]?.id || '');
+    setFormTeacherStatus('aktif');
     setShowSubjectTeacherForm(true);
   };
 
@@ -306,8 +525,9 @@ export const ClassesPage: React.FC = () => {
     setEditingSubjectTeacherId(item.id);
     setFormMapelId(item.idmapel);
     setFormTeacherId(item.iduser_bo);
-    setFormTahunAjaran(item.tahun_ajaran || '2026/2027');
-    setFormStatus(item.status || 'aktif');
+    setFormTeacherAyId(item.academic_year_id || activeClassDetail?.academic_year_id || '');
+    setFormTeacherSemId(item.semester_id || activeClassDetail?.semester_id || '');
+    setFormTeacherStatus(item.status || 'aktif');
     setShowSubjectTeacherForm(true);
   };
 
@@ -323,8 +543,9 @@ export const ClassesPage: React.FC = () => {
       const payload = {
         idmapel: formMapelId,
         iduser_bo: formTeacherId,
-        tahun_ajaran: formTahunAjaran || '2026/2027',
-        status: formStatus || 'aktif',
+        academic_year_id: formTeacherAyId || activeClassDetail.academic_year_id,
+        semester_id: formTeacherSemId || activeClassDetail.semester_id,
+        status: formTeacherStatus || 'aktif',
       };
 
       if (editingSubjectTeacherId) {
@@ -340,8 +561,9 @@ export const ClassesPage: React.FC = () => {
       setSubjectTeachers(res.data?.data || []);
       setShowSubjectTeacherForm(false);
       setEditingSubjectTeacherId(null);
+      fetchData();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Gagal menyimpan Guru Pengampu.');
+      toast.error(err.response?.data?.message || 'Gagal menugaskan Guru Pengampu.');
     } finally {
       setSavingSubjectTeacher(false);
     }
@@ -358,12 +580,22 @@ export const ClassesPage: React.FC = () => {
       toast.success('Guru Pengampu berhasil dihapus dari kelas.');
       const res = await apiClient.get(`/admin/classes/${activeClassDetail.id}/subject-teachers`);
       setSubjectTeachers(res.data?.data || []);
+      fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Gagal menghapus Guru Pengampu.');
     }
   };
 
-  const filtered = classes;
+  // Reset all filters
+  const resetFilters = () => {
+    setSearch('');
+    setFilterAcademicYear('all');
+    setFilterSemester('all');
+    setFilterKurikulum('all');
+    setFilterJenjang('all');
+    setFilterTingkat('all');
+    resetPage();
+  };
 
   return (
     <div className="space-y-6">
@@ -372,32 +604,53 @@ export const ClassesPage: React.FC = () => {
         <div className="absolute top-0 right-0 -mr-8 -mt-8 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
         <div className="flex items-center gap-4 relative">
           <div className="p-3.5 bg-indigo-600/10 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-500/20 shadow-md">
-            <GraduationCap className="h-7 w-7" />
+            <School className="h-7 w-7" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              Master Kelas & Rombel
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-gray-400 font-medium mt-0.5">
-              Manajemen rombel, alokasi wali kelas, penempatan guru mata pelajaran, dan pembagian siswa
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                Kelola Kelas & Rombel
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-300/60 dark:border-indigo-500/30">
+                Pusat Relasi Akademik
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-gray-400 font-medium mt-1">
+              Hub penghubung Tahun Ajaran, Semester, Kurikulum, Jenjang, Jurusan, Tingkat, Wali Kelas, Guru Pengampu, dan Siswa
             </p>
           </div>
         </div>
 
-        <button
-          id="btn-add-class"
-          onClick={openAddModal}
-          className="flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/30 transition duration-150 shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Tambah Kelas</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            id="btn-upload-students-class"
+            onClick={() => {
+              setTargetClassForImport(undefined);
+              setTargetAcademicYearForImport(undefined);
+              setStudentImportModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-95 text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 font-bold text-xs sm:text-sm rounded-2xl shadow-sm transition duration-150 shrink-0"
+          >
+            <Upload className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            <span>Upload Siswa ke Rombel</span>
+          </button>
+
+          <button
+            id="btn-add-class"
+            onClick={openAddModal}
+            className="flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/30 transition duration-150 shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Tambah Kelas & Rombel</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 glass-panel rounded-2xl border border-slate-200/80 dark:border-white/5">
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto flex-1">
-          <div className="relative w-full sm:w-72">
+      <div className="p-4 glass-panel rounded-2xl border border-slate-200/80 dark:border-white/5 space-y-3">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          {/* Search Box */}
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               id="search-classes"
@@ -407,20 +660,108 @@ export const ClassesPage: React.FC = () => {
                 setSearch(e.target.value);
                 resetPage();
               }}
-              placeholder="Cari nama kelas atau jurusan..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              placeholder="Cari nama rombel / kelas atau jurusan..."
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter className="h-4 w-4 text-slate-400 shrink-0" />
+          <div className="flex items-center gap-2 self-end lg:self-center">
+            {(filterAcademicYear !== 'all' || filterSemester !== 'all' || filterKurikulum !== 'all' || filterJenjang !== 'all' || filterTingkat !== 'all' || search) && (
+              <button
+                onClick={resetFilters}
+                className="px-3 py-2 text-xs font-bold text-slate-600 dark:text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition flex items-center gap-1.5"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>Reset Filter</span>
+              </button>
+            )}
+            <div className="text-xs text-slate-500 font-bold px-3 py-2 bg-slate-100 dark:bg-white/5 rounded-xl">
+              Total: {paginationMeta.total} Kelas
+            </div>
+          </div>
+        </div>
+
+        {/* Dropdown Filters (Academic References) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-slate-100 dark:border-white/5">
+          {/* Filter Tahun Ajaran */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              Tahun Ajaran
+            </label>
             <select
-              value={selectedJenjangFilter}
+              value={filterAcademicYear}
               onChange={(e) => {
-                setSelectedJenjangFilter(e.target.value);
+                setFilterAcademicYear(e.target.value);
+                setFilterSemester('all');
                 resetPage();
               }}
-              className="w-full sm:w-48 px-3 py-2 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            >
+              <option value="all">Semua Tahun Ajaran</option>
+              {academicYears.map((ay) => (
+                <option key={ay.id} value={ay.id}>
+                  {ay.name} {ay.is_active ? '★ Aktif' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter Semester */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              Semester
+            </label>
+            <select
+              value={filterSemester}
+              onChange={(e) => {
+                setFilterSemester(e.target.value);
+                resetPage();
+              }}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            >
+              <option value="all">Semua Semester</option>
+              {availableSemestersForFilter.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nama_semester}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter Kurikulum */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              Kurikulum
+            </label>
+            <select
+              value={filterKurikulum}
+              onChange={(e) => {
+                setFilterKurikulum(e.target.value);
+                resetPage();
+              }}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            >
+              <option value="all">Semua Kurikulum</option>
+              {kurikulumList.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.nama_kurikulum}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter Jenjang */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              Jenjang
+            </label>
+            <select
+              value={filterJenjang}
+              onChange={(e) => {
+                setFilterJenjang(e.target.value);
+                resetPage();
+              }}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             >
               <option value="all">Semua Jenjang</option>
               {jenjangList.map((j) => (
@@ -430,10 +771,28 @@ export const ClassesPage: React.FC = () => {
               ))}
             </select>
           </div>
-        </div>
 
-        <div className="text-xs text-slate-500 font-semibold self-end sm:self-center">
-          Total: {paginationMeta.total} Kelas
+          {/* Filter Tingkat */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              Tingkat Kelas
+            </label>
+            <select
+              value={filterTingkat}
+              onChange={(e) => {
+                setFilterTingkat(e.target.value);
+                resetPage();
+              }}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            >
+              <option value="all">Semua Tingkat</option>
+              {tingkatList.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nama_tingkat}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -443,13 +802,16 @@ export const ClassesPage: React.FC = () => {
           <div className="p-6">
             <TableSkeleton rows={5} />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : classes.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <div className="p-4 bg-slate-100 dark:bg-white/5 rounded-full inline-block text-slate-400">
-              <GraduationCap className="h-8 w-8" />
+              <School className="h-8 w-8" />
             </div>
             <p className="text-sm font-semibold text-slate-700 dark:text-gray-300">
-              Belum ada kelas yang sesuai.
+              Belum ada kelas & rombel yang sesuai kriteria filter.
+            </p>
+            <p className="text-xs text-slate-500 dark:text-gray-400 max-w-sm mx-auto">
+              Silakan tambahkan kelas baru atau sesuaikan filter pencarian di atas.
             </p>
           </div>
         ) : (
@@ -457,71 +819,159 @@ export const ClassesPage: React.FC = () => {
             <table className="w-full text-left border-collapse text-xs sm:text-sm">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-white/5 bg-slate-50/60 dark:bg-white/[0.02] text-slate-500 dark:text-gray-400 font-bold uppercase tracking-wider text-[11px]">
-                  <th className="py-4 px-5">Nama Kelas</th>
-                  <th className="py-4 px-5">Jenjang</th>
-                  <th className="py-4 px-5">Tingkat</th>
-                  <th className="py-4 px-5">Jurusan / Konsentrasi</th>
-                  <th className="py-4 px-5">Wali Kelas</th>
-                  <th className="py-4 px-5">Siswa Terdaftar</th>
+                  <th className="py-4 px-5">Nama Rombel / Kelas</th>
+                  <th className="py-4 px-4">Tahun Ajaran & Semester</th>
+                  <th className="py-4 px-4">Kurikulum</th>
+                  <th className="py-4 px-4">Jenjang & Tingkat</th>
+                  <th className="py-4 px-4">Jurusan</th>
+                  <th className="py-4 px-4">Wali Kelas</th>
+                  <th className="py-4 px-4 text-center">Guru Pengampu</th>
+                  <th className="py-4 px-4 text-center">Siswa</th>
+                  <th className="py-4 px-3 text-center">Status</th>
                   <th className="py-4 px-5 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                {filtered.map((c) => (
+                {classes.map((c) => (
                   <tr 
                     key={c.id}
                     className="hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition duration-150 cursor-pointer"
                     onClick={() => openDetailModal(c, 'info')}
                   >
+                    {/* Nama Rombel */}
                     <td className="py-4 px-5 font-bold text-slate-900 dark:text-white">
                       <div className="flex items-center gap-2">
-                        <span className="hover:text-indigo-600 transition">{c.nama_kelas || c.name}</span>
+                        <span className="hover:text-indigo-600 transition font-black text-sm">
+                          {c.nama_kelas || c.name}
+                        </span>
                       </div>
                     </td>
-                    <td className="py-4 px-5">
-                      <span className="px-2.5 py-1 rounded-lg font-bold text-xs bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-500/20">
-                        {c.jenjang?.kode_jenjang || 'SD/SMP/SMA'}
+
+                    {/* Tahun Ajaran & Semester */}
+                    <td className="py-4 px-4">
+                      <div className="font-semibold text-slate-800 dark:text-gray-200">
+                        {c.academic_year?.name || '-'}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {c.semester?.nama_semester || '-'}
+                      </div>
+                    </td>
+
+                    {/* Kurikulum */}
+                    <td className="py-4 px-4">
+                      <span className="px-2.5 py-1 rounded-lg font-bold text-xs bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-gray-300 border border-slate-200/60 dark:border-white/5">
+                        {c.kurikulum?.nama_kurikulum || 'Kurikulum Merdeka'}
                       </span>
                     </td>
-                    <td className="py-4 px-5 font-semibold text-slate-600 dark:text-gray-300">
-                      Tingkat {c.tingkat || c.level}
-                    </td>
-                    <td className="py-4 px-5 text-slate-600 dark:text-gray-400 font-medium">
-                      {c.jurusan || 'Umum'}
-                    </td>
-                    <td className="py-4 px-5 font-medium text-slate-700 dark:text-gray-300">
-                      {c.wali_kelas?.nama ? (
-                        <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-                          {c.wali_kelas.nama}
+
+                    {/* Jenjang & Tingkat */}
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded-md font-black text-[10px] bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-500/20">
+                          {c.jenjang?.kode_jenjang || 'SD/SMP/SMA'}
                         </span>
+                        <span className="font-semibold text-slate-700 dark:text-gray-300 text-xs">
+                          {c.tingkat_kelas?.nama_tingkat || `Tingkat ${c.tingkat}`}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Jurusan */}
+                    <td className="py-4 px-4 text-slate-600 dark:text-gray-400 font-medium">
+                      {c.jurusan_relation?.name || c.jurusan || '-'}
+                    </td>
+
+                    {/* Wali Kelas */}
+                    <td className="py-4 px-4 font-medium text-slate-700 dark:text-gray-300">
+                      {c.wali_kelas?.nama || (c.wali_kelas as any)?.name ? (
+                        <div>
+                          <span className="font-semibold text-indigo-600 dark:text-indigo-400 block">
+                            {c.wali_kelas?.nama || (c.wali_kelas as any)?.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            {c.wali_kelas?.login_email || (c.wali_kelas as any)?.email || ''}
+                          </span>
+                        </div>
                       ) : (
-                        <span className="text-slate-400 italic">Belum ditentukan</span>
+                        <span className="text-slate-400 italic text-xs">Belum ditentukan</span>
                       )}
                     </td>
-                    <td className="py-4 px-5" onClick={(e) => e.stopPropagation()}>
+
+                    {/* Guru Pengampu */}
+                    <td className="py-4 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => openDetailModal(c, 'students')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-slate-700 dark:text-gray-300 hover:text-indigo-600 font-bold text-xs transition border border-slate-200/60 dark:border-white/5"
+                        onClick={() => openDetailModal(c, 'teachers')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-xs transition border border-emerald-200/60 dark:border-emerald-500/20 shadow-xs"
+                        title="Klik untuk melihat / mengelola Guru Pengampu di kelas ini"
                       >
-                        <Users className="h-3.5 w-3.5" />
-                        <span>{c.siswa_count || 0} / {c.kapasitas || 36} Siswa</span>
+                        <BookOpen className="h-3.5 w-3.5" />
+                        <span>{c.guru_mata_pelajaran_count ?? 0} Guru</span>
                       </button>
                     </td>
+
+                    {/* Siswa */}
+                    <td className="py-4 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => openDetailModal(c, 'students')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-slate-700 dark:text-gray-300 hover:text-indigo-600 font-bold text-xs transition border border-slate-200/60 dark:border-white/5"
+                        title="Klik untuk melihat / mengelola Siswa di kelas ini"
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                        <span>{c.siswa_count ?? 0} / {c.kapasitas || 36}</span>
+                      </button>
+                    </td>
+
+                    {/* Status */}
+                    <td className="py-4 px-3 text-center">
+                      {c.status_aktif === 'Y' || !c.status_aktif ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
+                          Aktif
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300">
+                          Nonaktif
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Aksi */}
                     <td className="py-4 px-5 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
                         <button
+                          onClick={() => {
+                            setTargetClassForImport(c.id);
+                            setTargetAcademicYearForImport(c.academic_year_id);
+                            setStudentImportModalOpen(true);
+                          }}
+                          title="Upload Siswa ke Kelas Ini"
+                          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition"
+                        >
+                          <Upload className="h-4 w-4" />
+                        </button>
+                        <button
                           onClick={() => openDetailModal(c, 'teachers')}
-                          title="Guru Pengampu Mata Pelajaran"
+                          title="Kelola Guru Pengampu Mata Pelajaran"
                           className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl transition"
                         >
                           <BookOpen className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => openDetailModal(c, 'info')}
-                          title="Detail Kelas"
+                          title="Detail Lengkap Kelas"
                           className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition"
                         >
                           <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggleClassStatus(c)}
+                          title={c.status_aktif === 'Y' ? 'Nonaktifkan Kelas' : 'Aktifkan Kelas'}
+                          className={`p-2 rounded-xl transition ${
+                            c.status_aktif === 'Y' 
+                              ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40' 
+                              : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                          }`}
+                        >
+                          <Power className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => openEditModal(c)}
@@ -572,14 +1022,23 @@ export const ClassesPage: React.FC = () => {
             {/* Header */}
             <div className="flex items-center gap-3 mb-4 shrink-0">
               <div className="p-3 bg-indigo-600/10 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-500/20">
-                <GraduationCap className="h-6 w-6" />
+                <School className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                  Detail Kelas: {activeClassDetail.nama_kelas || activeClassDetail.name}
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-gray-400">
-                  Jenjang {activeClassDetail.jenjang?.kode_jenjang || 'SD/SMP/SMA'} • Tingkat {activeClassDetail.tingkat} • {activeClassDetail.jurusan || 'Umum'}
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                    Detail Rombel: {activeClassDetail.nama_kelas || activeClassDetail.name}
+                  </h3>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    activeClassDetail.status_aktif === 'Y' 
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' 
+                      : 'bg-rose-100 text-rose-700'
+                  }`}>
+                    {activeClassDetail.status_aktif === 'Y' ? 'Aktif' : 'Nonaktif'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
+                  {activeClassDetail.academic_year?.name || '-'} • {activeClassDetail.semester?.nama_semester || '-'} • {activeClassDetail.kurikulum?.nama_kurikulum || 'Kurikulum Merdeka'}
                 </p>
               </div>
             </div>
@@ -596,7 +1055,7 @@ export const ClassesPage: React.FC = () => {
                 }`}
               >
                 <School className="h-4 w-4" />
-                <span>Informasi</span>
+                <span>Informasi Master</span>
               </button>
 
               <button
@@ -624,26 +1083,62 @@ export const ClassesPage: React.FC = () => {
                 <BookOpen className="h-4 w-4" />
                 <span>Guru Pengampu ({subjectTeachers.length})</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setDetailTab('history')}
+                className={`flex-1 py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition ${
+                  detailTab === 'history'
+                    ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Clock className="h-4 w-4" />
+                <span>Riwayat & Status</span>
+              </button>
             </div>
 
-            {/* Modal Body: TAB 1: INFORMASI */}
+            {/* TAB 1: INFORMASI */}
             {detailTab === 'info' && (
               <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                {/* Summary Cards */}
+                {/* Academic Master Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Nama Kelas</span>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Tahun Ajaran</span>
                     <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
-                      {activeClassDetail.nama_kelas || activeClassDetail.name}
+                      {activeClassDetail.academic_year?.name || '-'}
                     </span>
                   </div>
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Semester</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
+                      {activeClassDetail.semester?.nama_semester || '-'}
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Kurikulum</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
+                      {activeClassDetail.kurikulum?.nama_kurikulum || 'Kurikulum Merdeka'}
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">Jenjang & Tingkat</span>
                     <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
-                      {activeClassDetail.jenjang?.kode_jenjang} • Tingkat {activeClassDetail.tingkat}
+                      {activeClassDetail.jenjang?.nama_jenjang} • {activeClassDetail.tingkat_kelas?.nama_tingkat || `Tingkat ${activeClassDetail.tingkat}`}
                     </span>
                   </div>
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Jurusan / Konsentrasi</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
+                      {activeClassDetail.jurusan_relation?.name || activeClassDetail.jurusan || 'Umum'}
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5">
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">Kapasitas Rombel</span>
                     <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
                       {activeClassDetail.siswa?.length || 0} / {activeClassDetail.kapasitas || 36} Siswa
@@ -659,14 +1154,14 @@ export const ClassesPage: React.FC = () => {
                         Wali Kelas
                       </span>
                       <span className="text-[11px] text-indigo-700 dark:text-indigo-300 font-bold">
-                        (1 Kelas = 1 Wali Kelas)
+                        (1 Rombel = 1 Wali Kelas)
                       </span>
                     </div>
                     <p className="text-base font-black text-slate-900 dark:text-white">
-                      {activeClassDetail.wali_kelas?.nama || 'Belum ditentukan'}
+                      {activeClassDetail.wali_kelas?.nama || (activeClassDetail.wali_kelas as any)?.name || 'Belum ditentukan'}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-gray-400">
-                      {activeClassDetail.wali_kelas?.login_email || 'Wali kelas dapat diatur melalui form edit kelas.'}
+                      {activeClassDetail.wali_kelas?.login_email || (activeClassDetail.wali_kelas as any)?.email || 'Wali kelas dapat diatur melalui form edit kelas.'}
                     </p>
                   </div>
                   <button
@@ -680,22 +1175,51 @@ export const ClassesPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Explanation Alert */}
+                {/* Guru Pengampu Summary Card */}
+                <div className="p-5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white font-black text-[10px] uppercase tracking-wide">
+                        Guru Pengampu
+                      </span>
+                      <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold">
+                        ({subjectTeachers.length} Guru Pengampu Ditugaskan)
+                      </span>
+                    </div>
+                    <p className="text-sm font-bold text-slate-800 dark:text-gray-200 mt-1">
+                      {subjectTeachers.length > 0 
+                        ? subjectTeachers.map(st => `${st.guru?.nama || st.iduser_bo} (${st.mata_pelajaran?.nama_mapel || 'Mapel'})`).join(', ')
+                        : 'Belum ada guru pengampu yang ditugaskan'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-gray-400 mt-0.5">
+                      Guru pengampu mengajar mata pelajaran tertentu di kelas ini dan terhubung ke CBT & Penilaian.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setDetailTab('teachers')}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm shrink-0 flex items-center gap-1.5"
+                  >
+                    <BookOpen className="h-3.5 w-3.5" />
+                    <span>Kelola Guru Pengampu</span>
+                  </button>
+                </div>
+
+                {/* Relational Hub Info Alert */}
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5 flex items-start gap-3 text-xs text-slate-600 dark:text-gray-300">
                   <BookOpen className="h-5 w-5 text-indigo-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-bold text-slate-800 dark:text-gray-200">
-                      Penugasan Guru Mata Pelajaran Berbeda dengan Wali Kelas
+                      Pusat Relasi CBT & Akademik
                     </p>
-                    <p className="mt-0.5 text-slate-500 dark:text-gray-400 text-[11px]">
-                      Satu kelas memiliki 1 Wali Kelas, tetapi dapat memiliki banyak Guru Mata Pelajaran pengampu (Matematika, Bahasa Indonesia, Fisika, dll.). Kelola guru pengajar pada tab <strong>Guru Pengampu</strong>.
+                    <p className="mt-0.5 text-slate-500 dark:text-gray-400 text-[11px] leading-relaxed">
+                      Seluruh modul evaluasi pembelajaran (Paket Soal, Jadwal Ujian, Monitoring, Rekap Nilai, Analisis Nilai, dan Rapor) menggunakan data rombel ini. Saat guru memilih kelas yang diampu, sistem secara otomatis menghubungkan Tahun Ajaran, Semester, Kurikulum, Guru Pengampu, dan standar KKM mata pelajaran.
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Modal Body: TAB 2: DAFTAR SISWA */}
+            {/* TAB 2: DAFTAR SISWA */}
             {detailTab === 'students' && (
               <div className="flex-1 overflow-hidden flex flex-col space-y-3">
                 {/* Add Student Bar */}
@@ -779,14 +1303,13 @@ export const ClassesPage: React.FC = () => {
               </div>
             )}
 
-            {/* Modal Body: TAB 3: GURU PENGAMPU MATA PELAJARAN */}
+            {/* TAB 3: GURU PENGAMPU MATA PELAJARAN */}
             {detailTab === 'teachers' && (
               <div className="flex-1 overflow-hidden flex flex-col space-y-3">
-                
                 {/* Header Action: Tambah Guru Pengampu */}
                 <div className="flex items-center justify-between shrink-0">
                   <div className="text-xs text-slate-500 font-medium">
-                    1 Kelas memiliki banyak Guru Pengampu Mata Pelajaran
+                    Setiap rombel dapat memiliki banyak Guru Pengampu Mata Pelajaran dari Master Akademik
                   </div>
                   {!showSubjectTeacherForm && (
                     <button
@@ -795,7 +1318,7 @@ export const ClassesPage: React.FC = () => {
                       className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
                     >
                       <Plus className="h-4 w-4" />
-                      <span>Tambah Guru Pengampu</span>
+                      <span>Tugaskan Guru Pengampu</span>
                     </button>
                   )}
                 </div>
@@ -805,7 +1328,7 @@ export const ClassesPage: React.FC = () => {
                   <form onSubmit={handleSaveSubjectTeacher} className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-500/20 space-y-3 shrink-0 animate-scale-up">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                        {editingSubjectTeacherId ? 'Ubah / Ganti Guru Pengampu' : 'Tugaskan Guru Mata Pelajaran Baru'}
+                        {editingSubjectTeacherId ? 'Ubah / Ganti Guru Pengampu' : 'Tugaskan Guru Pengampu Mata Pelajaran Baru'}
                       </h4>
                       <button
                         type="button"
@@ -817,9 +1340,10 @@ export const ClassesPage: React.FC = () => {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Mata Pelajaran (Strictly Master Akademik) */}
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-gray-300 uppercase mb-1">
-                          Mata Pelajaran*
+                          Mata Pelajaran (Master Akademik)*
                         </label>
                         <select
                           required
@@ -830,12 +1354,13 @@ export const ClassesPage: React.FC = () => {
                           <option value="">-- Pilih Mata Pelajaran --</option>
                           {subjectsList.map((m) => (
                             <option key={m.id} value={m.id}>
-                              {m.nama_mapel || m.name} ({m.kode_mapel || m.code})
+                              {m.nama_mapel} ({m.kode_mapel}) • KKM: {m.kkm ?? 75}
                             </option>
                           ))}
                         </select>
                       </div>
 
+                      {/* Guru Pengampu */}
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-gray-300 uppercase mb-1">
                           Guru Pengampu*
@@ -849,32 +1374,38 @@ export const ClassesPage: React.FC = () => {
                           <option value="">-- Pilih Guru Pengajar --</option>
                           {teachers.map((t) => (
                             <option key={t.id} value={t.id}>
-                              {t.name}
+                              {t.name} {t.nip ? `(${t.nip})` : ''} {t.email ? `• ${t.email}` : ''}
                             </option>
                           ))}
                         </select>
                       </div>
 
+                      {/* Tahun Ajaran */}
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-gray-300 uppercase mb-1">
                           Tahun Ajaran
                         </label>
-                        <input
-                          type="text"
-                          value={formTahunAjaran}
-                          onChange={(e) => setFormTahunAjaran(e.target.value)}
-                          placeholder="2026/2027"
+                        <select
+                          value={formTeacherAyId}
+                          onChange={(e) => setFormTeacherAyId(parseInt(e.target.value) || '')}
                           className="w-full px-3 py-2 bg-white dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white"
-                        />
+                        >
+                          {academicYears.map((ay) => (
+                            <option key={ay.id} value={ay.id}>
+                              {ay.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
 
+                      {/* Status */}
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-gray-300 uppercase mb-1">
-                          Status
+                          Status Pengampu
                         </label>
                         <select
-                          value={formStatus}
-                          onChange={(e) => setFormStatus(e.target.value)}
+                          value={formTeacherStatus}
+                          onChange={(e) => setFormTeacherStatus(e.target.value)}
                           className="w-full px-3 py-2 bg-white dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white"
                         >
                           <option value="aktif">Aktif</option>
@@ -908,7 +1439,7 @@ export const ClassesPage: React.FC = () => {
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-50 dark:bg-white/[0.03] sticky top-0 border-b border-slate-200 dark:border-white/10 text-slate-600 dark:text-gray-400 font-bold uppercase text-[10px]">
                       <tr>
-                        <th className="py-2.5 px-4">Mata Pelajaran</th>
+                        <th className="py-2.5 px-4">Mata Pelajaran & KKM</th>
                         <th className="py-2.5 px-4">Guru Pengampu</th>
                         <th className="py-2.5 px-3">Tahun Ajaran</th>
                         <th className="py-2.5 px-3 text-center">Status</th>
@@ -919,14 +1450,19 @@ export const ClassesPage: React.FC = () => {
                       {subjectTeachers.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="py-8 text-center text-slate-400 italic">
-                            Belum ada guru pengampu mata pelajaran yang ditugaskan di kelas ini.
+                            Belum ada guru pengampu mata pelajaran yang ditugaskan di rombel ini.
                           </td>
                         </tr>
                       ) : (
                         subjectTeachers.map((st) => (
                           <tr key={st.id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
                             <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">
-                              {st.mata_pelajaran?.nama_mapel || `Mapel #${st.idmapel}`}
+                              <div className="flex items-center gap-2">
+                                <span>{st.mata_pelajaran?.nama_mapel || `Mapel #${st.idmapel}`}</span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold">
+                                  KKM: {st.mata_pelajaran?.kkm ?? 75}
+                                </span>
+                              </div>
                               <span className="block text-[10px] text-slate-400 font-normal">
                                 Kode: {st.mata_pelajaran?.kode_mapel || '-'}
                               </span>
@@ -981,24 +1517,108 @@ export const ClassesPage: React.FC = () => {
               </div>
             )}
 
-            {/* Modal Footer */}
-            <div className="pt-4 mt-3 border-t border-slate-100 dark:border-white/5 flex justify-end shrink-0">
-              <button
-                onClick={() => setDetailModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition"
-              >
-                Tutup
-              </button>
+            {/* TAB 4: RIWAYAT & STATUS (Requirement 2) */}
+            {detailTab === 'history' && (
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 space-y-3">
+                  <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-indigo-500" />
+                    <span>Informasi Status & Siklus Hidup Rombel</span>
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Status Operasional</span>
+                      <span className={`inline-block mt-1 font-bold px-2.5 py-0.5 rounded-full text-xs ${
+                        activeClassDetail.status_aktif === 'Y' 
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' 
+                          : 'bg-rose-100 text-rose-700'
+                      }`}>
+                        {activeClassDetail.status_aktif === 'Y' ? 'Aktif (Dapat digunakan dalam ujian & KBM)' : 'Nonaktif'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Kapasitas Terisi</span>
+                      <span className="font-black text-slate-800 dark:text-slate-200 mt-1 block">
+                        {activeClassDetail.siswa?.length || 0} dari {activeClassDetail.kapasitas || 36} Siswa ({Math.round(((activeClassDetail.siswa?.length || 0) / (activeClassDetail.kapasitas || 36)) * 100)}%)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/50 dark:border-indigo-500/10 space-y-2">
+                  <h4 className="font-bold text-indigo-900 dark:text-indigo-300">Catatan Perubahan & Relasi</h4>
+                  <p className="text-slate-600 dark:text-gray-400 leading-relaxed">
+                    Setiap pembaruan kelas, pergantian wali kelas, atau perubahan alokasi guru pengampu tersimpan otomatis dan diawasi oleh Audit Trail sistem.
+                  </p>
+                  <div className="pt-2 flex items-center gap-2">
+                    <span className="text-slate-400">ID Referensi Kelas:</span>
+                    <span className="font-mono bg-white dark:bg-black/30 px-2 py-0.5 rounded border border-slate-200 dark:border-white/10 font-bold">{activeClassDetail.id}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Footer with Actions (Requirement 2) */}
+            <div className="pt-4 mt-3 border-t border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleToggleClassStatus(activeClassDetail)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+                    activeClassDetail.status_aktif === 'Y'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 border border-rose-200 dark:border-rose-500/20'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-500/20'
+                  }`}
+                >
+                  <Power className="h-3.5 w-3.5" />
+                  <span>{activeClassDetail.status_aktif === 'Y' ? 'Nonaktifkan Kelas' : 'Aktifkan Kelas'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTargetClassForImport(activeClassDetail.id);
+                    setTargetAcademicYearForImport(activeClassDetail.academic_year_id);
+                    setStudentImportModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-500/20 text-xs font-bold transition shadow-xs"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  <span>Upload Siswa ke Kelas Ini</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailModalOpen(false);
+                    openEditModal(activeClassDetail);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                  <span>Edit Data Kelas</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDetailModalOpen(false)}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
 
           </div>
         </div>
       )}
 
-      {/* Add / Edit Class Modal */}
+      {/* ================= ADD / EDIT CLASS MODAL ================= */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-lg glass-panel rounded-3xl p-6 sm:p-7 border border-slate-200 dark:border-white/10 shadow-2xl relative animate-scale-up">
+          <div className="w-full max-w-xl glass-panel rounded-3xl p-6 sm:p-7 border border-slate-200 dark:border-white/10 shadow-2xl relative animate-scale-up max-h-[92vh] flex flex-col">
             <button
               onClick={() => setModalOpen(false)}
               className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl transition"
@@ -1006,54 +1626,100 @@ export const ClassesPage: React.FC = () => {
               <X className="h-5 w-5" />
             </button>
 
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4 shrink-0">
               <div className="p-3 bg-indigo-600/10 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-500/20">
-                <GraduationCap className="h-6 w-6" />
+                <School className="h-6 w-6" />
               </div>
               <div>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                  {editingClass ? 'Ubah Data Kelas' : 'Tambah Kelas Baru'}
+                  {editingClass ? 'Ubah Data Kelas & Rombel' : 'Tambah Kelas & Rombel Baru'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-gray-400">
-                  Tentukan jenjang pendidikan, tingkat kelas, dan wali kelas
+                  Seluruh referensi akademik bersumber langsung dari Master Akademik
                 </p>
               </div>
             </div>
 
-            {error && (
-              <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 rounded-2xl text-xs font-semibold">
-                {error}
+            {formError && (
+              <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 rounded-2xl text-xs font-semibold shrink-0">
+                {formError}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                  Nama Kelas (Format Teks Bebas)
-                </label>
-                <p className="text-[11px] text-slate-500 dark:text-gray-400 mb-2">
-                  Dapat diisi nama kustom untuk sekolah swasta/internasional (Contoh: "X Cambridge A", "7 Al-Farabi", "Toddler Bunga").
-                </p>
-                <input
-                  type="text"
-                  required
-                  value={namaKelas}
-                  onChange={(e) => setNamaKelas(e.target.value)}
-                  placeholder="Contoh: 10 Cambridge Science, 7 Al-Farabi, X MIPA 1"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleSaveClass} className="space-y-4 overflow-y-auto flex-1 pr-1">
+              {/* Row 1: Tahun Ajaran & Semester */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                    Jenjang Pendidikan
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Tahun Ajaran*
                   </label>
                   <select
-                    value={idjenjang}
-                    onChange={(e) => setIdjenjang(parseInt(e.target.value))}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                    required
+                    value={formAcademicYearId}
+                    onChange={(e) => handleFormAcademicYearChange(parseInt(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
                   >
+                    <option value="">-- Pilih Tahun Ajaran --</option>
+                    {academicYears.map((ay) => (
+                      <option key={ay.id} value={ay.id}>
+                        {ay.name} {ay.is_active ? '★ (Aktif)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Semester*
+                  </label>
+                  <select
+                    required
+                    value={formSemesterId}
+                    onChange={(e) => setFormSemesterId(parseInt(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="">-- Pilih Semester --</option>
+                    {availableSemestersForForm.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nama_semester} ({s.kode_semester.toUpperCase()}) {s.status_aktif === 'Y' ? '★ (Aktif)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 2: Kurikulum & Jenjang */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Kurikulum*
+                  </label>
+                  <select
+                    required
+                    value={formKurikulumId}
+                    onChange={(e) => setFormKurikulumId(parseInt(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="">-- Pilih Kurikulum --</option>
+                    {kurikulumList.map((k) => (
+                      <option key={k.id} value={k.id}>
+                        {k.nama_kurikulum} ({k.kode_kurikulum})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Jenjang Pendidikan*
+                  </label>
+                  <select
+                    required
+                    value={formJenjangId}
+                    onChange={(e) => handleFormJenjangChange(parseInt(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="">-- Pilih Jenjang --</option>
                     {jenjangList.map((j) => (
                       <option key={j.id} value={j.id}>
                         {j.kode_jenjang} - {j.nama_jenjang}
@@ -1061,71 +1727,116 @@ export const ClassesPage: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Row 3: Tingkat & Jurusan (Jurusan optional if SD/SMP) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Tingkat / Kelas*
+                  </label>
+                  <select
+                    required
+                    value={formTingkatId}
+                    onChange={(e) => setFormTingkatId(parseInt(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="">-- Pilih Tingkat Kelas --</option>
+                    {availableTingkatForForm.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nama_tingkat} (Tingkat {t.tingkat})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                    Tingkat (1 - 12)
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Jurusan / Konsentrasi {isJenjangNeedsMajor ? '*' : '(Opsional)'}
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    required
-                    value={tingkat}
-                    onChange={(e) => setTingkat(parseInt(e.target.value) || 1)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
-                  />
+                  <select
+                    value={formJurusanId}
+                    onChange={(e) => setFormJurusanId(e.target.value ? parseInt(e.target.value) : '')}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="">-- {isJenjangNeedsMajor ? 'Pilih Jurusan' : 'Umum / Tanpa Jurusan'} --</option>
+                    {availableMajorsForForm.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                    Jurusan / Peminatan
+              {/* Row 4: Nama Rombel & Kapasitas */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Nama Rombel / Nama Kelas*
                   </label>
                   <input
                     type="text"
-                    value={jurusan}
-                    onChange={(e) => setJurusan(e.target.value)}
-                    placeholder="MIPA, IPS, TKJ, atau Umum"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                    required
+                    value={formNamaKelas}
+                    onChange={(e) => setFormNamaKelas(e.target.value)}
+                    placeholder="Contoh: X MIPA 1, 7 Al-Farabi, 10 Cambridge Science"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
                     Kapasitas Siswa
                   </label>
                   <input
                     type="number"
-                    min="10"
-                    max="60"
-                    value={kapasitas}
-                    onChange={(e) => setKapasitas(parseInt(e.target.value) || 36)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                    min="1"
+                    max="100"
+                    value={formKapasitas}
+                    onChange={(e) => setFormKapasitas(parseInt(e.target.value) || 36)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                  Wali Kelas (1 Kelas = 1 Wali Kelas)
-                </label>
-                <select
-                  value={waliKelasId}
-                  onChange={(e) => setWaliKelasId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
-                >
-                  <option value="">-- Pilih Guru Wali Kelas (Opsional) --</option>
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+              {/* Row 5: Wali Kelas & Status Aktif */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Wali Kelas (1 Rombel = 1 Wali Kelas)
+                  </label>
+                  <select
+                    value={formWaliKelasId}
+                    onChange={(e) => setFormWaliKelasId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="">-- Pilih Guru Wali Kelas (Opsional) --</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.nip ? `(${t.nip})` : ''} {t.email ? `• ${t.email}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Status Rombel
+                  </label>
+                  <select
+                    value={formStatusAktif}
+                    onChange={(e) => setFormStatusAktif(e.target.value as 'Y' | 'N')}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="Y">Aktif</option>
+                    <option value="N">Nonaktif</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
+              {/* Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5 shrink-0">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
@@ -1135,17 +1846,30 @@ export const ClassesPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={savingClass}
                   className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/30 transition flex items-center gap-2"
                 >
-                  {loading && <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                  <span>{editingClass ? 'Simpan Perubahan' : 'Buat Kelas'}</span>
+                  {savingClass && <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{editingClass ? 'Simpan Perubahan' : 'Buat Kelas & Rombel'}</span>
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+      {/* ================= STUDENT IMPORT MODAL (Requirement 18) ================= */}
+      <StudentImportModal
+        isOpen={studentImportModalOpen}
+        onClose={() => setStudentImportModalOpen(false)}
+        onSuccess={() => {
+          fetchData();
+          if (activeClassDetail) {
+            openDetailModal(activeClassDetail, 'students');
+          }
+        }}
+        initialClassId={targetClassForImport}
+        initialAcademicYearId={targetAcademicYearForImport}
+      />
     </div>
   );
 };

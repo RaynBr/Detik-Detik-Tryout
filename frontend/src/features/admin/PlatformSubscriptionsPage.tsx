@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Building2, 
   Search, 
@@ -37,6 +38,9 @@ interface SubscriptionInstitution {
 }
 
 export const PlatformSubscriptionsPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlStatus = (searchParams.get('status') || '').toLowerCase();
+
   const [loading, setLoading] = useState(true);
   const [institutions, setInstitutions] = useState<SubscriptionInstitution[]>([]);
   const [summary, setSummary] = useState({
@@ -49,7 +53,24 @@ export const PlatformSubscriptionsPage: React.FC = () => {
   });
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(() => {
+    if (urlStatus === 'warning' || urlStatus === 'akan_berakhir' || urlStatus === 'akan-berakhir') return 'warning';
+    if (urlStatus === 'aktif') return 'aktif';
+    if (urlStatus === 'expired') return 'expired';
+    if (urlStatus === 'nonaktif') return 'nonaktif';
+    return '';
+  });
+
+  useEffect(() => {
+    const param = (searchParams.get('status') || '').toLowerCase();
+    if (param === 'warning' || param === 'akan_berakhir' || param === 'akan-berakhir') {
+      setStatusFilter('warning');
+    } else if (['aktif', 'expired', 'nonaktif'].includes(param)) {
+      setStatusFilter(param);
+    } else if (!param) {
+      setStatusFilter('');
+    }
+  }, [searchParams]);
 
   // Edit Access Modal
   const [selectedInstansi, setSelectedInstansi] = useState<SubscriptionInstitution | null>(null);
@@ -210,7 +231,16 @@ export const PlatformSubscriptionsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-4 shadow-[3px_3px_0px_0px_#171717] flex items-center justify-between">
+        <div 
+          onClick={() => {
+            const next = statusFilter === 'warning' ? '' : 'warning';
+            setStatusFilter(next);
+            if (next) setSearchParams({ status: next });
+            else setSearchParams({});
+          }}
+          className={`bg-white dark:bg-[#1A1E22] border-2 rounded-2xl p-4 shadow-[3px_3px_0px_0px_#171717] flex items-center justify-between cursor-pointer transition hover:translate-x-[-1px] hover:translate-y-[-1px] ${statusFilter === 'warning' ? 'border-amber-500 ring-2 ring-amber-400' : 'border-[#161C2D] dark:border-[#32363A]'}`}
+          title="Klik untuk memfilter instansi yang akan berakhir dalam ≤ 7 hari"
+        >
           <div>
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Akan Berakhir (≤7 Hari)</span>
             <span className="text-2xl font-black text-amber-500 dark:text-amber-400">
@@ -251,7 +281,15 @@ export const PlatformSubscriptionsPage: React.FC = () => {
         <div className="flex items-center gap-2">
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setStatusFilter(val);
+              if (val) {
+                setSearchParams({ status: val });
+              } else {
+                setSearchParams({});
+              }
+            }}
             className="px-3 py-2 text-xs font-bold rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-white dark:bg-[#1A1E22] text-[#161C2D] dark:text-white focus:outline-none cursor-pointer"
           >
             <option value="">Semua Status Akses</option>

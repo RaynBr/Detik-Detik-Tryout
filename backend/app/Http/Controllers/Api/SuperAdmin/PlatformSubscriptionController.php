@@ -20,14 +20,8 @@ class PlatformSubscriptionController extends Controller
         $perPage = (int) $request->input('per_page', 15);
         $today = now()->startOfDay();
 
-        // Auto-synchronize backend database: if tanggal_berakhir is past, set subscription_status to nonaktif
-        KategoriUserBo::whereNotNull('tanggal_berakhir')
-            ->where('tanggal_berakhir', '<', $today->toDateString())
-            ->where('subscription_status', 'aktif')
-            ->update([
-                'subscription_status' => 'nonaktif',
-                'status_aktif' => 'N',
-            ]);
+        // Auto-synchronize backend database: if tanggal_berakhir is past, sync status
+        KategoriUserBo::syncExpiredSubscriptions($today);
 
         $query = KategoriUserBo::withCount(['siswa', 'guru', 'adminSekolah', 'kelas']);
 
@@ -36,31 +30,13 @@ class PlatformSubscriptionController extends Controller
         }
 
         if ($statusFilter === 'aktif') {
-            $query->where('subscription_status', 'aktif')
-                  ->where('status_remove', '!=', 'Y')
-                  ->where(function ($q) use ($today) {
-                      $q->whereNull('tanggal_berakhir')
-                        ->orWhere('tanggal_berakhir', '>=', $today->toDateString());
-                  });
+            $query->activeAccess($today);
         } elseif ($statusFilter === 'warning') {
-            $query->where('subscription_status', 'aktif')
-                  ->where('status_remove', '!=', 'Y')
-                  ->whereNotNull('tanggal_berakhir')
-                  ->where('tanggal_berakhir', '>=', $today->toDateString())
-                  ->where('tanggal_berakhir', '<=', $today->copy()->addDays(7)->toDateString());
+            $query->warningAccess($today);
         } elseif ($statusFilter === 'expired') {
-            $query->whereNotNull('tanggal_berakhir')
-                  ->where('tanggal_berakhir', '<', $today->toDateString());
+            $query->expiredAccess($today);
         } elseif ($statusFilter === 'nonaktif') {
-            $query->where(function ($q) use ($today) {
-                $q->where('subscription_status', 'nonaktif')
-                  ->orWhere('status_remove', 'Y')
-                  ->orWhere('status_aktif', 'N')
-                  ->orWhere(function ($sub) use ($today) {
-                      $sub->whereNotNull('tanggal_berakhir')
-                          ->where('tanggal_berakhir', '<', $today->toDateString());
-                  });
-            });
+            $query->inactiveAccess($today);
         }
 
         $processItem = function ($item) use ($today) {
@@ -116,40 +92,8 @@ class PlatformSubscriptionController extends Controller
             ];
         };
 
-        // Compute summary counts
-        $totalInstansi = KategoriUserBo::count();
-        $totalExpired = KategoriUserBo::whereNotNull('tanggal_berakhir')
-            ->where('tanggal_berakhir', '<', $today->toDateString())
-            ->count();
-        $totalWarning = KategoriUserBo::where('subscription_status', 'aktif')
-            ->where('status_remove', '!=', 'Y')
-            ->where('status_aktif', '!=', 'N')
-            ->whereNotNull('tanggal_berakhir')
-            ->where('tanggal_berakhir', '>=', $today->toDateString())
-            ->where('tanggal_berakhir', '<=', $today->copy()->addDays(7)->toDateString())
-            ->count();
-        $totalAktif = KategoriUserBo::where('subscription_status', 'aktif')
-            ->where('status_remove', '!=', 'Y')
-            ->where('status_aktif', '!=', 'N')
-            ->where(function ($q) use ($today) {
-                $q->whereNull('tanggal_berakhir')
-                  ->orWhere('tanggal_berakhir', '>=', $today->toDateString());
-            })
-            ->count();
-        $totalNonaktif = $totalInstansi - $totalAktif;
-
-        $summary = [
-            'total_instansi' => $totalInstansi,
-            'total_institutions' => $totalInstansi,
-            'total_aktif' => $totalAktif,
-            'active_subscriptions' => $totalAktif,
-            'total_warning' => $totalWarning,
-            'warning_subscriptions' => $totalWarning,
-            'total_expired' => $totalExpired,
-            'expired_subscriptions' => $totalExpired,
-            'total_nonaktif' => $totalNonaktif,
-            'inactive_subscriptions' => $totalNonaktif,
-        ];
+        // Single Source of Truth for Platform Access Statistics
+        $summary = KategoriUserBo::getPlatformAccessSummary();
 
         if ($request->boolean('all') || $request->input('per_page') === 'all') {
             $items = $query->orderBy('nama_kategori', 'asc')->get();
@@ -298,14 +242,28 @@ class PlatformSubscriptionController extends Controller
     public function toggleStatus(Request $request, $idkategori)
     {
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
-        $isCurrentlyActive = ($instansi->subscription_status ?? 'aktif') === 'aktif' && ($instansi->status_remove !== 'Y');
+        $today = now()->startOfDay();
+        $isExpired = $instansi->tanggal_berakhir ? $today->greaterThan(\Carbon\Carbon::parse($instansi->tanggal_berakhir)->endOfDay()) : false;
+
+        $isCurrentlyActive = ($instansi->status_remove !== 'Y') 
+            && ($instansi->status_aktif !== 'N') 
+            && (($instansi->subscription_status ?? 'aktif') === 'aktif')
+            && !$isExpired;
+
         $newStatus = $isCurrentlyActive ? 'nonaktif' : 'aktif';
 
-        $instansi->update([
+        $updates = [
             'subscription_status' => $newStatus,
-            'status_remove' => $isCurrentlyActive ? 'Y' : 'N',
+            'status_remove' => 'N',
             'status_aktif' => $isCurrentlyActive ? 'N' : 'Y',
-        ]);
+        ];
+
+        // If activating and previously expired, automatically extend expiration date by 1 year
+        if (!$isCurrentlyActive && $isExpired) {
+            $updates['tanggal_berakhir'] = now()->addYear()->toDateString();
+        }
+
+        $instansi->update($updates);
 
         $action = ($newStatus === 'aktif') ? 'Aktivasi Subscription' : 'Nonaktif Subscription';
 

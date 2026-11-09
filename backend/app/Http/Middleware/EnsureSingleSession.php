@@ -18,14 +18,14 @@ class EnsureSingleSession
         if ($user && !empty($user->active_session_token)) {
             $clientToken = $request->header('X-Session-Token');
 
-            // Two-way validation:
-            // If user has active_session_token, request MUST supply X-Session-Token and it MUST match.
-            // If header is missing or does not match active_session_token, immediately revoke token and logout.
-            if (!$clientToken || !hash_equals((string) $user->active_session_token, (string) $clientToken)) {
+            // Two-way session validation (Temuan 11):
+            // Only revoke and reject if a client session token is supplied and does NOT match active session.
+            // This prevents race condition logouts on multi-tab/refresh before localStorage attaches the header.
+            if ($clientToken && !hash_equals((string) $user->active_session_token, (string) $clientToken)) {
                 $request->user()->currentAccessToken()?->delete();
 
                 return response()->json([
-                    'message' => 'Sesi Anda tidak valid atau telah aktif di perangkat lain. Anda telah dikeluarkan otomatis.',
+                    'message' => 'Sesi Anda telah aktif di perangkat atau tab lain. Anda telah dikeluarkan otomatis.',
                     'code' => 'SESSION_OVERWRITE'
                 ], 401);
             }

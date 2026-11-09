@@ -12,11 +12,65 @@ use Illuminate\Support\Str;
 class ExamGroupController extends Controller
 {
     /**
+     * Authorize whether user can access or manage this exam group resource.
+     */
+    protected function authorizeGroupAccess($user, ExamGroup $group): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        if ($user->role === 'super_admin') {
+            return null;
+        }
+
+        $assessment = $group->assessment;
+        if (!$assessment) {
+            return null;
+        }
+
+        if ($user->role === 'admin') {
+            if (!empty($user->idkategori) && (string)$assessment->idkategori !== (string)$user->idkategori) {
+                return response()->json(['message' => 'Akses ditolak: Jadwal ujian bukan milik instansi Anda.'], 403);
+            }
+            return null;
+        }
+
+        if ($user->role === 'guru') {
+            $isOwner = (string)$assessment->iduser_bo === (string)$user->iduser_bo;
+            $sameSchool = !empty($user->idkategori) && (string)$assessment->idkategori === (string)$user->idkategori;
+            if (!$isOwner && !$sameSchool) {
+                return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki akses ke jadwal ujian ini.'], 403);
+            }
+            return null;
+        }
+
+        return response()->json(['message' => 'Akses ditolak.'], 403);
+    }
+
+    /**
      * List all exam groups / waves
      */
     public function index(Request $request)
     {
+        $user = $request->user();
         $query = ExamGroup::with(['assessment.mapel', 'assessment.kelas']);
+
+        // Multi-tenant isolation: Only super admin sees all groups across schools
+        if ($user && $user->role !== 'super_admin') {
+            $query->whereHas('assessment', function ($aq) use ($user) {
+                if ($user->role === 'admin' && !empty($user->idkategori)) {
+                    $aq->where('idkategori', $user->idkategori);
+                } elseif ($user->role === 'guru') {
+                    $aq->where(function ($sub) use ($user) {
+                        $sub->where('iduser_bo', $user->iduser_bo);
+                        if (!empty($user->idkategori)) {
+                            $sub->orWhere('idkategori', $user->idkategori);
+                        }
+                    });
+                }
+            });
+        }
 
         if ($request->filled('exam_id')) {
             $query->where('exam_id', $request->exam_id);
@@ -64,6 +118,29 @@ class ExamGroupController extends Controller
             'student_ids' => 'nullable|array',
         ]);
 
+        $assessment = Assessment::findOrFail($request->exam_id);
+
+        // Requirement 5 & 6: Only published (AKTIF) or ongoing (TERKUNCI) packages can be scheduled
+        if ($assessment->status_paket === 'draft') {
+            return response()->json([
+                'message' => 'Paket soal masih berstatus DRAFT. Silakan publikasikan paket soal terlebih dahulu sebelum membuat Jadwal Ujian.',
+                'error_code' => 'EXAM_PACKAGE_STILL_DRAFT'
+            ], 422);
+        }
+        $user = $request->user();
+        if ($user && $user->role !== 'super_admin') {
+            if ($user->role === 'admin' && !empty($user->idkategori) && (string)$assessment->idkategori !== (string)$user->idkategori) {
+                return response()->json(['message' => 'Akses ditolak: Anda tidak dapat membuat jadwal ujian instansi lain.'], 403);
+            }
+            if ($user->role === 'guru') {
+                $isOwner = (string)$assessment->iduser_bo === (string)$user->iduser_bo;
+                $sameSchool = !empty($user->idkategori) && (string)$assessment->idkategori === (string)$user->idkategori;
+                if (!$isOwner && !$sameSchool) {
+                    return response()->json(['message' => 'Akses ditolak: Anda tidak dapat membuat jadwal ujian paket ini.'], 403);
+                }
+            }
+        }
+
         $token = $request->token ?: strtoupper(Str::random(6));
 
         while (ExamGroup::where('token', $token)->exists()) {
@@ -89,10 +166,12 @@ class ExamGroupController extends Controller
             'student_ids' => $studentIds,
         ]);
 
-        // Synchronize timing & class to Assessment if appropriate
+        // Synchronize timing, class & activate Assessment so students can immediately see and access it
         $assessment = Assessment::find($request->exam_id);
         if ($assessment) {
-            $updates = [];
+            $updates = [
+                'status_aktif' => 'Y',
+            ];
             if ($request->filled('start_time')) {
                 $updates['tanggal_mulai_assessment'] = $request->start_time;
             }
@@ -102,9 +181,7 @@ class ExamGroupController extends Controller
             if (!empty($classIds) && empty($assessment->idkelas)) {
                 $updates['idkelas'] = $classIds[0];
             }
-            if (!empty($updates)) {
-                $assessment->update($updates);
-            }
+            $assessment->update($updates);
         }
 
         $examGroup->load(['assessment.mapel', 'assessment.kelas']);
@@ -118,9 +195,14 @@ class ExamGroupController extends Controller
     /**
      * Show single exam group
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $group = ExamGroup::with(['assessment.mapel', 'assessment.kelas'])->findOrFail($id);
+
+        if ($deny = $this->authorizeGroupAccess($request->user(), $group)) {
+            return $deny;
+        }
+
         return response()->json($group);
     }
 
@@ -130,6 +212,10 @@ class ExamGroupController extends Controller
     public function update(Request $request, $id)
     {
         $group = ExamGroup::findOrFail($id);
+
+        if ($deny = $this->authorizeGroupAccess($request->user(), $group)) {
+            return $deny;
+        }
 
         $request->validate([
             'name' => 'required|string|max:255',
@@ -160,6 +246,10 @@ class ExamGroupController extends Controller
             'student_ids' => $studentIds,
         ]);
 
+        if ($group->assessment) {
+            $group->assessment->update(['status_aktif' => 'Y']);
+        }
+
         $group->load(['assessment.mapel', 'assessment.kelas']);
 
         return response()->json([
@@ -171,9 +261,14 @@ class ExamGroupController extends Controller
     /**
      * Delete exam group
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $group = ExamGroup::findOrFail($id);
+
+        if ($deny = $this->authorizeGroupAccess($request->user(), $group)) {
+            return $deny;
+        }
+
         $group->delete();
 
         return response()->json([

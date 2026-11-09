@@ -12,7 +12,7 @@ import {
   X,
   BarChart3,
   Layers,
-  Building2,
+  Users,
   PanelLeftClose,
   PanelLeftOpen,
   CalendarDays,
@@ -58,9 +58,8 @@ export const AdminLayout: React.FC = () => {
   const isSchoolAcademicsActive = 
     location.pathname.startsWith('/admin/master-akademik') ||
     [
-      '/admin/academic-years',
-      '/admin/subjects',
-      '/admin/majors'
+      '/admin/classes',
+      '/admin/subjects'
     ].includes(location.pathname);
 
   const [academicsOpen, setAcademicsOpen] = React.useState<boolean>(isSchoolAcademicsActive);
@@ -74,25 +73,21 @@ export const AdminLayout: React.FC = () => {
   // Menu items strictly for ADMIN INSTANSI (Portal Sekolah)
   const schoolAdminMenus: MenuItem[] = [
     { name: 'Dashboard Sekolah', path: '/admin/dashboard', icon: LayoutDashboard },
-    { name: 'Pengguna Instansi', path: '/admin/school-users', icon: Building2 },
-    { name: 'Kelola Guru', path: '/admin/teachers', icon: UserCheck },
-    { name: 'Kelola Siswa', path: '/admin/students', icon: GraduationCap },
-    { name: 'Kelola Kelas & Rombel', path: '/admin/classes', icon: School },
+    { name: 'Kelola Pengguna', path: '/admin/users', icon: Users },
     { 
       name: 'Master Akademik', 
-      path: '/admin/master-akademik/tahun-ajaran', 
+      path: '/admin/classes', 
       icon: Layers,
       subItems: [
-        { name: 'Tahun Ajaran', path: '/admin/master-akademik/tahun-ajaran', icon: CalendarDays },
-        { name: 'Semester', path: '/admin/master-akademik/semester', icon: History },
-        { name: 'Kurikulum', path: '/admin/master-akademik/kurikulum', icon: BookOpen },
-        { name: 'Jenjang', path: '/admin/master-akademik/jenjang', icon: Layers },
-        { name: 'Jurusan', path: '/admin/master-akademik/jurusan', icon: Layers },
-        { name: 'Tingkat/Kelas', path: '/admin/master-akademik/tingkat-kelas', icon: UserCheck },
+        { name: 'Kelas & Rombel', path: '/admin/classes', icon: School },
         { name: 'Mata Pelajaran', path: '/admin/master-akademik/mata-pelajaran', icon: BookOpen },
+        { name: 'Guru Pengampu', path: '/admin/classes?tab=guru-mapel', icon: UserCheck },
+        { name: 'Wali Kelas', path: '/admin/classes?tab=wali-kelas', icon: GraduationCap },
       ]
     },
+    { name: 'Jadwal Ujian', path: '/admin/exams', icon: CalendarDays },
     { name: 'Monitoring Ujian', path: '/admin/proctoring', icon: BarChart3 },
+    { name: 'Aktivitas Guru & Siswa', path: '/admin/activities', icon: History },
     { name: 'Laporan Rekap Nilai', path: '/admin/reports', icon: BarChart3 },
     { name: 'Profil & Keamanan', path: '/admin/profile', icon: UserCheck },
   ];

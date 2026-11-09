@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Major extends Model
@@ -12,6 +13,7 @@ class Major extends Model
 
     protected $fillable = [
         'idkategori',
+        'idjenjang',
         'name',
         'code',
         'jenjang',
@@ -22,9 +24,24 @@ class Major extends Model
         'is_active' => 'boolean',
     ];
 
-    public function kategori()
+    public function kategori(): BelongsTo
     {
         return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
+
+    public function jenjangModel(): BelongsTo
+    {
+        return $this->belongsTo(MasterJenjang::class, 'idjenjang');
+    }
+
+    public function tingkatKelas(): HasMany
+    {
+        return $this->hasMany(MasterTingkatKelas::class, 'idjurusan');
+    }
+
+    public function mataPelajaran(): HasMany
+    {
+        return $this->hasMany(MasterMataPelajaran::class, 'idjurusan');
     }
 
     public function classes(): HasMany

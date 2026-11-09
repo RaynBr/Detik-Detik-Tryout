@@ -12,7 +12,7 @@ class MasterTingkatKelasController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = MasterTingkatKelas::with('jenjang');
+        $query = MasterTingkatKelas::with(['jenjang', 'jurusan']);
 
         if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
             $query->where('idkategori', $user->idkategori);
@@ -22,6 +22,10 @@ class MasterTingkatKelasController extends Controller
 
         if ($request->filled('idjenjang')) {
             $query->where('idjenjang', $request->idjenjang);
+        }
+
+        if ($request->filled('idjurusan')) {
+            $query->where('idjurusan', $request->idjurusan);
         }
 
         if ($request->filled('search')) {
@@ -70,35 +74,58 @@ class MasterTingkatKelasController extends Controller
             'tingkat' => 'required|integer|min:1|max:20',
             'nama_tingkat' => 'required|string|max:50',
             'idjenjang' => 'nullable|exists:master_jenjang,id',
+            'idjurusan' => 'nullable|exists:majors,id',
             'keterangan' => 'nullable|string',
             'status_aktif' => 'nullable|in:Y,N',
         ]);
 
-        // Validate duplicate tingkat + nama_tingkat for this instansi
-        if (MasterTingkatKelas::where('idkategori', $user->idkategori)
+        $idjenjang = $validated['idjenjang'] ?? null;
+        $idjurusan = $validated['idjurusan'] ?? null;
+
+        // Validate duplicate tingkat for this instansi
+        $duplicate = MasterTingkatKelas::where('idkategori', $user->idkategori)
             ->where('tingkat', $validated['tingkat'])
-            ->where('nama_tingkat', $validated['nama_tingkat'])
-            ->exists()) {
-            return response()->json(['message' => 'Tingkat kelas dengan nama dan tingkatan ini sudah ada di instansi Anda.'], 422);
+            ->where(function ($q) use ($idjenjang) {
+                if ($idjenjang) {
+                    $q->where('idjenjang', $idjenjang);
+                } else {
+                    $q->whereNull('idjenjang');
+                }
+            })
+            ->where(function ($q) use ($idjurusan) {
+                if ($idjurusan) {
+                    $q->where('idjurusan', $idjurusan);
+                } else {
+                    $q->whereNull('idjurusan');
+                }
+            })
+            ->exists();
+
+        if ($duplicate) {
+            return response()->json(['message' => 'Tingkat kelas dengan tingkatan ini sudah ada untuk jenjang/jurusan tersebut di instansi Anda.'], 422);
         }
 
         $item = MasterTingkatKelas::create([
             'idkategori' => $user->idkategori,
             'tingkat' => $validated['tingkat'],
             'nama_tingkat' => trim($validated['nama_tingkat']),
-            'idjenjang' => $validated['idjenjang'] ?? null,
+            'idjenjang' => $idjenjang,
+            'idjurusan' => $idjurusan,
             'keterangan' => $validated['keterangan'] ?? null,
             'status_aktif' => $validated['status_aktif'] ?? 'Y',
         ]);
 
-        $item->load('jenjang');
+        $item->load(['jenjang', 'jurusan']);
 
         AuditLog::record(
-            'Tambah Data',
+            'CREATE_TINGKAT_KELAS',
             'master_tingkat_kelas',
             (string) $item->id,
             "Menambahkan tingkat kelas: {$item->nama_tingkat}",
-            $validated,
+            [
+                'action' => 'create',
+                'after' => $item->toArray(),
+            ],
             null,
             null,
             null,
@@ -119,7 +146,7 @@ class MasterTingkatKelasController extends Controller
             return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki akses ke tingkat kelas instansi lain.'], 403);
         }
 
-        $masterTingkatKela->load('jenjang');
+        $masterTingkatKela->load(['jenjang', 'jurusan']);
         return response()->json($masterTingkatKela);
     }
 
@@ -141,37 +168,62 @@ class MasterTingkatKelasController extends Controller
             'tingkat' => 'required|integer|min:1|max:20',
             'nama_tingkat' => 'required|string|max:50',
             'idjenjang' => 'nullable|exists:master_jenjang,id',
+            'idjurusan' => 'nullable|exists:majors,id',
             'keterangan' => 'nullable|string',
             'status_aktif' => 'nullable|in:Y,N',
         ]);
 
-        // Duplicate check excluding self within this instansi
+        $idjenjang = $validated['idjenjang'] ?? $masterTingkatKela->idjenjang;
+        $idjurusan = array_key_exists('idjurusan', $validated) ? $validated['idjurusan'] : $masterTingkatKela->idjurusan;
+
+        // Duplicate check excluding self
         $duplicate = MasterTingkatKelas::where('idkategori', $masterTingkatKela->idkategori)
             ->where('tingkat', $validated['tingkat'])
-            ->where('nama_tingkat', $validated['nama_tingkat'])
+            ->where(function ($q) use ($idjenjang) {
+                if ($idjenjang) {
+                    $q->where('idjenjang', $idjenjang);
+                } else {
+                    $q->whereNull('idjenjang');
+                }
+            })
+            ->where(function ($q) use ($idjurusan) {
+                if ($idjurusan) {
+                    $q->where('idjurusan', $idjurusan);
+                } else {
+                    $q->whereNull('idjurusan');
+                }
+            })
             ->where('id', '!=', $masterTingkatKela->id)
             ->exists();
 
         if ($duplicate) {
-            return response()->json(['message' => 'Tingkat kelas dengan nama dan tingkatan ini sudah ada di instansi Anda.'], 422);
+            return response()->json(['message' => 'Tingkat kelas dengan tingkatan ini sudah ada untuk jenjang/jurusan tersebut di instansi Anda.'], 422);
         }
+
+        $before = $masterTingkatKela->toArray();
 
         $masterTingkatKela->update([
             'tingkat' => $validated['tingkat'],
             'nama_tingkat' => trim($validated['nama_tingkat']),
-            'idjenjang' => $validated['idjenjang'] ?? $masterTingkatKela->idjenjang,
+            'idjenjang' => $idjenjang,
+            'idjurusan' => $idjurusan,
             'keterangan' => $validated['keterangan'] ?? $masterTingkatKela->keterangan,
             'status_aktif' => $validated['status_aktif'] ?? $masterTingkatKela->status_aktif,
         ]);
 
-        $masterTingkatKela->load('jenjang');
+        $masterTingkatKela->load(['jenjang', 'jurusan']);
+        $after = $masterTingkatKela->fresh()->toArray();
 
         AuditLog::record(
-            'Edit Data',
+            'EDIT_TINGKAT_KELAS',
             'master_tingkat_kelas',
             (string) $masterTingkatKela->id,
             "Memperbarui tingkat kelas: {$masterTingkatKela->nama_tingkat}",
-            $validated,
+            [
+                'action' => 'edit',
+                'before' => $before,
+                'after' => $after,
+            ],
             null,
             null,
             null,
@@ -200,14 +252,19 @@ class MasterTingkatKelasController extends Controller
 
         $name = $masterTingkatKela->nama_tingkat;
         $strId = (string) $masterTingkatKela->id;
+        $before = $masterTingkatKela->toArray();
         $masterTingkatKela->delete();
 
         AuditLog::record(
-            'Hapus Data',
+            'DELETE_TINGKAT_KELAS',
             'master_tingkat_kelas',
             $strId,
             "Menghapus tingkat kelas: {$name}",
-            null,
+            [
+                'action' => 'delete',
+                'before' => $before,
+                'after' => null,
+            ],
             null,
             null,
             null,

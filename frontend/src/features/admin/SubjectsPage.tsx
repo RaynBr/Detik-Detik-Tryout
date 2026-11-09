@@ -11,7 +11,11 @@ import {
   Search, 
   Users, 
   UserPlus, 
-  UserMinus
+  UserMinus,
+  Eye,
+  CheckCircle2,
+  XCircle,
+  Award
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
@@ -56,6 +60,9 @@ interface Subject {
   kelompok: string;
   kkm: number;
   deskripsi: string | null;
+  status_aktif?: 'Y' | 'N';
+  created_at?: string;
+  updated_at?: string;
   guru_pengampu?: TeacherSubjectAssignment[];
 }
 
@@ -78,6 +85,9 @@ export const SubjectsPage: React.FC = () => {
   const [teachersModalOpen, setTeachersModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [activeSubjectForTeachers, setActiveSubjectForTeachers] = useState<Subject | null>(null);
+  const [detailSubject, setDetailSubject] = useState<Subject | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState(false);
 
   // Form states
   const [namaMapel, setNamaMapel] = useState('');
@@ -167,6 +177,34 @@ export const SubjectsPage: React.FC = () => {
       setTeachersModalOpen(true);
     } catch (err) {
       toast.error('Gagal memuat data guru pengampu.');
+    }
+  };
+
+  const openDetailModal = async (s: Subject) => {
+    setDetailSubject(s);
+    setDetailModalOpen(true);
+    try {
+      const res = await apiClient.get(`/admin/subjects/${s.id}`);
+      setDetailSubject(res.data);
+    } catch (err) {
+      console.error('Failed to load fresh subject detail:', err);
+    }
+  };
+
+  const handleToggleStatus = async (s: Subject) => {
+    setTogglingStatus(true);
+    try {
+      const res = await apiClient.patch(`/admin/subjects/${s.id}/toggle-status`);
+      toast.success(res.data?.message || 'Status mata pelajaran berhasil diperbarui.');
+      const newStatus = s.status_aktif === 'N' ? 'Y' : 'N';
+      if (detailSubject && detailSubject.id === s.id) {
+        setDetailSubject(prev => prev ? { ...prev, status_aktif: newStatus } : null);
+      }
+      fetchData(currentPage);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mengubah status mata pelajaran.');
+    } finally {
+      setTogglingStatus(false);
     }
   };
 
@@ -376,6 +414,7 @@ export const SubjectsPage: React.FC = () => {
                   <th className="py-4 px-5">Jenjang</th>
                   <th className="py-4 px-5">Kelompok</th>
                   <th className="py-4 px-5">KKM</th>
+                  <th className="py-4 px-5">Status</th>
                   <th className="py-4 px-5">Guru Pengampu</th>
                   <th className="py-4 px-5 text-right">Aksi</th>
                 </tr>
@@ -428,6 +467,15 @@ export const SubjectsPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-4 px-5">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        s.status_aktif !== 'N'
+                          ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                      }`}>
+                        {s.status_aktif !== 'N' ? 'Aktif' : 'Nonaktif'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5">
                       <button
                         onClick={() => openTeachersModal(s)}
                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-slate-700 dark:text-gray-300 hover:text-cyan-600 font-bold text-xs transition border border-slate-200/60 dark:border-white/5"
@@ -438,6 +486,13 @@ export const SubjectsPage: React.FC = () => {
                     </td>
                     <td className="py-4 px-5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => openDetailModal(s)}
+                          title="Detail Mata Pelajaran"
+                          className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-xl transition"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => openTeachersModal(s)}
                           title="Kelola Guru Pengampu"
@@ -731,6 +786,188 @@ export const SubjectsPage: React.FC = () => {
               >
                 Selesai
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {detailModalOpen && detailSubject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-5 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-500/20">
+                  <BookOpen className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                    Detail Mata Pelajaran
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-gray-400 font-mono">
+                    Kode: {detailSubject.kode_mapel || detailSubject.code}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Status & Overview Bar */}
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/5">
+              <div className="flex items-center gap-3">
+                <span className={`px-3 py-1 rounded-full text-xs font-black uppercase flex items-center gap-1.5 border ${
+                  detailSubject.status_aktif !== 'N'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-rose-100 text-rose-800 border-rose-300'
+                }`}>
+                  {detailSubject.status_aktif !== 'N' ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Status: Aktif
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3.5 w-3.5" />
+                      Status: Nonaktif
+                    </>
+                  )}
+                </span>
+                <span className="text-xs font-bold text-slate-500">
+                  Kelompok: {detailSubject.kelompok || 'Wajib'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-300 px-3 py-1 rounded-xl border border-cyan-300 font-black text-xs">
+                <Award className="h-3.5 w-3.5" />
+                KKM: {detailSubject.kkm || 75}
+              </div>
+            </div>
+
+            {/* Information Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01]">
+                <p className="text-[11px] font-bold text-slate-400 uppercase">Nama Mata Pelajaran</p>
+                <p className="font-black text-slate-900 dark:text-white mt-0.5 text-sm">
+                  {detailSubject.nama_mapel || detailSubject.name}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01]">
+                <p className="text-[11px] font-bold text-slate-400 uppercase">Tahun Ajaran</p>
+                <p className="font-bold text-slate-800 dark:text-gray-200 mt-0.5">
+                  {detailSubject.tahun_ajaran || '2026/2027'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01]">
+                <p className="text-[11px] font-bold text-slate-400 uppercase">Jenjang Pendidikan</p>
+                <p className="font-bold text-slate-800 dark:text-gray-200 mt-0.5">
+                  {detailSubject.jenjang?.nama_jenjang || 'Semua Jenjang'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01]">
+                <p className="text-[11px] font-bold text-slate-400 uppercase">Standar KKM</p>
+                <p className="font-bold text-slate-800 dark:text-gray-200 mt-0.5">
+                  {detailSubject.kkm || 75} poin (Batas Kelulusan)
+                </p>
+              </div>
+            </div>
+
+            {/* Deskripsi */}
+            <div className="p-3.5 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01]">
+              <p className="text-[11px] font-bold text-slate-400 uppercase mb-1">Deskripsi & Silabus Singkat</p>
+              <p className="text-xs text-slate-700 dark:text-gray-300">
+                {detailSubject.deskripsi || 'Tidak ada deskripsi tambahan untuk mata pelajaran ini.'}
+              </p>
+            </div>
+
+            {/* Guru Pengampu List */}
+            <div className="p-3.5 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01] space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold text-slate-400 uppercase">
+                  Guru Pengampu Ditugaskan ({detailSubject.guru_pengampu?.length || 0})
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailModalOpen(false);
+                    openTeachersModal(detailSubject);
+                  }}
+                  className="text-xs font-bold text-cyan-600 hover:text-cyan-700 flex items-center gap-1"
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  <span>Kelola Guru</span>
+                </button>
+              </div>
+
+              {detailSubject.guru_pengampu && detailSubject.guru_pengampu.length > 0 ? (
+                <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                  {detailSubject.guru_pengampu.map((gp, i) => (
+                    <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-white/5 border border-slate-200/50 dark:border-white/5 text-xs">
+                      <div>
+                        <span className="font-bold text-slate-800 dark:text-white">
+                          {gp.guru?.nama || gp.iduser_bo}
+                        </span>
+                        <span className="text-[11px] text-slate-400 ml-2">
+                          {gp.guru?.login_email}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-gray-300">
+                        {gp.kelas?.nama_kelas ? `Kelas: ${gp.kelas.nama_kelas}` : `TA: ${gp.tahun_ajaran}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Belum ada guru pengampu yang ditugaskan.</p>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t border-slate-100 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => handleToggleStatus(detailSubject)}
+                disabled={togglingStatus}
+                className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                  detailSubject.status_aktif !== 'N'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                }`}
+              >
+                {togglingStatus 
+                  ? 'Memproses...' 
+                  : detailSubject.status_aktif !== 'N' 
+                    ? 'Nonaktifkan Mata Pelajaran' 
+                    : 'Aktifkan Mata Pelajaran'}
+              </button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDetailModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-white/10 font-bold text-xs hover:bg-slate-200 transition cursor-pointer"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailModalOpen(false);
+                    openEditModal(detailSubject);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                  <span>Edit Data</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -30,8 +30,6 @@ const MajorsPage = lazy(() => import('./features/admin/MajorsPage').then(m => ({
 const ClassesPage = lazy(() => import('./features/admin/ClassesPage').then(m => ({ default: m.ClassesPage })));
 const SubjectsPage = lazy(() => import('./features/admin/SubjectsPage').then(m => ({ default: m.SubjectsPage })));
 const AcademicYearsPage = lazy(() => import('./features/admin/AcademicYearsPage').then(m => ({ default: m.AcademicYearsPage })));
-const TeachersPage = lazy(() => import('./features/admin/TeachersPage').then(m => ({ default: m.TeachersPage })));
-const StudentsPage = lazy(() => import('./features/admin/StudentsPage').then(m => ({ default: m.StudentsPage })));
 const InstansiPage = lazy(() => import('./features/admin/InstansiPage').then(m => ({ default: m.InstansiPage })));
 const UsersManagementPage = lazy(() => import('./features/admin/UsersManagementPage').then(m => ({ default: m.UsersManagementPage })));
 const AuditTrailPage = lazy(() => import('./features/admin/AuditTrailPage').then(m => ({ default: m.AuditTrailPage })));
@@ -50,6 +48,7 @@ const MasterMataPelajaranPage = lazy(() => import('./features/admin/academic/Mas
 const MasterKelasPage = lazy(() => import('./features/admin/academic/MasterKelasPage').then(m => ({ default: m.MasterKelasPage })));
 const MasterJurusanPage = lazy(() => import('./features/admin/academic/MasterJurusanPage').then(m => ({ default: m.MasterJurusanPage })));
 const MasterTingkatKelasPage = lazy(() => import('./features/admin/academic/MasterTingkatKelasPage').then(m => ({ default: m.MasterTingkatKelasPage })));
+const TeacherStudentActivityPage = lazy(() => import('./features/admin/TeacherStudentActivityPage').then(m => ({ default: m.TeacherStudentActivityPage })));
 const MaintenancePage = lazy(() => import('./features/landing/MaintenancePage').then(m => ({ default: m.MaintenancePage })));
 const SubscriptionInactivePage = lazy(() => import('./features/landing/SubscriptionInactivePage').then(m => ({ default: m.SubscriptionInactivePage })));
 
@@ -139,6 +138,7 @@ export const App: React.FC = () => {
                   <Route path="/super-admin/majors" element={<MasterJurusanPage />} />
                   <Route path="/super-admin/tingkat-kelas" element={<MasterTingkatKelasPage />} />
                   <Route path="/super-admin/tahun-soal" element={<MasterTahunSoalPage />} />
+                  <Route path="/super-admin/bank-soal/tahun-soal" element={<MasterTahunSoalPage />} />
 
                   {/* Kelola Bank Soal */}
                   <Route path="/super-admin/bank-soal" element={<SuperAdminQuestionBankPage />} />
@@ -158,17 +158,18 @@ export const App: React.FC = () => {
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route element={<AdminLayout />}>
                   <Route path="/admin/dashboard" element={<AdminDashboard />} />
-                  <Route path="/admin/school-users" element={<SchoolUsersPage />} />
-                  <Route path="/admin/instansi" element={<SchoolUsersPage />} />
-                  <Route path="/admin/teachers" element={<TeachersPage />} />
-                  <Route path="/admin/students" element={<StudentsPage />} />
+                  <Route path="/admin/users" element={<SchoolUsersPage />} />
+                  <Route path="/admin/school-users" element={<Navigate to="/admin/users" replace />} />
+                  <Route path="/admin/instansi" element={<Navigate to="/admin/users" replace />} />
+                  <Route path="/admin/teachers" element={<Navigate to="/admin/users" replace />} />
+                  <Route path="/admin/students" element={<Navigate to="/admin/users" replace />} />
                   <Route path="/admin/classes" element={<ClassesPage />} />
                   <Route path="/admin/academic-years" element={<AcademicYearsPage />} />
                   <Route path="/admin/subjects" element={<SubjectsPage />} />
                   <Route path="/admin/majors" element={<MajorsPage />} />
                   
                   {/* Master Akademik untuk Admin Instansi */}
-                  <Route path="/admin/master-akademik" element={<Navigate to="/admin/master-akademik/tahun-ajaran" replace />} />
+                  <Route path="/admin/master-akademik" element={<Navigate to="/admin/classes" replace />} />
                   <Route path="/admin/master-akademik/tahun-ajaran" element={<MasterTahunAjaranPage />} />
                   <Route path="/admin/master-akademik/semester" element={<MasterSemesterPage />} />
                   <Route path="/admin/master-akademik/kurikulum" element={<MasterKurikulumPage />} />
@@ -178,7 +179,10 @@ export const App: React.FC = () => {
                   <Route path="/admin/master-akademik/mata-pelajaran" element={<MasterMataPelajaranPage />} />
                   <Route path="/admin/master-akademik/kelas" element={<MasterKelasPage />} />
 
+                  {/* Jadwal Ujian & Monitoring & Aktivitas */}
+                  <Route path="/admin/exams" element={<ExamsPage />} />
                   <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
+                  <Route path="/admin/activities" element={<TeacherStudentActivityPage />} />
                   <Route path="/admin/reports" element={<ExamReportPage />} />
                   <Route path="/admin/profile" element={<AdminProfilePage />} />
                 </Route>

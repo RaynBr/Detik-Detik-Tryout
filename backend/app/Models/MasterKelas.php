@@ -16,6 +16,11 @@ class MasterKelas extends Model
     protected $fillable = [
         'idjenjang',
         'idkategori',
+        'academic_year_id',
+        'semester_id',
+        'kurikulum_id',
+        'idjurusan',
+        'idtingkat',
         'nama_kelas',
         'tingkat',
         'jurusan',
@@ -30,9 +35,34 @@ class MasterKelas extends Model
         return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
     }
 
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'academic_year_id', 'id');
+    }
+
+    public function semester(): BelongsTo
+    {
+        return $this->belongsTo(MasterSemester::class, 'semester_id', 'id');
+    }
+
+    public function kurikulum(): BelongsTo
+    {
+        return $this->belongsTo(MasterKurikulum::class, 'kurikulum_id', 'id');
+    }
+
     public function jenjang(): BelongsTo
     {
         return $this->belongsTo(MasterJenjang::class, 'idjenjang', 'id');
+    }
+
+    public function jurusanRelation(): BelongsTo
+    {
+        return $this->belongsTo(Major::class, 'idjurusan', 'id');
+    }
+
+    public function tingkatKelas(): BelongsTo
+    {
+        return $this->belongsTo(MasterTingkatKelas::class, 'idtingkat', 'id');
     }
 
     public function waliKelas(): BelongsTo

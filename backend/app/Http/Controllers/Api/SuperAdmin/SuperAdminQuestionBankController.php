@@ -24,7 +24,7 @@ class SuperAdminQuestionBankController extends Controller
     private function logBankSoalActivity(string $action, Assessment $assessment, ?string $detailNotes = null): void
     {
         $jenjangName = $assessment->jenjang?->nama_jenjang ?? '-';
-        $kelasName = $assessment->kelas?->nama_kelas ?? '-';
+        $tingkatName = $assessment->tingkat ? "Tingkat {$assessment->tingkat}" : ($assessment->kelas?->nama_kelas ?? '-');
         $mapelName = $assessment->mapel?->nama_mapel ?? '-';
         $taName = $assessment->academicYear?->name ?? '-';
         $tahunSoalName = $assessment->tahunSoal?->tahun ?? '-';
@@ -37,7 +37,8 @@ class SuperAdminQuestionBankController extends Controller
             metadata: [
                 'nama_paket' => $assessment->nama_assessment,
                 'jenjang' => $jenjangName,
-                'kelas' => $kelasName,
+                'tingkat' => $tingkatName,
+                'kelas' => $tingkatName,
                 'mata_pelajaran' => $mapelName,
                 'tahun_ajaran' => $taName,
                 'tahun_soal' => $tahunSoalName,
@@ -53,23 +54,24 @@ class SuperAdminQuestionBankController extends Controller
     /**
      * Get cascading filter parameters:
      * - Jenjang
-     * - Kelas (filtered by Jenjang)
-     * - Mata Pelajaran (filtered by Kelas/Jenjang)
+     * - Tingkat (filtered by Jenjang: SD: 1-6, SMP: 7-9, SMA/SMK: 10-12)
+     * - Mata Pelajaran (filtered by Jenjang)
      * - Tahun Ajaran
      * - Tahun Soal
      */
     public function cascadingParams(Request $request)
     {
         $idjenjang = $request->input('idjenjang');
-        $idkelas = $request->input('idkelas');
-        $idmapel = $request->input('idmapel');
 
         // 1. Jenjang list
         $jenjangList = MasterJenjang::where('status_aktif', 'Y')
             ->orderBy('urutan', 'asc')
             ->get(['id', 'nama_jenjang', 'kode_jenjang']);
 
-        // 2. Kelas list (filtered by Jenjang if selected)
+        // 2. Tingkat list (Filtered by Jenjang: SD 1-6, SMP 7-9, SMA/SMK 10-12)
+        $tingkatList = $this->getTingkatOptions($idjenjang ? (int)$idjenjang : null);
+
+        // 2b. Backward compatibility: Kelas list (filtered by Jenjang if selected)
         $kelasQuery = MasterKelas::query();
         if ($idjenjang) {
             $kelasQuery->where('idjenjang', $idjenjang);
@@ -78,7 +80,7 @@ class SuperAdminQuestionBankController extends Controller
             ->orderBy('nama_kelas', 'asc')
             ->get(['id', 'idjenjang', 'nama_kelas', 'tingkat', 'jurusan']);
 
-        // 3. Mata Pelajaran list (filtered by Jenjang or Kelas if selected)
+        // 3. Mata Pelajaran list (filtered by Jenjang if selected)
         $mapelQuery = MasterMataPelajaran::where('status_aktif', 'Y');
         if ($idjenjang) {
             $mapelQuery->where('idjenjang', $idjenjang);
@@ -98,11 +100,79 @@ class SuperAdminQuestionBankController extends Controller
 
         return response()->json([
             'jenjang' => $jenjangList,
-            'kelas' => $kelasList,
+            'tingkat' => $tingkatList,
+            'kelas' => $kelasList, // Backward compatibility
             'mata_pelajaran' => $mapelList,
             'tahun_ajaran' => $tahunAjaranList,
             'tahun_soal' => $tahunSoalList,
         ]);
+    }
+
+    /**
+     * Helper to get Tingkat options based on Jenjang
+     */
+    private function getTingkatOptions(?int $idjenjang = null): array
+    {
+        $allowedTingkat = [];
+        if ($idjenjang) {
+            $jenjang = MasterJenjang::find($idjenjang);
+            $kode = strtoupper($jenjang?->kode_jenjang ?? '');
+            $nama = strtoupper($jenjang?->nama_jenjang ?? '');
+
+            if (str_contains($kode, 'SD') || str_contains($nama, 'SD') || str_contains($nama, 'DASAR') || str_contains($nama, 'MI')) {
+                $allowedTingkat = [1, 2, 3, 4, 5, 6];
+            } elseif (str_contains($kode, 'SMP') || str_contains($nama, 'SMP') || str_contains($nama, 'MENENGAH PERTAMA') || str_contains($kode, 'MTS') || str_contains($nama, 'MTS')) {
+                $allowedTingkat = [7, 8, 9];
+            } elseif (str_contains($kode, 'SMA') || str_contains($kode, 'SMK') || str_contains($nama, 'SMA') || str_contains($nama, 'SMK') || str_contains($nama, 'MENENGAH ATAS') || str_contains($nama, 'KEJURUAN') || str_contains($kode, 'MA') || str_contains($nama, 'MA')) {
+                $allowedTingkat = [10, 11, 12];
+            }
+        }
+
+        // Query database master_tingkat_kelas if available
+        $dbTingkats = DB::table('master_tingkat_kelas')
+            ->where('status_aktif', 'Y')
+            ->when($idjenjang, fn($q) => $q->where('idjenjang', $idjenjang))
+            ->orderBy('tingkat', 'asc')
+            ->get();
+
+        $options = [];
+        if ($dbTingkats->isNotEmpty()) {
+            foreach ($dbTingkats as $t) {
+                $options[] = [
+                    'id' => (int) $t->tingkat,
+                    'idtingkat' => (int) $t->id,
+                    'tingkat' => (int) $t->tingkat,
+                    'nama_tingkat' => "Tingkat {$t->tingkat}",
+                    'label' => "Tingkat {$t->tingkat}",
+                    'idjenjang' => $t->idjenjang,
+                ];
+            }
+        } elseif (!empty($allowedTingkat)) {
+            foreach ($allowedTingkat as $tNum) {
+                $options[] = [
+                    'id' => $tNum,
+                    'idtingkat' => null,
+                    'tingkat' => $tNum,
+                    'nama_tingkat' => "Tingkat {$tNum}",
+                    'label' => "Tingkat {$tNum}",
+                    'idjenjang' => $idjenjang,
+                ];
+            }
+        } else {
+            // Default 1 to 12
+            for ($i = 1; $i <= 12; $i++) {
+                $options[] = [
+                    'id' => $i,
+                    'idtingkat' => null,
+                    'tingkat' => $i,
+                    'nama_tingkat' => "Tingkat {$i}",
+                    'label' => "Tingkat {$i}",
+                    'idjenjang' => null,
+                ];
+            }
+        }
+
+        return $options;
     }
 
     /**
@@ -119,9 +189,14 @@ class SuperAdminQuestionBankController extends Controller
             $query->where('idjenjang', $request->idjenjang);
         }
 
-        // Parameter Filter 2: Kelas
-        if ($request->filled('idkelas')) {
-            $query->where('idkelas', $request->idkelas);
+        // Parameter Filter 2: Tingkat (Fallback to idkelas if requested by legacy params)
+        if ($request->filled('tingkat')) {
+            $query->where('tingkat', (int) $request->tingkat);
+        } elseif ($request->filled('idkelas')) {
+            $query->where(function ($q) use ($request) {
+                $q->where('idkelas', $request->idkelas)
+                  ->orWhere('tingkat', $request->idkelas);
+            });
         }
 
         // Parameter Filter 3: Mata Pelajaran
@@ -178,6 +253,9 @@ class SuperAdminQuestionBankController extends Controller
 
         $paginator->getCollection()->transform(function ($item) {
             $isAktif = ($item->status_aktif ?? 'Y') === 'Y';
+            $tingkatVal = $item->tingkat ?? ($item->kelas?->tingkat);
+            $tingkatLabel = $tingkatVal ? "Tingkat {$tingkatVal}" : ($item->kelas?->nama_kelas ?? '-');
+
             return [
                 'id' => (string) $item->idassessment,
                 'idassessment' => (string) $item->idassessment,
@@ -185,8 +263,11 @@ class SuperAdminQuestionBankController extends Controller
                 'deskripsi' => $item->deskripsi_assessment,
                 'idjenjang' => $item->idjenjang,
                 'jenjang' => $item->jenjang?->nama_jenjang ?? 'Semua Jenjang',
+                'tingkat' => $tingkatVal,
+                'idtingkat' => $item->idtingkat,
+                'tingkat_label' => $tingkatLabel,
                 'idkelas' => $item->idkelas,
-                'kelas' => $item->kelas?->nama_kelas ?? 'Semua Kelas',
+                'kelas' => $tingkatLabel, // Backward compatible display
                 'idmapel' => $item->idmapel,
                 'mata_pelajaran' => $item->mapel?->nama_mapel ?? 'Semua Mapel',
                 'id_tahun_ajaran' => $item->id_tahun_ajaran,
@@ -205,7 +286,7 @@ class SuperAdminQuestionBankController extends Controller
 
     /**
      * Detail Soal:
-     * Header: Nama Paket, Jenjang, Kelas, Mata Pelajaran, Tahun Soal
+     * Header: Nama Paket, Jenjang, Tingkat, Mata Pelajaran, Tahun Soal
      * Daftar Soal: Nomor, Pertanyaan, Pilihan, Jawaban Benar, Pembahasan, Tingkat Kesulitan
      */
     public function show(Request $request, $id)
@@ -253,6 +334,8 @@ class SuperAdminQuestionBankController extends Controller
         });
 
         $isAktif = ($assessment->status_aktif ?? 'Y') === 'Y';
+        $tingkatVal = $assessment->tingkat ?? ($assessment->kelas?->tingkat);
+        $tingkatLabel = $tingkatVal ? "Tingkat {$tingkatVal}" : ($assessment->kelas?->nama_kelas ?? '-');
 
         // Record Audit Trail
         $this->logBankSoalActivity('Lihat Detail', $assessment, "Melihat detail paket soal dengan {$questions->count()} butir pertanyaan");
@@ -264,8 +347,11 @@ class SuperAdminQuestionBankController extends Controller
                 'deskripsi' => $assessment->deskripsi_assessment,
                 'idjenjang' => $assessment->idjenjang,
                 'jenjang' => $assessment->jenjang?->nama_jenjang ?? '-',
+                'tingkat' => $tingkatVal,
+                'idtingkat' => $assessment->idtingkat,
+                'tingkat_label' => $tingkatLabel,
                 'idkelas' => $assessment->idkelas,
-                'kelas' => $assessment->kelas?->nama_kelas ?? '-',
+                'kelas' => $tingkatLabel, // Backward compatible display
                 'idmapel' => $assessment->idmapel,
                 'mata_pelajaran' => $assessment->mapel?->nama_mapel ?? '-',
                 'id_tahun_ajaran' => $assessment->id_tahun_ajaran,
@@ -290,7 +376,8 @@ class SuperAdminQuestionBankController extends Controller
             'nama_assessment' => 'required|string|max:255',
             'deskripsi_assessment' => 'nullable|string',
             'idjenjang' => 'required|integer',
-            'idkelas' => 'required|integer',
+            'tingkat' => 'required_without:idkelas|nullable|integer|min:1|max:12',
+            'idkelas' => 'nullable|integer',
             'idmapel' => 'required|integer',
             'id_tahun_ajaran' => 'nullable|integer',
             'tahun_soal_id' => 'nullable|integer',
@@ -303,12 +390,31 @@ class SuperAdminQuestionBankController extends Controller
         $activeTa = $validated['id_tahun_ajaran'] ?? (AcademicYear::where('is_active', 1)->value('id') ?? 1);
         $activeTahunSoal = $validated['tahun_soal_id'] ?? (MasterTahunSoal::where('is_active', 1)->value('id') ?? 1);
 
+        // Resolve Tingkat
+        $tingkat = $request->filled('tingkat') ? (int) $request->tingkat : null;
+        if (!$tingkat && $request->filled('idkelas')) {
+            $tingkat = MasterKelas::where('id', $request->idkelas)->value('tingkat');
+        }
+
+        $idtingkat = null;
+        if ($tingkat) {
+            $idtingkat = DB::table('master_tingkat_kelas')
+                ->where('tingkat', $tingkat)
+                ->where(function ($q) use ($validated) {
+                    $q->where('idjenjang', $validated['idjenjang'])
+                      ->orWhereNull('idjenjang');
+                })
+                ->value('id');
+        }
+
         $assessment = Assessment::create([
             'idassessment' => $idassessment,
             'nama_assessment' => trim($validated['nama_assessment']),
             'deskripsi_assessment' => $validated['deskripsi_assessment'] ?? '',
             'idjenjang' => $validated['idjenjang'],
-            'idkelas' => $validated['idkelas'],
+            'tingkat' => $tingkat,
+            'idtingkat' => $idtingkat,
+            'idkelas' => null, // Super Admin Bank Soal Global does not bind to specific school class
             'idmapel' => $validated['idmapel'],
             'id_tahun_ajaran' => $activeTa,
             'tahun_soal_id' => $activeTahunSoal,
@@ -326,7 +432,7 @@ class SuperAdminQuestionBankController extends Controller
 
     /**
      * Edit Soal / Update Bank Soal Package:
-     * Super Admin dapat mengubah Header Soal, Deskripsi, Jenjang, Kelas, Mapel, Tahun Soal, Status.
+     * Super Admin dapat mengubah Header Soal, Deskripsi, Jenjang, Tingkat, Mapel, Tahun Soal, Status.
      * Data langsung diperbarui tanpa refresh halaman.
      */
     public function update(Request $request, $id)
@@ -337,7 +443,8 @@ class SuperAdminQuestionBankController extends Controller
             'nama_assessment' => 'sometimes|required|string|max:255',
             'deskripsi_assessment' => 'nullable|string',
             'idjenjang' => 'sometimes|required|integer',
-            'idkelas' => 'sometimes|required|integer',
+            'tingkat' => 'nullable|integer|min:1|max:12',
+            'idkelas' => 'nullable|integer',
             'idmapel' => 'sometimes|required|integer',
             'id_tahun_ajaran' => 'nullable|integer',
             'tahun_soal_id' => 'nullable|integer',
@@ -356,9 +463,30 @@ class SuperAdminQuestionBankController extends Controller
         if ($request->has('idjenjang')) {
             $updateData['idjenjang'] = $request->idjenjang;
         }
-        if ($request->has('idkelas')) {
-            $updateData['idkelas'] = $request->idkelas;
+
+        if ($request->has('tingkat') || $request->has('idkelas')) {
+            $tingkat = $request->filled('tingkat') ? (int) $request->tingkat : null;
+            if (!$tingkat && $request->filled('idkelas')) {
+                $tingkat = MasterKelas::where('id', $request->idkelas)->value('tingkat');
+            }
+
+            $targetJenjang = $request->input('idjenjang', $assessment->idjenjang);
+            $idtingkat = null;
+            if ($tingkat) {
+                $idtingkat = DB::table('master_tingkat_kelas')
+                    ->where('tingkat', $tingkat)
+                    ->where(function ($q) use ($targetJenjang) {
+                        $q->where('idjenjang', $targetJenjang)
+                          ->orWhereNull('idjenjang');
+                    })
+                    ->value('id');
+            }
+
+            $updateData['tingkat'] = $tingkat;
+            $updateData['idtingkat'] = $idtingkat;
+            $updateData['idkelas'] = null; // Clear school-specific class
         }
+
         if ($request->has('idmapel')) {
             $updateData['idmapel'] = $request->idmapel;
         }
@@ -403,6 +531,9 @@ class SuperAdminQuestionBankController extends Controller
         $this->logBankSoalActivity('Edit', $assessment, "Memperbarui paket bank soal: {$assessment->nama_assessment}");
 
         $isAktif = ($assessment->status_aktif ?? 'Y') === 'Y';
+        $tingkatVal = $assessment->tingkat ?? ($assessment->kelas?->tingkat);
+        $tingkatLabel = $tingkatVal ? "Tingkat {$tingkatVal}" : ($assessment->kelas?->nama_kelas ?? '-');
+
         return response()->json([
             'message' => 'Paket soal berhasil diperbarui.',
             'data' => [
@@ -412,8 +543,11 @@ class SuperAdminQuestionBankController extends Controller
                 'deskripsi' => $assessment->deskripsi_assessment,
                 'idjenjang' => $assessment->idjenjang,
                 'jenjang' => $assessment->jenjang?->nama_jenjang ?? '-',
+                'tingkat' => $tingkatVal,
+                'idtingkat' => $assessment->idtingkat,
+                'tingkat_label' => $tingkatLabel,
                 'idkelas' => $assessment->idkelas,
-                'kelas' => $assessment->kelas?->nama_kelas ?? '-',
+                'kelas' => $tingkatLabel,
                 'idmapel' => $assessment->idmapel,
                 'mata_pelajaran' => $assessment->mapel?->nama_mapel ?? '-',
                 'id_tahun_ajaran' => $assessment->id_tahun_ajaran,
@@ -480,7 +614,7 @@ class SuperAdminQuestionBankController extends Controller
         $spreadsheetService = $spreadsheetService ?? app(SimpleSpreadsheetService::class);
         $headers = [
             'Jenjang',
-            'Kelas',
+            'Tingkat',
             'Mata Pelajaran',
             'Tahun Ajaran',
             'Tahun Soal',
@@ -500,7 +634,7 @@ class SuperAdminQuestionBankController extends Controller
 
         // Fetch realistic sample references from DB
         $sampleJenjang = MasterJenjang::where('status_aktif', 'Y')->orderBy('urutan')->value('nama_jenjang') ?? 'SMA';
-        $sampleKelas = MasterKelas::orderBy('tingkat')->value('nama_kelas') ?? 'Kelas 10 MIPA 1';
+        $sampleTingkat = '10';
         $sampleMapel = MasterMataPelajaran::where('status_aktif', 'Y')->orderBy('nama_mapel')->value('nama_mapel') ?? 'Matematika';
         $sampleTa = AcademicYear::where('is_active', 1)->value('name') ?? '2026/2027';
         $sampleTahunSoal = (string) (MasterTahunSoal::where('is_active', 1)->value('tahun') ?? '2026');
@@ -508,7 +642,7 @@ class SuperAdminQuestionBankController extends Controller
         $sampleRows = [
             [
                 $sampleJenjang,
-                $sampleKelas,
+                $sampleTingkat,
                 $sampleMapel,
                 $sampleTa,
                 $sampleTahunSoal,
@@ -527,7 +661,7 @@ class SuperAdminQuestionBankController extends Controller
             ],
             [
                 $sampleJenjang,
-                $sampleKelas,
+                $sampleTingkat,
                 $sampleMapel,
                 $sampleTa,
                 $sampleTahunSoal,
@@ -556,10 +690,10 @@ class SuperAdminQuestionBankController extends Controller
             ],
             [
                 'no' => 2,
-                'kolom' => 'Kelas',
+                'kolom' => 'Tingkat',
                 'status' => 'Wajib',
-                'keterangan' => 'Nama rombel/kelas yang terdaftar pada Master Kelas sesuai jenjang yang dipilih.',
-                'contoh' => $sampleKelas,
+                'keterangan' => 'Tingkat pendidikan berupa angka 1-12 (SD: 1-6, SMP: 7-9, SMA/SMK: 10-12).',
+                'contoh' => '10',
             ],
             [
                 'no' => 3,
@@ -829,12 +963,12 @@ class SuperAdminQuestionBankController extends Controller
                 $d = $val['data'];
 
                 // Key to group questions into Assessment packages
-                $cacheKey = "{$d['judul_paket']}_{$d['idjenjang']}_{$d['idkelas']}_{$d['idmapel']}_{$d['id_tahun_ajaran']}_{$d['tahun_soal_id']}";
+                $cacheKey = "{$d['judul_paket']}_{$d['idjenjang']}_{$d['tingkat']}_{$d['idmapel']}_{$d['id_tahun_ajaran']}_{$d['tahun_soal_id']}";
 
                 if (!isset($assessmentCache[$cacheKey])) {
                     $existingAssessment = Assessment::where('nama_assessment', $d['judul_paket'])
                         ->where('idjenjang', $d['idjenjang'])
-                        ->where('idkelas', $d['idkelas'])
+                        ->where('tingkat', $d['tingkat'])
                         ->where('idmapel', $d['idmapel'])
                         ->first();
 
@@ -847,7 +981,9 @@ class SuperAdminQuestionBankController extends Controller
                             'nama_assessment' => $d['judul_paket'],
                             'deskripsi_assessment' => 'Diimpor via Excel Bank Soal',
                             'idjenjang' => $d['idjenjang'],
-                            'idkelas' => $d['idkelas'],
+                            'tingkat' => $d['tingkat'],
+                            'idtingkat' => $d['idtingkat'],
+                            'idkelas' => null, // Super Admin Bank Soal Global does not bind to specific school class
                             'idmapel' => $d['idmapel'],
                             'id_tahun_ajaran' => $d['id_tahun_ajaran'],
                             'tahun_soal_id' => $d['tahun_soal_id'],
@@ -922,6 +1058,7 @@ class SuperAdminQuestionBankController extends Controller
     {
         $map = [
             'jenjang' => -1,
+            'tingkat' => -1,
             'kelas' => -1,
             'mapel' => -1,
             'tahun_ajaran' => -1,
@@ -944,7 +1081,8 @@ class SuperAdminQuestionBankController extends Controller
         foreach ($headers as $idx => $header) {
             $h = strtolower(trim($header));
             if (str_contains($h, 'jenjang')) $map['jenjang'] = $idx;
-            elseif (str_contains($h, 'kelas') && !str_contains($h, 'tingkat')) $map['kelas'] = $idx;
+            elseif (str_contains($h, 'tingkat') && !str_contains($h, 'kesulitan')) $map['tingkat'] = $idx;
+            elseif (str_contains($h, 'kelas')) $map['kelas'] = $idx;
             elseif (str_contains($h, 'mata pelajaran') || str_contains($h, 'mapel')) $map['mapel'] = $idx;
             elseif (str_contains($h, 'tahun ajaran')) $map['tahun_ajaran'] = $idx;
             elseif (str_contains($h, 'tahun soal')) $map['tahun_soal'] = $idx;
@@ -984,6 +1122,7 @@ class SuperAdminQuestionBankController extends Controller
         $getVal = fn($key) => isset($colMap[$key]) && $colMap[$key] >= 0 ? trim((string)($row[$colMap[$key]] ?? '')) : '';
 
         $jenjangRaw = $getVal('jenjang');
+        $tingkatRaw = $getVal('tingkat');
         $kelasRaw = $getVal('kelas');
         $mapelRaw = $getVal('mapel');
         $taRaw = $getVal('tahun_ajaran');
@@ -1013,29 +1152,45 @@ class SuperAdminQuestionBankController extends Controller
         }
         if (!$resolvedJenjang) {
             $resolvedJenjang = $jenjangs->first(); // fallback to first if empty or not matched
-            if (empty($jenjangRaw)) {
-                // if left blank, use fallback default
-            } else {
+            if (!empty($jenjangRaw)) {
                 $errors[] = "Jenjang '{$jenjangRaw}' tidak ditemukan di Master Jenjang";
             }
         }
 
-        // 2. Kelas
-        $resolvedKelas = null;
-        if (!empty($kelasRaw)) {
-            $resolvedKelas = $kelases->first(function ($k) use ($kelasRaw, $resolvedJenjang) {
-                $matchesName = (string)$k->id === $kelasRaw || strcasecmp($k->nama_kelas, $kelasRaw) === 0;
-                if ($matchesName && $resolvedJenjang) {
-                    return (int)$k->idjenjang === (int)$resolvedJenjang->id;
-                }
-                return $matchesName;
-            });
-        }
-        if (!$resolvedKelas) {
-            $resolvedKelas = $kelases->first();
-            if (!empty($kelasRaw)) {
-                $errors[] = "Kelas '{$kelasRaw}' tidak ditemukan di Master Kelas";
+        // 2. Tingkat (SD: 1-6, SMP: 7-9, SMA/SMK: 10-12)
+        $resolvedTingkat = null;
+        if (!empty($tingkatRaw)) {
+            if (preg_match('/\d+/', $tingkatRaw, $matches)) {
+                $resolvedTingkat = (int) $matches[0];
             }
+        }
+        if (!$resolvedTingkat && !empty($kelasRaw)) {
+            if (preg_match('/\d+/', $kelasRaw, $matches)) {
+                $resolvedTingkat = (int) $matches[0];
+            } else {
+                $kMatch = $kelases->first(fn($k) => (string)$k->id === $kelasRaw || strcasecmp($k->nama_kelas, $kelasRaw) === 0);
+                if ($kMatch && $kMatch->tingkat) {
+                    $resolvedTingkat = (int) $kMatch->tingkat;
+                }
+            }
+        }
+
+        if (!$resolvedTingkat) {
+            $resolvedTingkat = 10; // Default fallback Tingkat 10
+        }
+
+        // Resolve ID Tingkat from database if matching jenjang
+        $idtingkat = null;
+        if ($resolvedTingkat) {
+            $idtingkat = DB::table('master_tingkat_kelas')
+                ->where('tingkat', $resolvedTingkat)
+                ->where(function ($q) use ($resolvedJenjang) {
+                    if ($resolvedJenjang) {
+                        $q->where('idjenjang', $resolvedJenjang->id)
+                          ->orWhereNull('idjenjang');
+                    }
+                })
+                ->value('id');
         }
 
         // 3. Mapel
@@ -1101,8 +1256,11 @@ class SuperAdminQuestionBankController extends Controller
             'data' => [
                 'idjenjang' => $resolvedJenjang?->id ?? 1,
                 'jenjang_name' => $resolvedJenjang?->nama_jenjang ?? '-',
-                'idkelas' => $resolvedKelas?->id ?? 1,
-                'kelas_name' => $resolvedKelas?->nama_kelas ?? '-',
+                'tingkat' => $resolvedTingkat,
+                'idtingkat' => $idtingkat,
+                'tingkat_label' => "Tingkat {$resolvedTingkat}",
+                'idkelas' => null,
+                'kelas_name' => "Tingkat {$resolvedTingkat}",
                 'idmapel' => $resolvedMapel?->id ?? 1,
                 'mapel_name' => $resolvedMapel?->nama_mapel ?? '-',
                 'id_tahun_ajaran' => $resolvedTa?->id ?? 1,

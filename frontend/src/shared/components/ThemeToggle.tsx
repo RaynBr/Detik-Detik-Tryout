@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Moon, Laptop } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import { useTheme, ThemeMode } from '../context/ThemeContext';
 
 interface ThemeToggleProps {
@@ -16,7 +16,6 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
   const options: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
     { mode: 'light', label: 'Terang', icon: Sun },
     { mode: 'dark', label: 'Gelap', icon: Moon },
-    { mode: 'system', label: 'Laptop', icon: Laptop },
   ];
 
   if (compact) {
@@ -29,7 +28,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
               key={mode}
               onClick={() => setThemeMode(mode)}
               title={`Mode ${label}`}
-              className={`p-1.5 rounded-xl transition flex items-center justify-center ${
+              className={`p-1.5 rounded-xl transition cursor-pointer flex items-center justify-center ${
                 isActive
                   ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm font-bold'
                   : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
@@ -51,7 +50,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
           <button
             key={mode}
             onClick={() => setThemeMode(mode)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
               isActive
                 ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm font-bold'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'

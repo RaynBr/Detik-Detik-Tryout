@@ -12,7 +12,7 @@ class MajorController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Major::query();
+        $query = Major::with('jenjangModel');
 
         if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
             $query->where('idkategori', $user->idkategori);
@@ -26,6 +26,10 @@ class MajorController extends Controller
                 $q->where('name', 'LIKE', "%{$s}%")
                   ->orWhere('code', 'LIKE', "%{$s}%");
             });
+        }
+
+        if ($request->filled('idjenjang')) {
+            $query->where('idjenjang', $request->idjenjang);
         }
 
         if ($request->filled('jenjang')) {
@@ -74,31 +78,44 @@ class MajorController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50',
+            'idjenjang' => 'nullable|exists:master_jenjang,id',
             'jenjang' => 'nullable|string|max:50',
             'is_active' => 'nullable|boolean',
         ]);
 
         $idkategori = $user->idkategori;
         $code = strtoupper(trim($validated['code']));
+        $name = trim($validated['name']);
 
-        if (Major::where('idkategori', $idkategori)->where('code', $code)->exists()) {
-            return response()->json(['message' => 'Kode jurusan tersebut sudah terdaftar di instansi Anda.'], 422);
+        if (Major::where('idkategori', $idkategori)
+            ->where(function ($q) use ($code, $name) {
+                $q->where('code', $code)
+                  ->orWhere('name', $name);
+            })
+            ->exists()) {
+            return response()->json(['message' => 'Jurusan dengan nama atau kode tersebut sudah terdaftar di instansi Anda.'], 422);
         }
 
         $major = Major::create([
             'idkategori' => $idkategori,
-            'name' => trim($validated['name']),
+            'name' => $name,
             'code' => $code,
+            'idjenjang' => $validated['idjenjang'] ?? null,
             'jenjang' => $validated['jenjang'] ?? 'SMA',
             'is_active' => $validated['is_active'] ?? true,
         ]);
 
+        $major->load('jenjangModel');
+
         AuditLog::record(
-            'Tambah Data',
+            'CREATE_JURUSAN',
             'majors',
             (string) $major->id,
             "Menambahkan jurusan: {$major->name}",
-            $validated,
+            [
+                'action' => 'create',
+                'after' => $major->toArray(),
+            ],
             null,
             null,
             null,
@@ -119,6 +136,8 @@ class MajorController extends Controller
         if ($user && $user->role === 'admin' && $major->idkategori && $major->idkategori !== $user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
         }
+
+        $major->load('jenjangModel');
 
         return response()->json($major);
     }
@@ -141,30 +160,48 @@ class MajorController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50',
+            'idjenjang' => 'nullable|exists:master_jenjang,id',
             'jenjang' => 'nullable|string|max:50',
             'is_active' => 'nullable|boolean',
         ]);
 
         $idkategori = $major->idkategori ?: ($user?->idkategori ?? null);
         $code = strtoupper(trim($validated['code']));
+        $name = trim($validated['name']);
 
-        if ($idkategori && Major::where('idkategori', $idkategori)->where('code', $code)->where('id', '!=', $major->id)->exists()) {
-            return response()->json(['message' => 'Kode jurusan tersebut sudah terdaftar di instansi Anda.'], 422);
+        if ($idkategori && Major::where('idkategori', $idkategori)
+            ->where(function ($q) use ($code, $name) {
+                $q->where('code', $code)
+                  ->orWhere('name', $name);
+            })
+            ->where('id', '!=', $major->id)
+            ->exists()) {
+            return response()->json(['message' => 'Jurusan dengan nama atau kode tersebut sudah terdaftar di instansi Anda.'], 422);
         }
 
+        $before = $major->toArray();
+
         $major->update([
-            'name' => trim($validated['name']),
+            'name' => $name,
             'code' => $code,
+            'idjenjang' => $validated['idjenjang'] ?? $major->idjenjang,
             'jenjang' => $validated['jenjang'] ?? $major->jenjang,
             'is_active' => $validated['is_active'] ?? $major->is_active,
         ]);
 
+        $major->load('jenjangModel');
+        $after = $major->fresh()->toArray();
+
         AuditLog::record(
-            'Edit Data',
+            'EDIT_JURUSAN',
             'majors',
             (string) $major->id,
             "Memperbarui jurusan: {$major->name}",
-            $validated,
+            [
+                'action' => 'edit',
+                'before' => $before,
+                'after' => $after,
+            ],
             null,
             null,
             null,
@@ -194,14 +231,19 @@ class MajorController extends Controller
 
         $name = $major->name;
         $strId = (string) $major->id;
+        $before = $major->toArray();
         $major->delete();
 
         AuditLog::record(
-            'Hapus Data',
+            'DELETE_JURUSAN',
             'majors',
             $strId,
             "Menghapus jurusan: {$name}",
-            null,
+            [
+                'action' => 'delete',
+                'before' => $before,
+                'after' => null,
+            ],
             null,
             null,
             null,

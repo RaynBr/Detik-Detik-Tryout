@@ -58,6 +58,21 @@ class ResultController extends Controller
                 $options[] = ['key' => 'E', 'content' => $q->pilihan_e_text ?: 'Pilihan E', 'media' => $q->pilihan_e_gambar];
             }
 
+            // Consistent deterministic seeded shuffle matching ExamAttemptController (Temuan 27)
+            $isAcakOpsi = in_array($assessment->acak_opsi, ['Y', '1', 1, true], true);
+            if ($isAcakOpsi) {
+                $seed = crc32($attempt->idassessment_jawaban_pilgan . '_' . $q->idassessment_soal_pilgan);
+                mt_srand($seed);
+                $shuffledOptions = $options;
+                for ($i = count($shuffledOptions) - 1; $i > 0; $i--) {
+                    $j = mt_rand(0, $i);
+                    $tmp = $shuffledOptions[$i];
+                    $shuffledOptions[$i] = $shuffledOptions[$j];
+                    $shuffledOptions[$j] = $tmp;
+                }
+                $options = $shuffledOptions;
+            }
+
             $reviewQuestions[] = [
                 'number' => $idx + 1,
                 'question_id' => $q->idassessment_soal_pilgan,
@@ -69,6 +84,23 @@ class ResultController extends Controller
                 'is_correct' => $isCorrect,
                 'explanation' => $q->penjelasan_jawaban ?: 'Tidak ada pembahasan khusus untuk nomor ini.',
             ];
+        }
+
+        // Consistent deterministic question shuffle matching ExamAttemptController (Temuan 27)
+        $isAcakSoal = in_array($assessment->acak_soal, ['Y', '1', 1, true], true);
+        if ($isAcakSoal) {
+            $qSeed = crc32($attempt->idassessment_jawaban_pilgan . '_questions_order');
+            mt_srand($qSeed);
+            for ($i = count($reviewQuestions) - 1; $i > 0; $i--) {
+                $j = mt_rand(0, $i);
+                $tmp = $reviewQuestions[$i];
+                $reviewQuestions[$i] = $reviewQuestions[$j];
+                $reviewQuestions[$j] = $tmp;
+            }
+            foreach ($reviewQuestions as $k => &$rq) {
+                $rq['number'] = $k + 1;
+            }
+            unset($rq);
         }
 
         $totalQuestions = count($questions);

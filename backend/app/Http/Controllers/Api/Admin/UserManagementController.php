@@ -24,10 +24,11 @@ class UserManagementController extends Controller
 
     /**
      * Unified list of platform users with filtering by role, instansi, status, search, and pagination.
+     * When accessed by Super Admin without explicit role, defaults strictly to super_admin.
      */
     public function index(Request $request)
     {
-        $roleFilter = $request->input('role'); // super_admin, admin, guru, siswa, all
+        $roleFilter = $request->input('role', 'super_admin'); // default strictly to super_admin
         $idkategori = $request->input('idkategori');
         $search = $request->input('search');
         $status = $request->input('status'); // aktif, nonaktif
@@ -234,7 +235,19 @@ class UserManagementController extends Controller
      */
     public function store(Request $request)
     {
-        $role = $request->input('role', 'admin');
+        $role = $request->input('role', 'super_admin');
+
+        $currentUser = $request->user();
+        if ($role === 'super_admin' && $currentUser?->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Akses ditolak: Hanya Super Administrator yang berhak membuat akun Super Admin.'
+            ], 403);
+        }
+
+        if ($currentUser && $currentUser->role === 'admin' && !empty($currentUser->idkategori)) {
+            // Strictly bind Admin Instansi creations to their own institution
+            $request->merge(['idkategori' => $currentUser->idkategori]);
+        }
 
         $request->validate([
             'nama' => 'required|string|max:255',
@@ -243,7 +256,7 @@ class UserManagementController extends Controller
             'email' => 'nullable|email|max:100',
             'telp' => 'nullable|string|max:30',
             'alamat' => 'nullable|string|max:500',
-            'role' => 'required|in:super_admin,admin,guru,siswa',
+            'role' => 'nullable|in:super_admin,admin,guru,siswa',
             'idkategori' => 'nullable|string',
             'idkelas' => 'nullable|integer',
         ]);
@@ -478,11 +491,15 @@ class UserManagementController extends Controller
     }
 
     /**
-     * Reset user password to default '123456' or provided password.
+     * Reset user password to secure random or provided password with strict validation.
      */
     public function resetPassword(Request $request, $id)
     {
-        $newPass = $request->input('password', '123456');
+        $newPass = $request->input('password');
+        if (empty($newPass)) {
+            // Generate a secure random password if not explicitly supplied (CWE-1188 fix)
+            $newPass = 'User' . rand(1000, 9999) . '!' . substr(str_shuffle('abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ'), 0, 3);
+        }
 
         // 1. Check in user_bo
         $userBo = UserBo::where('iduser_bo', $id)->first();
@@ -615,12 +632,18 @@ class UserManagementController extends Controller
 
     public function superAdmins(Request $request)
     {
+        if ($request->user()?->role !== 'super_admin') {
+            return response()->json(['message' => 'Akses ditolak: Hanya Super Administrator yang berhak mengakses data Super Admin.'], 403);
+        }
         $request->merge(['role' => 'super_admin']);
         return $this->index($request);
     }
 
     public function storeSuperAdmin(Request $request)
     {
+        if ($request->user()?->role !== 'super_admin') {
+            return response()->json(['message' => 'Akses ditolak: Hanya Super Administrator yang berhak membuat akun Super Admin.'], 403);
+        }
         $request->merge(['role' => 'super_admin']);
         return $this->store($request);
     }
@@ -639,10 +662,22 @@ class UserManagementController extends Controller
 
     public function monitoringGuruSiswa(Request $request)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
         $query = KategoriUserBo::with(['guru', 'siswa.kelas', 'adminSekolah'])->where('status_remove', '!=', 'Y');
 
-        if ($request->filled('idkategori')) {
-            $query->where('idkategori', $request->idkategori);
+        if ($user->role === 'admin') {
+            // Strictly scope Admin Instansi to their own institution only
+            $query->where('idkategori', $user->idkategori);
+        } elseif ($user->role === 'super_admin') {
+            if ($request->filled('idkategori')) {
+                $query->where('idkategori', $request->idkategori);
+            }
+        } else {
+            return response()->json(['message' => 'Akses ditolak.'], 403);
         }
 
         if ($request->filled('search')) {

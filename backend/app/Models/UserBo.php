@@ -36,6 +36,7 @@ class UserBo extends Authenticatable
         'nuptk',
         'nip',
         'idjenjang',
+        'id_tahun_ajaran',
         'kode_referal',
         'sharing_fee_persen',
         'active_session_token',
@@ -139,6 +140,11 @@ class UserBo extends Authenticatable
     public function kategori(): BelongsTo
     {
         return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
+
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'id_tahun_ajaran', 'id');
     }
 
     public function kelasWali(): HasMany

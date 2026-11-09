@@ -30,6 +30,7 @@ class UserSiswa extends Authenticatable
         'agama',
         'nomor_absen',
         'idkelas',
+        'id_tahun_ajaran',
         'idjenjang',
         'idkategori',
         'telp',
@@ -119,6 +120,11 @@ class UserSiswa extends Authenticatable
     public function kelas(): BelongsTo
     {
         return $this->belongsTo(MasterKelas::class, 'idkelas', 'id');
+    }
+
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'id_tahun_ajaran', 'id');
     }
 
     public function kategori(): BelongsTo

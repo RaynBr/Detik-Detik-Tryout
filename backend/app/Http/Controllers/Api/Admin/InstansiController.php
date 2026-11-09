@@ -67,6 +67,7 @@ class InstansiController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+        KategoriUserBo::syncExpiredSubscriptions();
         $query = KategoriUserBo::query();
 
         // Non-super_admin (Admin Instansi / Guru) CANNOT see or access other institutions
@@ -77,18 +78,15 @@ class InstansiController extends Controller
             $query->where('idkategori', $user->idkategori);
         }
 
-        // Filter by status (aktif / nonaktif / all)
+        // Filter by status (aktif / nonaktif / expired / all)
         if ($request->filled('status')) {
             $status = strtolower($request->status);
             if ($status === 'aktif') {
-                $query->where('status_remove', '!=', 'Y')
-                      ->where(function ($q) {
-                          $q->whereNull('status_aktif')->orWhere('status_aktif', 'Y');
-                      });
+                $query->activeAccess();
             } elseif ($status === 'nonaktif' || $status === 'non_aktif') {
-                $query->where(function ($q) {
-                    $q->where('status_remove', 'Y')->orWhere('status_aktif', 'N');
-                });
+                $query->inactiveAccess();
+            } elseif ($status === 'expired') {
+                $query->expiredAccess();
             }
         } elseif (!$request->boolean('include_deleted')) {
             // By default hide deleted unless requested or filtered
@@ -145,8 +143,15 @@ class InstansiController extends Controller
                 ->selectRaw('idkategori, count(*) as count')
                 ->pluck('count', 'idkategori');
 
-            return $items->map(function ($item) use ($adminCounts, $guruCounts, $kelasCounts, $siswaCounts, $paketSoalCounts) {
-                $isAktif = ($item->status_remove !== 'Y') && ($item->status_aktif !== 'N');
+            $today = now()->startOfDay();
+            return $items->map(function ($item) use ($adminCounts, $guruCounts, $kelasCounts, $siswaCounts, $paketSoalCounts, $today) {
+                $endDate = $item->tanggal_berakhir ? \Carbon\Carbon::parse($item->tanggal_berakhir)->endOfDay() : null;
+                $isExpired = $endDate ? $today->greaterThan($endDate) : false;
+                $isAktif = ($item->status_remove !== 'Y') 
+                    && ($item->status_aktif !== 'N') 
+                    && (($item->subscription_status ?? 'aktif') === 'aktif') 
+                    && !$isExpired;
+
                 return [
                     'idkategori' => (string) $item->idkategori,
                     'nama_kategori' => $item->nama_kategori,
@@ -158,7 +163,9 @@ class InstansiController extends Controller
                     'kota' => $item->kota,
                     'provinsi' => $item->provinsi,
                     'status_aktif' => $isAktif ? 'Y' : 'N',
-                    'status' => $isAktif ? 'aktif' : 'nonaktif',
+                    'status' => $isExpired ? 'expired' : ($isAktif ? 'aktif' : 'nonaktif'),
+                    'is_expired' => $isExpired,
+                    'is_active' => $isAktif,
                     'logo' => $item->logo,
                     'tgl_input' => $item->tgl_input,
                     'admin_count' => (int) ($adminCounts->get($item->idkategori) ?? 0),
@@ -202,6 +209,56 @@ class InstansiController extends Controller
     }
 
     /**
+     * Provide global master options (Tahun Ajaran, Jenjang, Tingkat, Semester, Kurikulum)
+     * for institution creation and academic configuration.
+     */
+    public function masterOptions(Request $request)
+    {
+        $superAdminKategori = '27830150842287772';
+        
+        $academicYears = \App\Models\AcademicYear::where(function ($q) use ($superAdminKategori) {
+                $q->where('idkategori', $superAdminKategori)->orWhereNull('idkategori');
+            })
+            ->orderBy('is_active', 'desc')
+            ->orderBy('name', 'desc')
+            ->get();
+
+        $jenjang = \App\Models\MasterJenjang::where(function ($q) use ($superAdminKategori) {
+                $q->where('idkategori', $superAdminKategori)->orWhereNull('idkategori');
+            })
+            ->orderBy('urutan', 'asc')
+            ->get();
+
+        $tingkatKelas = \App\Models\MasterTingkatKelas::with('jenjang')
+            ->where(function ($q) use ($superAdminKategori) {
+                $q->where('idkategori', $superAdminKategori)->orWhereNull('idkategori');
+            })
+            ->orderBy('tingkat', 'asc')
+            ->get();
+
+        $semesters = \App\Models\MasterSemester::with('academicYear')
+            ->where(function ($q) use ($superAdminKategori) {
+                $q->where('idkategori', $superAdminKategori)->orWhereNull('idkategori');
+            })
+            ->orderBy('urutan', 'asc')
+            ->get();
+
+        $kurikulum = \App\Models\MasterKurikulum::where(function ($q) use ($superAdminKategori) {
+                $q->where('idkategori', $superAdminKategori)->orWhereNull('idkategori');
+            })
+            ->orderBy('nama_kurikulum', 'asc')
+            ->get();
+
+        return response()->json([
+            'academic_years' => $academicYears,
+            'jenjang' => $jenjang,
+            'tingkat_kelas' => $tingkatKelas,
+            'semesters' => $semesters,
+            'kurikulum' => $kurikulum,
+        ]);
+    }
+
+    /**
      * Create a new institution.
      * ONLY Super Admin can create institutions.
      */
@@ -223,13 +280,14 @@ class InstansiController extends Controller
             'alamat' => 'nullable|string|max:500',
             'kota' => 'nullable|string|max:100',
             'provinsi' => 'nullable|string|max:100',
-            'status' => 'nullable|string|in:aktif,nonaktif,Y,N',
-            'status_aktif' => 'nullable|string|in:aktif,nonaktif,Y,N',
+            'status' => 'nullable|string|in:aktif,nonaktif,Aktif,Non Aktif,non_aktif,Y,N',
+            'status_aktif' => 'nullable|string|in:aktif,nonaktif,Aktif,Non Aktif,non_aktif,Y,N',
             'logo' => 'nullable|string|max:255',
             'kode_instansi' => 'nullable|string|max:50|unique:kategori_user_bo,idkategori',
             'admin_username' => 'nullable|string|max:100|unique:user_bo,login_username',
             'admin_password' => 'nullable|string|min:4',
             'admin_name' => 'nullable|string|max:255',
+            'academic_config' => 'nullable|array',
         ]);
 
         $idkategori = $request->input('kode_instansi') ?: (string) (time() . rand(1000000, 9999999));
@@ -256,6 +314,7 @@ class InstansiController extends Controller
             'tanggal_aktif' => now()->toDateString(),
             'tanggal_berakhir' => now()->addYear()->toDateString(),
             'tgl_input' => now(),
+            'academic_config' => $request->input('academic_config'),
         ]);
 
         // Optional first admin creation
@@ -389,6 +448,21 @@ class InstansiController extends Controller
 
         $isAktif = ($instansi->status_remove !== 'Y') && ($instansi->status_aktif !== 'N');
 
+        $mataPelajarans = \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)
+            ->with(['kurikulum', 'jenjang', 'tingkatKelas', 'jurusan'])
+            ->orderBy('nama_mapel', 'asc')
+            ->get();
+
+        $auditLogs = AuditLog::where(function ($q) use ($idkategori, $instansi) {
+                $q->where('target_id', $idkategori)
+                  ->orWhere('instansi_name', $instansi->nama_kategori)
+                  ->orWhere('target_label', 'like', "%{$instansi->nama_kategori}%")
+                  ->orWhere('metadata', 'like', "%{$idkategori}%");
+            })
+            ->latest('created_at')
+            ->limit(50)
+            ->get();
+
         return response()->json([
             'instansi' => [
                 'idkategori' => (string) $instansi->idkategori,
@@ -408,6 +482,7 @@ class InstansiController extends Controller
                 'tanggal_berakhir' => $instansi->tanggal_berakhir,
                 'keterangan_subscription' => $instansi->keterangan_subscription,
                 'subscription_status' => $instansi->subscription_status ?? 'aktif',
+                'academic_config' => $instansi->academic_config,
             ],
             'statistics' => [
                 'total_guru' => $totalGuru,
@@ -424,7 +499,7 @@ class InstansiController extends Controller
                 'jenjang' => \App\Models\MasterJenjang::where('idkategori', $idkategori)->count(),
                 'jurusan' => \App\Models\Major::where('idkategori', $idkategori)->count(),
                 'tingkat_kelas' => \App\Models\MasterTingkatKelas::where('idkategori', $idkategori)->count(),
-                'mata_pelajaran' => \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)->count(),
+                'mata_pelajaran' => $mataPelajarans->count(),
                 'kelas' => $totalKelas,
                 'total_tahun_ajaran' => \App\Models\AcademicYear::where('idkategori', $idkategori)->count(),
                 'total_semester' => \App\Models\MasterSemester::where('idkategori', $idkategori)->count(),
@@ -432,13 +507,15 @@ class InstansiController extends Controller
                 'total_jenjang' => \App\Models\MasterJenjang::where('idkategori', $idkategori)->count(),
                 'total_jurusan' => \App\Models\Major::where('idkategori', $idkategori)->count(),
                 'total_tingkat_kelas' => \App\Models\MasterTingkatKelas::where('idkategori', $idkategori)->count(),
-                'total_mata_pelajaran' => \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)->count(),
+                'total_mata_pelajaran' => $mataPelajarans->count(),
                 'total_kelas' => $totalKelas,
             ],
             'admins' => $admins,
             'gurus' => $gurus,
             'siswas' => $siswas,
             'kelas' => $kelas,
+            'mata_pelajaran' => $mataPelajarans,
+            'audit_logs' => $auditLogs,
         ]);
     }
 
@@ -497,9 +574,10 @@ class InstansiController extends Controller
             'alamat' => 'nullable|string|max:500',
             'kota' => 'nullable|string|max:100',
             'provinsi' => 'nullable|string|max:100',
-            'status' => 'nullable|string|in:aktif,nonaktif,Y,N',
-            'status_aktif' => 'nullable|string|in:aktif,nonaktif,Y,N',
+            'status' => 'nullable|string|in:aktif,nonaktif,Aktif,Non Aktif,non_aktif,Y,N',
+            'status_aktif' => 'nullable|string|in:aktif,nonaktif,Aktif,Non Aktif,non_aktif,Y,N',
             'logo' => 'nullable|string|max:255',
+            'academic_config' => 'nullable|array',
         ]);
 
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
@@ -515,12 +593,20 @@ class InstansiController extends Controller
         if ($request->has('kota')) $updates['kota'] = $request->kota;
         if ($request->has('provinsi')) $updates['provinsi'] = $request->provinsi;
         if ($request->has('logo')) $updates['logo'] = $request->logo;
+        if ($request->has('academic_config')) $updates['academic_config'] = $request->input('academic_config');
 
         $statusInput = $request->input('status_aktif') ?? $request->input('status');
         if ($statusInput !== null) {
-            $isNonaktif = in_array(strtolower($statusInput), ['nonaktif', 'n']);
+            $isNonaktif = in_array(strtolower($statusInput), ['nonaktif', 'n', 'expired']);
             $updates['status_aktif'] = $isNonaktif ? 'N' : 'Y';
             $updates['status_remove'] = $isNonaktif ? 'Y' : 'N';
+            $updates['subscription_status'] = $isNonaktif ? 'nonaktif' : 'aktif';
+            if (!$isNonaktif) {
+                // If activated and date was expired, automatically extend expiration date
+                if ($instansi->tanggal_berakhir && \Carbon\Carbon::parse($instansi->tanggal_berakhir)->endOfDay()->lt(now()->startOfDay())) {
+                    $updates['tanggal_berakhir'] = now()->addYear()->toDateString();
+                }
+            }
         }
 
         $instansi->update($updates);
@@ -560,6 +646,7 @@ class InstansiController extends Controller
         $instansi->update([
             'status_remove' => 'Y',
             'status_aktif' => 'N',
+            'subscription_status' => 'nonaktif',
         ]);
 
         AuditLog::record(
@@ -591,13 +678,28 @@ class InstansiController extends Controller
         }
 
         $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
-        $isCurrentlyActive = ($instansi->status_remove !== 'Y') && ($instansi->status_aktif !== 'N');
+        $today = now()->startOfDay();
+        $isExpired = $instansi->tanggal_berakhir ? $today->greaterThan(\Carbon\Carbon::parse($instansi->tanggal_berakhir)->endOfDay()) : false;
+        
+        $isCurrentlyActive = ($instansi->status_remove !== 'Y') 
+            && ($instansi->status_aktif !== 'N') 
+            && (($instansi->subscription_status ?? 'aktif') === 'aktif')
+            && !$isExpired;
+
         $newStatus = $isCurrentlyActive ? 'nonaktif' : 'aktif';
 
-        $instansi->update([
-            'status_remove' => $isCurrentlyActive ? 'Y' : 'N',
+        $updates = [
+            'status_remove' => 'N',
             'status_aktif' => $isCurrentlyActive ? 'N' : 'Y',
-        ]);
+            'subscription_status' => $newStatus,
+        ];
+
+        // If activating and previously expired, automatically extend expiration date by 1 year
+        if (!$isCurrentlyActive && $isExpired) {
+            $updates['tanggal_berakhir'] = now()->addYear()->toDateString();
+        }
+
+        $instansi->update($updates);
 
         AuditLog::record(
             $isCurrentlyActive ? 'Nonaktif Instansi' : 'Aktivasi Instansi',
@@ -1036,7 +1138,7 @@ class InstansiController extends Controller
 
         // 1. If role is 'guru'
         if ($roleFilter === 'guru') {
-            $q = UserBo::with(['mapelAjar.mataPelajaran'])
+            $q = UserBo::with(['mapelAjar.mataPelajaran', 'kelasWali', 'academicYear'])
                 ->where('idkategori', $idkategori)
                 ->where('status_remove', '!=', 'Y')
                 ->where('role_type', 'guru');
@@ -1067,6 +1169,9 @@ class InstansiController extends Controller
                     'alamat' => $g->alamat,
                     'status_aktif' => $g->status_aktif,
                     'role' => 'guru',
+                    'is_wali_kelas' => $g->kelasWali->isNotEmpty(),
+                    'wali_kelas_names' => $g->kelasWali->pluck('nama_kelas')->join(', '),
+                    'academic_year_name' => $g->academicYear?->name ?? '-',
                     'mapel' => $g->mapelAjar->map(fn($m) => $m->mataPelajaran?->nama_mapel)->filter()->values(),
                 ];
             });
@@ -1116,7 +1221,7 @@ class InstansiController extends Controller
 
         // 3. If role is 'siswa'
         if ($roleFilter === 'siswa') {
-            $q = UserSiswa::with(['kelas.jenjang'])
+            $q = UserSiswa::with(['kelas.jenjang', 'academicYear'])
                 ->where('idkategori', $idkategori);
 
             if ($search !== '') {
@@ -1144,6 +1249,7 @@ class InstansiController extends Controller
                     'status_aktif' => $s->status_aktif,
                     'role' => 'siswa',
                     'class_name' => $s->kelas?->nama_kelas ?? '-',
+                    'academic_year_name' => $s->academicYear?->name ?? ($s->kelas?->academicYear?->name ?? '-'),
                     'mapel' => [],
                 ];
             });
@@ -1235,5 +1341,297 @@ class InstansiController extends Controller
         });
 
         return response()->json($paginator);
+    }
+
+    /**
+     * Update Academic Configuration (allowed global masters) for an institution
+     */
+    public function updateAcademicConfig(Request $request, $idkategori)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $request->validate([
+            'academic_config' => 'required|array',
+        ]);
+
+        $instansi = KategoriUserBo::where('idkategori', $idkategori)->firstOrFail();
+        $instansi->update([
+            'academic_config' => $request->input('academic_config'),
+        ]);
+
+        AuditLog::record(
+            'UPDATE_ACADEMIC_CONFIG',
+            'kategori_user_bo',
+            $idkategori,
+            "Memperbarui konfigurasi master akademik global untuk instansi {$instansi->nama_kategori}",
+            ['academic_config' => $request->input('academic_config')]
+        );
+
+        return response()->json([
+            'message' => 'Konfigurasi master akademik berhasil diperbarui.',
+            'academic_config' => $instansi->academic_config,
+        ]);
+    }
+
+    /**
+     * Sub-resource CRUD for Kelas under an institution
+     */
+    public function storeKelas(Request $request, $idkategori)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $request->validate([
+            'nama_kelas' => 'required|string|max:100',
+            'tingkat' => 'nullable|string|max:10',
+            'idjenjang' => 'nullable|integer',
+            'idtingkat' => 'nullable|integer',
+            'idjurusan' => 'nullable|integer',
+            'academic_year_id' => 'nullable|integer',
+            'semester_id' => 'nullable|integer',
+            'kurikulum_id' => 'nullable|integer',
+            'wali_kelas_id' => 'nullable|string',
+            'kapasitas' => 'nullable|integer',
+        ]);
+
+        $idjenjang = $request->idjenjang;
+        if (empty($idjenjang)) {
+            $instansi = KategoriUserBo::where('idkategori', $idkategori)->first();
+            $conf = $instansi?->academic_config;
+            if (!empty($conf['jenjang_ids'][0])) {
+                $idjenjang = $conf['jenjang_ids'][0];
+            } else {
+                $idjenjang = \App\Models\MasterJenjang::value('id') ?? 1;
+            }
+        }
+
+        $kelas = MasterKelas::create([
+            'idkategori' => $idkategori,
+            'nama_kelas' => trim($request->nama_kelas),
+            'tingkat' => $request->tingkat ?? '',
+            'idjenjang' => $idjenjang,
+            'idtingkat' => $request->idtingkat,
+            'idjurusan' => $request->idjurusan,
+            'academic_year_id' => $request->academic_year_id,
+            'semester_id' => $request->semester_id,
+            'kurikulum_id' => $request->kurikulum_id,
+            'wali_kelas_id' => $request->wali_kelas_id,
+            'kapasitas' => $request->kapasitas ?? 36,
+            'status_aktif' => 'Y',
+        ]);
+
+        AuditLog::record(
+            'CREATE_KELAS',
+            'master_kelas',
+            $kelas->id,
+            "Menambahkan kelas baru {$kelas->nama_kelas}",
+            ['idkategori' => $idkategori]
+        );
+
+        return response()->json([
+            'message' => 'Kelas berhasil ditambahkan.',
+            'data' => $kelas->load(['jenjang', 'waliKelas', 'tingkatKelas'])
+        ], 201);
+    }
+
+    public function updateKelas(Request $request, $idkategori, $idkelas)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $kelas = MasterKelas::where('id', $idkelas)->where('idkategori', $idkategori)->firstOrFail();
+
+        $request->validate([
+            'nama_kelas' => 'required|string|max:100',
+            'tingkat' => 'nullable|string|max:10',
+            'idjenjang' => 'nullable|integer',
+            'idtingkat' => 'nullable|integer',
+            'idjurusan' => 'nullable|integer',
+            'academic_year_id' => 'nullable|integer',
+            'semester_id' => 'nullable|integer',
+            'kurikulum_id' => 'nullable|integer',
+            'wali_kelas_id' => 'nullable|string',
+            'kapasitas' => 'nullable|integer',
+            'status_aktif' => 'nullable|in:Y,N,aktif,nonaktif',
+        ]);
+
+        $updates = [
+            'nama_kelas' => trim($request->nama_kelas),
+        ];
+        if ($request->has('tingkat')) $updates['tingkat'] = $request->tingkat;
+        if ($request->has('idjenjang')) $updates['idjenjang'] = $request->idjenjang;
+        if ($request->has('idtingkat')) $updates['idtingkat'] = $request->idtingkat;
+        if ($request->has('idjurusan')) $updates['idjurusan'] = $request->idjurusan;
+        if ($request->has('academic_year_id')) $updates['academic_year_id'] = $request->academic_year_id;
+        if ($request->has('semester_id')) $updates['semester_id'] = $request->semester_id;
+        if ($request->has('kurikulum_id')) $updates['kurikulum_id'] = $request->kurikulum_id;
+        if ($request->has('wali_kelas_id')) $updates['wali_kelas_id'] = $request->wali_kelas_id;
+        if ($request->has('kapasitas')) $updates['kapasitas'] = $request->kapasitas;
+        if ($request->has('status_aktif')) {
+            $updates['status_aktif'] = in_array(strtolower($request->status_aktif), ['n', 'nonaktif']) ? 'N' : 'Y';
+        }
+
+        $kelas->update($updates);
+
+        AuditLog::record(
+            'UPDATE_KELAS',
+            'master_kelas',
+            $idkelas,
+            "Memperbarui data kelas {$kelas->nama_kelas}",
+            $updates
+        );
+
+        return response()->json([
+            'message' => 'Data kelas berhasil diperbarui.',
+            'data' => $kelas->load(['jenjang', 'waliKelas', 'tingkatKelas'])
+        ]);
+    }
+
+    public function destroyKelas(Request $request, $idkategori, $idkelas)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $kelas = MasterKelas::where('id', $idkelas)->where('idkategori', $idkategori)->firstOrFail();
+        $kelas->delete();
+
+        AuditLog::record(
+            'DELETE_KELAS',
+            'master_kelas',
+            $idkelas,
+            "Menghapus kelas {$kelas->nama_kelas}",
+            ['idkategori' => $idkategori]
+        );
+
+        return response()->json(['message' => 'Kelas berhasil dihapus.']);
+    }
+
+    /**
+     * Sub-resource CRUD for Mata Pelajaran under an institution
+     */
+    public function storeMapel(Request $request, $idkategori)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $request->validate([
+            'nama_mapel' => 'required|string|max:150',
+            'kode_mapel' => 'nullable|string|max:50',
+            'kkm' => 'nullable|numeric|min:0|max:100',
+            'idjenjang' => 'nullable|integer',
+            'idtingkat' => 'nullable|integer',
+            'idkurikulum' => 'nullable|integer',
+            'idjurusan' => 'nullable|integer',
+        ]);
+
+        $idjenjang = $request->idjenjang;
+        if (empty($idjenjang)) {
+            $instansi = KategoriUserBo::where('idkategori', $idkategori)->first();
+            $conf = $instansi?->academic_config;
+            if (!empty($conf['jenjang_ids'][0])) {
+                $idjenjang = $conf['jenjang_ids'][0];
+            } else {
+                $idjenjang = \App\Models\MasterJenjang::value('id') ?? 1;
+            }
+        }
+
+        $mapel = \App\Models\MasterMataPelajaran::create([
+            'idkategori' => $idkategori,
+            'nama_mapel' => trim($request->nama_mapel),
+            'kode_mapel' => $request->kode_mapel,
+            'kkm' => $request->kkm ?? 75,
+            'idjenjang' => $idjenjang,
+            'idtingkat' => $request->idtingkat,
+            'idkurikulum' => $request->idkurikulum,
+            'idjurusan' => $request->idjurusan,
+            'status_aktif' => 'Y',
+        ]);
+
+        AuditLog::record(
+            'CREATE_MAPEL',
+            'master_mata_pelajaran',
+            $mapel->id,
+            "Menambahkan mata pelajaran {$mapel->nama_mapel}",
+            ['idkategori' => $idkategori]
+        );
+
+        return response()->json([
+            'message' => 'Mata pelajaran berhasil ditambahkan.',
+            'data' => $mapel->load(['kurikulum', 'jenjang', 'tingkatKelas'])
+        ], 201);
+    }
+
+    public function updateMapel(Request $request, $idkategori, $idmapel)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $mapel = \App\Models\MasterMataPelajaran::where('id', $idmapel)->where('idkategori', $idkategori)->firstOrFail();
+
+        $request->validate([
+            'nama_mapel' => 'required|string|max:150',
+            'kode_mapel' => 'nullable|string|max:50',
+            'kkm' => 'nullable|numeric|min:0|max:100',
+            'idjenjang' => 'nullable|integer',
+            'idtingkat' => 'nullable|integer',
+            'idkurikulum' => 'nullable|integer',
+            'idjurusan' => 'nullable|integer',
+            'status_aktif' => 'nullable|in:Y,N,aktif,nonaktif',
+        ]);
+
+        $updates = [
+            'nama_mapel' => trim($request->nama_mapel),
+        ];
+        if ($request->has('kode_mapel')) $updates['kode_mapel'] = $request->kode_mapel;
+        if ($request->has('kkm')) $updates['kkm'] = $request->kkm;
+        if ($request->has('idjenjang')) $updates['idjenjang'] = $request->idjenjang;
+        if ($request->has('idtingkat')) $updates['idtingkat'] = $request->idtingkat;
+        if ($request->has('idkurikulum')) $updates['idkurikulum'] = $request->idkurikulum;
+        if ($request->has('idjurusan')) $updates['idjurusan'] = $request->idjurusan;
+        if ($request->has('status_aktif')) {
+            $updates['status_aktif'] = in_array(strtolower($request->status_aktif), ['n', 'nonaktif']) ? 'N' : 'Y';
+        }
+
+        $mapel->update($updates);
+
+        AuditLog::record(
+            'UPDATE_MAPEL',
+            'master_mata_pelajaran',
+            $idmapel,
+            "Memperbarui mata pelajaran {$mapel->nama_mapel}",
+            $updates
+        );
+
+        return response()->json([
+            'message' => 'Mata pelajaran berhasil diperbarui.',
+            'data' => $mapel->load(['kurikulum', 'jenjang', 'tingkatKelas'])
+        ]);
+    }
+
+    public function destroyMapel(Request $request, $idkategori, $idmapel)
+    {
+        if ($deny = $this->authorizeInstansi($request, (string)$idkategori)) {
+            return $deny;
+        }
+
+        $mapel = \App\Models\MasterMataPelajaran::where('id', $idmapel)->where('idkategori', $idkategori)->firstOrFail();
+        $mapel->delete();
+
+        AuditLog::record(
+            'DELETE_MAPEL',
+            'master_mata_pelajaran',
+            $idmapel,
+            "Menghapus mata pelajaran {$mapel->nama_mapel}",
+            ['idkategori' => $idkategori]
+        );
+
+        return response()->json(['message' => 'Mata pelajaran berhasil dihapus.']);
     }
 }

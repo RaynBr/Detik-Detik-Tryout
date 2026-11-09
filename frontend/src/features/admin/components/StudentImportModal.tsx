@@ -17,6 +17,8 @@ interface StudentImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  initialClassId?: number;
+  initialAcademicYearId?: number;
 }
 
 interface PreviewRow {
@@ -34,7 +36,13 @@ interface PreviewData {
   rows: PreviewRow[];
 }
 
-export const StudentImportModal: React.FC<StudentImportModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const StudentImportModal: React.FC<StudentImportModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSuccess,
+  initialClassId,
+  initialAcademicYearId
+}) => {
   const { toast } = useToast();
   const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'completed'>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -42,12 +50,47 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({ isOpen, 
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Class and Academic Year Selection (Requirement 18)
+  const [selectedClassId, setSelectedClassId] = useState<number | ''>(initialClassId || '');
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<number | ''>(initialAcademicYearId || '');
+  const [academicOptions, setAcademicOptions] = useState<{
+    academic_years: Array<{ id: number; name: string }>;
+    classes: Array<{ id: number; nama_kelas?: string; name?: string; academic_year_id?: number }>;
+  }>({ academic_years: [], classes: [] });
+
   // Preview & Import state
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'valid' | 'invalid'>('all');
   const [previewSearch, setPreviewSearch] = useState('');
   const [progress, setProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [importSummary, setImportSummary] = useState<{ total: number; saved: number; failed: number; failedRows: any[] } | null>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialClassId) setSelectedClassId(initialClassId);
+      if (initialAcademicYearId) setSelectedAcademicYearId(initialAcademicYearId);
+
+      // Fetch academic years & classes
+      apiClient.get('/admin/classes-options')
+        .then((res) => {
+          setAcademicOptions(prev => ({
+            ...prev,
+            academic_years: res.data?.academic_years || []
+          }));
+        })
+        .catch(console.error);
+
+      apiClient.get('/admin/classes?per_page=200')
+        .then((res) => {
+          const list = res.data?.data || res.data || [];
+          setAcademicOptions(prev => ({
+            ...prev,
+            classes: list
+          }));
+        })
+        .catch(console.error);
+    }
+  }, [isOpen, initialClassId, initialAcademicYearId]);
 
   if (!isOpen) return null;
 
@@ -108,6 +151,8 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({ isOpen, 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('preview', 'true');
+    if (selectedClassId) formData.append('idkelas', selectedClassId.toString());
+    if (selectedAcademicYearId) formData.append('id_tahun_ajaran', selectedAcademicYearId.toString());
 
     try {
       const res = await apiClient.post('/admin/students/import', formData, {
@@ -154,7 +199,11 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({ isOpen, 
     for (let i = 0; i < validRows.length; i += CHUNK_SIZE) {
       const chunk = validRows.slice(i, i + CHUNK_SIZE);
       try {
-        const res = await apiClient.post('/admin/students/import', { rows: chunk });
+        const res = await apiClient.post('/admin/students/import', { 
+          rows: chunk,
+          idkelas: selectedClassId || undefined,
+          id_tahun_ajaran: selectedAcademicYearId || undefined
+        });
         totalSaved += res.data?.saved_count ?? chunk.length;
         if (Array.isArray(res.data?.failed_rows)) {
           additionalFailed.push(...res.data.failed_rows);
@@ -307,6 +356,45 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({ isOpen, 
                 <span>{error}</span>
               </div>
             )}
+
+            {/* Target Kelas & Tahun Ajaran (Requirement 18) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/10">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 mb-1">
+                  Target Tahun Ajaran:
+                </label>
+                <select
+                  value={selectedAcademicYearId}
+                  onChange={(e) => setSelectedAcademicYearId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full px-3 py-2 bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="">-- Sesuai File / Default --</option>
+                  {academicOptions.academic_years.map((ay) => (
+                    <option key={ay.id} value={ay.id}>
+                      {ay.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 mb-1">
+                  Target Kelas & Rombel:
+                </label>
+                <select
+                  value={selectedClassId}
+                  onChange={(e) => setSelectedClassId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full px-3 py-2 bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="">-- Sesuai Kolom Kelas pada File --</option>
+                  {academicOptions.classes.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.nama_kelas || cls.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <form id="student-import-form" onSubmit={handleValidatePreview} className="space-y-4">
               <div className={`border-2 border-dashed transition-all rounded-3xl p-8 text-center flex flex-col items-center justify-center cursor-pointer relative ${

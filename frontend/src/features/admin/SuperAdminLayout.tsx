@@ -16,13 +16,25 @@ import {
   UserCheck,
   ShieldAlert,
   CreditCard,
-  Settings
+  Settings,
+  Layers,
+  CalendarDays,
+  Calendar,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
+
+interface SubMenuItem {
+  name: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
 
 interface MenuItem {
   name: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
+  subItems?: SubMenuItem[];
 }
 
 export const SuperAdminLayout: React.FC = () => {
@@ -44,14 +56,44 @@ export const SuperAdminLayout: React.FC = () => {
     });
   };
 
+  const isGlobalAcademicsActive = location.pathname.startsWith('/super-admin/master-akademik');
+  const isBankSoalActive = location.pathname.startsWith('/super-admin/bank-soal');
+  const [academicsOpen, setAcademicsOpen] = React.useState<boolean>(isGlobalAcademicsActive);
+  const [bankSoalOpen, setBankSoalOpen] = React.useState<boolean>(isBankSoalActive);
+
+  React.useEffect(() => {
+    if (isGlobalAcademicsActive) setAcademicsOpen(true);
+    if (isBankSoalActive) setBankSoalOpen(true);
+  }, [location.pathname, isGlobalAcademicsActive, isBankSoalActive]);
+
   // Menu items strictly for SUPER ADMIN PLATFORM OWNER (Without numbering)
   const superAdminMenus: MenuItem[] = [
     { name: 'Dashboard', path: '/super-admin/dashboard', icon: LayoutDashboard },
     { name: 'Kelola Instansi', path: '/super-admin/instansi', icon: Building2 },
     { name: 'Kelola Pengguna', path: '/super-admin/users', icon: Users },
-    { name: 'Kelola Bank Soal', path: '/super-admin/bank-soal', icon: BookOpen },
-    { name: 'Monitoring', path: '/super-admin/monitoring', icon: History },
-    { name: 'Subscription', path: '/super-admin/subscriptions', icon: CreditCard },
+    {
+      name: 'Master Akademik Global',
+      path: '/super-admin/master-akademik/tahun-ajaran',
+      icon: Layers,
+      subItems: [
+        { name: 'Tahun Ajaran', path: '/super-admin/master-akademik/tahun-ajaran', icon: CalendarDays },
+        { name: 'Semester', path: '/super-admin/master-akademik/semester', icon: History },
+        { name: 'Kurikulum', path: '/super-admin/master-akademik/kurikulum', icon: BookOpen },
+        { name: 'Jenjang', path: '/super-admin/master-akademik/jenjang', icon: Layers },
+        { name: 'Tingkat', path: '/super-admin/master-akademik/tingkat-kelas', icon: UserCheck },
+      ]
+    },
+    {
+      name: 'Kelola Bank Soal',
+      path: '/super-admin/bank-soal',
+      icon: BookOpen,
+      subItems: [
+        { name: 'Paket Bank Soal', path: '/super-admin/bank-soal', icon: BookOpen },
+        { name: 'Referensi Tahun Soal', path: '/super-admin/bank-soal/tahun-soal', icon: Calendar },
+      ]
+    },
+    { name: 'Audit Trail', path: '/super-admin/audit-logs', icon: History },
+    { name: 'Langganan Platform', path: '/super-admin/subscriptions', icon: CreditCard },
     { name: 'Pengaturan Platform', path: '/super-admin/settings', icon: Settings },
     { name: 'Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },
   ];
@@ -111,6 +153,73 @@ export const SuperAdminLayout: React.FC = () => {
         <nav className={`flex-1 space-y-2 w-full ${isCollapsed ? 'px-1' : ''}`}>
           {superAdminMenus.map((item) => {
             const Icon = item.icon;
+
+            if (item.subItems) {
+              const isGlobalAcademics = item.name === 'Master Akademik Global';
+              const isParentActive = isGlobalAcademics ? isGlobalAcademicsActive : isBankSoalActive;
+              const isMenuOpen = isGlobalAcademics ? academicsOpen : bankSoalOpen;
+              const toggleMenu = () => {
+                if (isCollapsed) {
+                  navigate(item.path);
+                } else if (isGlobalAcademics) {
+                  setAcademicsOpen((prev) => !prev);
+                } else {
+                  setBankSoalOpen((prev) => !prev);
+                }
+              };
+
+              return (
+                <div key={item.name} className="space-y-1">
+                  <button
+                    onClick={toggleMenu}
+                    title={isCollapsed ? item.name : undefined}
+                    className={`w-full flex items-center ${
+                      isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'
+                    } rounded-xl text-sm font-bold transition duration-150 cursor-pointer ${
+                      isParentActive && !isMenuOpen
+                        ? 'bg-indigo-600 text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]'
+                        : isParentActive
+                        ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border-2 border-[#161C2D] dark:border-indigo-600'
+                        : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5 border border-transparent hover:border-[#161C2D] dark:hover:border-[#32363A]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <Icon className={`${isCollapsed ? 'h-5 w-5' : 'h-4 w-4'} shrink-0 stroke-[2.5]`} />
+                      {!isCollapsed && <span className="truncate">{item.name}</span>}
+                    </div>
+                    {!isCollapsed && (
+                      <span className="shrink-0 text-slate-500">
+                        {isMenuOpen ? <ChevronDown className="h-4 w-4 stroke-[2.5]" /> : <ChevronRight className="h-4 w-4 stroke-[2.5]" />}
+                      </span>
+                    )}
+                  </button>
+
+                  {!isCollapsed && isMenuOpen && (
+                    <div className="pl-4 space-y-1 pt-0.5 border-l-2 border-[#161C2D] dark:border-[#32363A] ml-5">
+                      {item.subItems.map((sub) => {
+                        const SubIcon = sub.icon;
+                        const isSubActive = location.pathname === sub.path;
+                        return (
+                          <button
+                            key={sub.name}
+                            onClick={() => navigate(sub.path)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition duration-150 cursor-pointer ${
+                              isSubActive
+                                ? 'bg-indigo-600 text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]'
+                                : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5'
+                            }`}
+                          >
+                            <SubIcon className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
+                            <span className="truncate">{sub.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             const isActive = location.pathname === item.path;
             return (
               <button
@@ -211,6 +320,41 @@ export const SuperAdminLayout: React.FC = () => {
               <nav className="flex-1 space-y-1.5 overflow-y-auto">
                 {superAdminMenus.map((item) => {
                   const Icon = item.icon;
+
+                  if (item.subItems) {
+                    return (
+                      <div key={item.name} className="space-y-1">
+                        <div className="flex items-center justify-between px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-gray-300">
+                          <div className="flex items-center gap-2.5">
+                            <Icon className="h-4 w-4" />
+                            <span>{item.name}</span>
+                          </div>
+                        </div>
+                        <div className="pl-4 space-y-1 border-l-2 border-indigo-200 dark:border-indigo-800 ml-4">
+                          {item.subItems.map((sub) => {
+                            const SubIcon = sub.icon;
+                            const isSubActive = location.pathname === sub.path;
+                            return (
+                              <button
+                                key={sub.name}
+                                onClick={() => {
+                                  navigate(sub.path);
+                                  setMobileMenuOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${
+                                  isSubActive ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-gray-400'
+                                }`}
+                              >
+                                <SubIcon className="h-3.5 w-3.5" />
+                                <span>{sub.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const isActive = location.pathname === item.path;
                   return (
                     <button

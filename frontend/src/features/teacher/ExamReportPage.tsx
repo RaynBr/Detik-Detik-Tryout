@@ -117,6 +117,16 @@ interface ReportData {
   };
   students: StudentReportItem[];
   item_analysis: QuestionItemAnalysis[];
+  class_progress?: Array<{
+    class_name: string;
+    total_students: number;
+    attempted: number;
+    completed: number;
+    in_progress: number;
+    unattempted: number;
+    progress_ratio: string;
+    progress_percent: number;
+  }>;
 }
 
 export const ExamReportPage: React.FC = () => {
@@ -687,6 +697,68 @@ export const ExamReportPage: React.FC = () => {
             </div>
 
           </div>
+
+          {/* Requirement 13: Progres Kelas pada Laporan Ujian */}
+          {report.class_progress && report.class_progress.length > 0 && (
+            <div className="glass-panel p-5 rounded-3xl border border-slate-200/80 dark:border-white/5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Progres Pengerjaan per Kelas</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
+                    Rasio kehadiran dan status pengerjaan peserta ujian dikelompokkan berdasarkan rombel kelas.
+                  </p>
+                </div>
+                <span className="self-start sm:self-auto text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-3 py-1 rounded-xl border border-indigo-200 dark:border-indigo-500/20">
+                  {report.class_progress.length} Kelas Terdata
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {report.class_progress.map((cp, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-2xl bg-slate-50/70 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/5 space-y-2.5 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition shadow-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-sm text-slate-900 dark:text-white">
+                        {cp.class_name}
+                      </span>
+                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-500/30">
+                        {cp.progress_ratio} ({cp.progress_percent}%)
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(cp.progress_percent, 100)}%` }}
+                      />
+                    </div>
+
+                    {/* Detail Metrics */}
+                    <div className="grid grid-cols-3 gap-1 pt-1 text-center text-[10px] font-bold">
+                      <div className="p-1.5 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                        <span className="block text-xs font-black">{cp.completed}</span>
+                        <span>Selesai</span>
+                      </div>
+                      <div className="p-1.5 rounded-xl bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                        <span className="block text-xs font-black">{cp.in_progress}</span>
+                        <span>Mengerjakan</span>
+                      </div>
+                      <div className="p-1.5 rounded-xl bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-400">
+                        <span className="block text-xs font-black">{cp.unattempted}</span>
+                        <span>Belum Mulai</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Navigation Tabs (Rekap Nilai vs Analisis Butir Soal) */}
           <div className="flex flex-col sm:flex-row bg-slate-200/60 dark:bg-white/5 p-1 rounded-2xl text-xs font-bold gap-1 w-full">

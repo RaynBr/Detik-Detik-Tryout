@@ -63,7 +63,7 @@ export const AcademicMasterPage: React.FC = () => {
   const [mapelOptions, setMapelOptions] = useState<any[]>([]);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [tahunSoalList, setTahunSoalList] = useState<any[]>([]);
-  const [tahunSubTab, setTahunSubTab] = useState<'tahun-ajaran' | 'tahun-soal'>('tahun-ajaran');
+  const tahunSubTab: string = 'tahun-ajaran';
 
   // Filter within Kelas or Mapel by selected Jenjang
   const [filterJenjangId, setFilterJenjangId] = useState<string>('');
@@ -755,34 +755,6 @@ export const AcademicMasterPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {activeTab === 'tahun-ajaran' && (
-                <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-white/10 border border-[#161C2D]/20">
-                  <button
-                    type="button"
-                    onClick={() => { setTahunSubTab('tahun-ajaran'); resetPage(); }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                      tahunSubTab === 'tahun-ajaran'
-                        ? 'bg-white dark:bg-[#1A1E22] text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-white/10'
-                        : 'text-slate-600 dark:text-gray-400 hover:text-slate-900'
-                    }`}
-                  >
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    <span>Tahun Ajaran</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setTahunSubTab('tahun-soal'); resetPage(); }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                      tahunSubTab === 'tahun-soal'
-                        ? 'bg-white dark:bg-[#1A1E22] text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-white/10'
-                        : 'text-slate-600 dark:text-gray-400 hover:text-slate-900'
-                    }`}
-                  >
-                    <BookOpen className="h-3.5 w-3.5" />
-                    <span>Master Tahun Soal</span>
-                  </button>
-                </div>
-              )}
 
               <button
                 onClick={handleOpenAdd}

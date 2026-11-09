@@ -138,11 +138,17 @@ class StudentController extends Controller
         ]);
 
         if ($request->filled('class_id')) {
+            $classObj = MasterKelas::with('academicYear')->find($request->class_id);
+            $tahunAjaranName = $classObj?->academicYear?->name 
+                ?? $classObj?->tahun_ajaran 
+                ?? \App\Models\AcademicYear::where('is_active', 1)->value('name') 
+                ?? '2026/2027';
+
             SiswaKelas::create([
                 'iduser' => $user->iduser,
                 'idkelas' => $request->class_id,
                 'nisn' => $nisn,
-                'tahun_ajaran' => '2026/2027',
+                'tahun_ajaran' => $tahunAjaranName,
                 'status' => 'aktif',
             ]);
         }
@@ -296,8 +302,16 @@ class StudentController extends Controller
                     $password = trim($data['password'] ?? 'Siswa1234!');
                     $jk = strtoupper(trim($data['jenis_kelamin'] ?? 'L'));
                     $nomorAbsen = !empty($data['nomor_absen']) ? (int)$data['nomor_absen'] : null;
-                    $idkelas = $data['idkelas'] ?? null;
+                    $idkelas = $data['idkelas'] ?? $request->input('idkelas') ?? null;
+                    $idTahunAjaran = $data['id_tahun_ajaran'] ?? $request->input('id_tahun_ajaran') ?? null;
                     $idjenjang = $data['idjenjang'] ?? null;
+                    if (!$idjenjang && $idkelas) {
+                        $kelasObj = MasterKelas::find($idkelas);
+                        if ($kelasObj) {
+                            $idjenjang = $kelasObj->idjenjang;
+                            if (!$idTahunAjaran) $idTahunAjaran = $kelasObj->academic_year_id;
+                        }
+                    }
                     $tempatLahir = trim($data['tempat_lahir'] ?? '');
                     $tanggalLahir = !empty($data['tanggal_lahir']) ? date('Y-m-d', strtotime($data['tanggal_lahir'])) : null;
                     $agama = trim($data['agama'] ?? '');
@@ -307,6 +321,35 @@ class StudentController extends Controller
 
                     if (empty($name) || empty($nisn)) {
                         $failedRows[] = ['row_number' => $rowNum, 'name' => $name, 'message' => 'Nama atau NISN tidak boleh kosong'];
+                        continue;
+                    }
+
+                    // Requirement 18: Otomatis membuat akun siswa jika belum ada, atau update penempatan kelas jika sudah ada
+                    $existingStudent = UserSiswa::where('nisn', $nisn)->first();
+                    if ($existingStudent) {
+                        $updateData = [
+                            'nama' => $name,
+                            'status_aktif' => $status,
+                        ];
+                        if ($idkelas) $updateData['idkelas'] = $idkelas;
+                        if ($idTahunAjaran) $updateData['id_tahun_ajaran'] = $idTahunAjaran;
+                        if ($idjenjang) $updateData['idjenjang'] = $idjenjang;
+                        if ($nis) $updateData['nis'] = $nis;
+                        if ($phone) $updateData['telp'] = $phone;
+                        if ($alamat) $updateData['alamat'] = $alamat;
+                        $existingStudent->update($updateData);
+
+                        if ($idkelas) {
+                            SiswaKelas::updateOrCreate(
+                                ['iduser' => $existingStudent->iduser, 'idkelas' => $idkelas],
+                                [
+                                    'nisn' => $nisn,
+                                    'tahun_ajaran' => '2026/2027',
+                                    'status' => 'aktif'
+                                ]
+                            );
+                        }
+                        $savedCount++;
                         continue;
                     }
 
@@ -320,6 +363,7 @@ class StudentController extends Controller
                         'jenis_kelamin' => $jk === 'P' ? 'P' : 'L',
                         'nomor_absen' => $nomorAbsen,
                         'idkelas' => $idkelas,
+                        'id_tahun_ajaran' => $idTahunAjaran,
                         'idjenjang' => $idjenjang,
                         'idkategori' => $idkategori,
                         'tempat_lahir' => $tempatLahir ?: null,
@@ -362,12 +406,27 @@ class StudentController extends Controller
             }
         }
 
-        // Mode 2: File Upload (Preview Mode or Direct Import)
+        // Mode 2: File Upload (Preview Mode or Direct Import - Temuan 06)
         $request->validate([
-            'file' => 'required|file|max:10240',
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+            'idkelas' => 'nullable|integer',
+            'id_tahun_ajaran' => 'nullable|integer',
         ]);
 
         $file = $request->file('file');
+        $preselectedClass = null;
+        $preselectedJenjang = null;
+        $preselectedTahunAjaranId = $request->input('id_tahun_ajaran');
+
+        if ($request->filled('idkelas')) {
+            $preselectedClass = MasterKelas::with('jenjang')->find($request->input('idkelas'));
+            if ($preselectedClass) {
+                $preselectedJenjang = $preselectedClass->jenjang;
+                if (!$preselectedTahunAjaranId) {
+                    $preselectedTahunAjaranId = $preselectedClass->academic_year_id;
+                }
+            }
+        }
 
         try {
             $rows = $spreadsheetService->parse($file->getRealPath(), $file->getClientOriginalName());
@@ -413,8 +472,8 @@ class StudentController extends Controller
             $password = trim($row[4] ?? 'Siswa1234!');
             $jk = strtoupper(trim($row[5] ?? 'L'));
             $nomorAbsen = trim($row[6] ?? '');
-            $className = trim($row[7] ?? '');
-            $jenjangName = trim($row[8] ?? '');
+            $className = trim($row[7] ?? ($preselectedClass ? $preselectedClass->nama_kelas : ''));
+            $jenjangName = trim($row[8] ?? ($preselectedJenjang ? $preselectedJenjang->nama_jenjang : ''));
             $tempatLahir = trim($row[9] ?? '');
             $tanggalLahir = trim($row[10] ?? '');
             $agama = trim($row[11] ?? '');
@@ -428,6 +487,7 @@ class StudentController extends Controller
 
             $isValid = true;
             $errorReasons = [];
+            $actionNote = 'Buat akun baru';
 
             if (empty($name)) {
                 $isValid = false;
@@ -462,55 +522,50 @@ class StudentController extends Controller
                 }
             }
 
-            // Database duplicate check for NISN, NIS, Username
+            // Database duplicate / update check (Requirement 18: otomatis buat akun atau tempatkan siswa yang sudah ada)
             if ($isValid) {
-                if (UserSiswa::where('status_aktif', '!=', 'N')->where('nisn', $nisn)->exists()) {
-                    $isValid = false;
-                    $errorReasons[] = "NISN sudah digunakan";
-                }
-
-                if ($isValid && !empty($nis)) {
-                    if (UserSiswa::where('status_aktif', '!=', 'N')->where('nis', $nis)->exists()) {
+                $existingUserByNisn = UserSiswa::where('nisn', $nisn)->first();
+                if ($existingUserByNisn) {
+                    $actionNote = 'Siswa terdaftar (akan diperbarui & ditempatkan ke kelas)';
+                } else {
+                    if (!empty($username) && UserSiswa::where('login_email', $username)->exists()) {
                         $isValid = false;
-                        $errorReasons[] = "NIS sudah digunakan";
-                    }
-                }
-
-                if ($isValid && !empty($username)) {
-                    if (UserSiswa::where('status_aktif', '!=', 'N')->where('login_email', $username)->exists()) {
-                        $isValid = false;
-                        $errorReasons[] = "Username sudah digunakan";
+                        $errorReasons[] = "Username '{$username}' sudah digunakan oleh siswa lain";
                     }
                 }
             }
 
-            // Kelas validation (EXACT MATCH)
-            $matchedClass = null;
-            if (empty($className)) {
-                $isValid = false;
-                $errorReasons[] = "Kelas wajib diisi";
-            } else {
-                $matchedClass = $classes->first(function ($c) use ($className) {
-                    return $c->nama_kelas === $className;
-                });
-                if (!$matchedClass) {
+            // Kelas validation (EXACT MATCH or Preselected)
+            $matchedClass = $preselectedClass;
+            if (!$matchedClass) {
+                if (empty($className)) {
                     $isValid = false;
-                    $errorReasons[] = "Kelas '{$className}' tidak ditemukan";
+                    $errorReasons[] = "Kelas wajib diisi";
+                } else {
+                    $matchedClass = $classes->first(function ($c) use ($className) {
+                        return $c->nama_kelas === $className;
+                    });
+                    if (!$matchedClass) {
+                        $isValid = false;
+                        $errorReasons[] = "Kelas '{$className}' tidak ditemukan";
+                    }
                 }
             }
 
-            // Jenjang validation (EXACT MATCH)
-            $matchedJenjang = null;
-            if (empty($jenjangName)) {
-                $isValid = false;
-                $errorReasons[] = "Jenjang wajib diisi";
-            } else {
-                $matchedJenjang = $allJenjang->first(function ($j) use ($jenjangName) {
-                    return $j->nama_jenjang === $jenjangName || $j->kode_jenjang === $jenjangName;
-                });
-                if (!$matchedJenjang) {
+            // Jenjang validation (EXACT MATCH or Preselected)
+            $matchedJenjang = $preselectedJenjang;
+            if (!$matchedJenjang) {
+                if (empty($jenjangName)) {
                     $isValid = false;
-                    $errorReasons[] = "Jenjang '{$jenjangName}' tidak ditemukan";
+                    $errorReasons[] = "Jenjang wajib diisi";
+                } else {
+                    $matchedJenjang = $allJenjang->first(function ($j) use ($jenjangName) {
+                        return $j->nama_jenjang === $jenjangName || $j->kode_jenjang === $jenjangName;
+                    });
+                    if (!$matchedJenjang) {
+                        $isValid = false;
+                        $errorReasons[] = "Jenjang '{$jenjangName}' tidak ditemukan";
+                    }
                 }
             }
 
@@ -524,7 +579,7 @@ class StudentController extends Controller
                 'row_number' => $rowNum,
                 'name' => $name ?: "Baris {$rowNum}",
                 'status' => $isValid ? 'VALID' : 'INVALID',
-                'message' => $isValid ? '-' : implode(', ', $errorReasons),
+                'message' => $isValid ? $actionNote : implode(', ', $errorReasons),
                 'data' => [
                     'nama' => $name,
                     'nis' => $nis,
@@ -534,9 +589,10 @@ class StudentController extends Controller
                     'jenis_kelamin' => $jk,
                     'nomor_absen' => $nomorAbsen,
                     'idkelas' => $matchedClass?->id,
+                    'id_tahun_ajaran' => $preselectedTahunAjaranId ?: $matchedClass?->academic_year_id,
                     'idjenjang' => $matchedJenjang?->id,
-                    'kelas_name' => $className,
-                    'jenjang_name' => $jenjangName,
+                    'kelas_name' => $matchedClass?->nama_kelas ?: $className,
+                    'jenjang_name' => $matchedJenjang?->nama_jenjang ?: $jenjangName,
                     'tempat_lahir' => $tempatLahir,
                     'tanggal_lahir' => $tanggalLahir,
                     'agama' => $agama,
@@ -597,6 +653,98 @@ class StudentController extends Controller
         return response()->json([
             'message' => "Password siswa {$student->nama} berhasil direset.",
             'new_password' => $newPassword
+        ]);
+    }
+
+    /**
+     * Requirement 17: Export Excel / CSV for Students
+     */
+    public function export(Request $request)
+    {
+        $user = $request->user();
+        $query = UserSiswa::with(['kelas', 'academicYear']);
+
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+        }
+
+        if ($request->filled('class_id')) {
+            $query->where('idkelas', $request->class_id);
+        }
+        if ($request->filled('id_tahun_ajaran')) {
+            $query->where('id_tahun_ajaran', $request->id_tahun_ajaran);
+        }
+        if ($request->filled('status')) {
+            $status = in_array(strtolower($request->status), ['aktif', 'y', '1']) ? 'Y' : 'N';
+            $query->where('status_aktif', $status);
+        }
+
+        $students = $query->orderBy('nama', 'asc')->limit(5000)->get();
+
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="data_siswa_' . date('Ymd_His') . '.csv"',
+        ];
+
+        $callback = function () use ($students) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+            fputcsv($file, ['No', 'NISN', 'NIS', 'Nama Siswa', 'Jenis Kelamin', 'Nomor Absen', 'Kelas', 'Tahun Ajaran', 'Email/Username', 'Telepon', 'Alamat', 'Status']);
+
+            foreach ($students as $idx => $st) {
+                fputcsv($file, [
+                    $idx + 1,
+                    $st->nisn ?: '-',
+                    $st->nis ?: '-',
+                    $st->nama,
+                    $st->jenis_kelamin === 'P' ? 'Perempuan' : 'Laki-Laki',
+                    $st->nomor_absen ?: '-',
+                    $st->kelas?->nama_kelas ?: '-',
+                    $st->academicYear?->name ?: ($st->kelas?->academicYear?->name ?: '-'),
+                    $st->login_email ?: '-',
+                    $st->telp ?: '-',
+                    $st->alamat ?: '-',
+                    $st->status_aktif === 'Y' ? 'Aktif' : 'Nonaktif',
+                ]);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Toggle status aktif / nonaktif akun Siswa
+     */
+    public function toggleStatus(Request $request, $id)
+    {
+        $student = UserSiswa::findOrFail($id);
+        $user = $request->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$student->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak.'], 403);
+        }
+
+        $newStatus = ($student->status_aktif === 'Y') ? 'N' : 'Y';
+        $student->update([
+            'status_aktif' => $newStatus,
+            'active_session_token' => ($newStatus === 'N') ? null : $student->active_session_token
+        ]);
+        if ($newStatus === 'N') {
+            $student->tokens()->delete();
+        }
+
+        AuditLog::record(
+            'TOGGLE_STATUS_SISWA',
+            'user',
+            (string)$student->iduser,
+            "Mengubah status akun siswa {$student->nama} menjadi " . ($newStatus === 'Y' ? 'Aktif' : 'Nonaktif'),
+            ['id' => $student->iduser, 'nama' => $student->nama, 'status_aktif' => $newStatus]
+        );
+
+        return response()->json([
+            'message' => 'Status siswa berhasil diubah menjadi ' . ($newStatus === 'Y' ? 'Aktif' : 'Nonaktif'),
+            'status_aktif' => $newStatus,
+            'is_active' => $newStatus === 'Y'
         ]);
     }
 }

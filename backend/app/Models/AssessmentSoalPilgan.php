@@ -21,6 +21,14 @@ class AssessmentSoalPilgan extends Model
         'idassessment',
         'idjenjang',
         'idmapel',
+        'idkurikulum',
+        'id_tahun_ajaran',
+        'semester_id',
+        'idtingkat',
+        'idkelas',
+        'bab',
+        'tingkat_kesulitan',
+        'source_type',
         'soal_text',
         'soal_gambar',
         'pilihan_a_text',
@@ -37,13 +45,35 @@ class AssessmentSoalPilgan extends Model
         'penjelasan_jawaban',
         'tahun_soal_id',
         'status_aktif',
+        'status_publikasi',
         'iduser_bo',
+        'created_by',
+        'updated_by',
         'tanggal_input',
+        'is_annulled',
+        'annulled_at',
+        'annulled_reason',
+        'urutan',
+    ];
+
+    protected $casts = [
+        'is_annulled' => 'boolean',
+        'annulled_at' => 'datetime',
     ];
 
     public function assessment(): BelongsTo
     {
         return $this->belongsTo(Assessment::class, 'idassessment', 'idassessment');
+    }
+
+    public function kurikulum(): BelongsTo
+    {
+        return $this->belongsTo(MasterKurikulum::class, 'idkurikulum', 'id');
+    }
+
+    public function tingkat(): BelongsTo
+    {
+        return $this->belongsTo(MasterTingkatKelas::class, 'idtingkat', 'id');
     }
 
     public function jenjang(): BelongsTo
@@ -64,5 +94,20 @@ class AssessmentSoalPilgan extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(UserBo::class, 'iduser_bo', 'iduser_bo');
+    }
+
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'id_tahun_ajaran', 'id');
+    }
+
+    public function semester(): BelongsTo
+    {
+        return $this->belongsTo(MasterSemester::class, 'semester_id', 'id');
+    }
+
+    public function kelas(): BelongsTo
+    {
+        return $this->belongsTo(MasterKelas::class, 'idkelas', 'id');
     }
 }

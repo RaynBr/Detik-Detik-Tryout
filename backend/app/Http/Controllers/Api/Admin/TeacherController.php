@@ -16,7 +16,7 @@ class TeacherController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = UserBo::with(['kategori', 'mapelAjar.mataPelajaran'])
+        $query = UserBo::with(['kategori', 'mapelAjar.mataPelajaran', 'kelasWali', 'academicYear'])
             ->where('status_remove', '!=', 'Y')
             ->where(function ($q) {
                 $q->where('role_type', 'guru')
@@ -26,7 +26,30 @@ class TeacherController extends Controller
             });
 
         if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
-            $query->where('idkategori', $user->idkategori);
+            $classIds = \App\Models\MasterKelas::where('idkategori', $user->idkategori)->pluck('id');
+            $relatedTeacherIds = \App\Models\GuruMataPelajaran::whereIn('idkelas', $classIds)
+                ->pluck('iduser_bo')
+                ->merge(\App\Models\MasterKelas::where('idkategori', $user->idkategori)->pluck('wali_kelas_id'))
+                ->filter()
+                ->unique()
+                ->toArray();
+
+            $hasOwnTeachers = UserBo::where('idkategori', $user->idkategori)
+                ->where('status_remove', '!=', 'Y')
+                ->where(function ($q) {
+                    $q->where('role_type', 'guru')
+                      ->orWhere('status_admin', '2');
+                })
+                ->exists();
+
+            if ($hasOwnTeachers || !empty($relatedTeacherIds)) {
+                $query->where(function ($q) use ($user, $relatedTeacherIds) {
+                    $q->where('idkategori', $user->idkategori);
+                    if (!empty($relatedTeacherIds)) {
+                        $q->orWhereIn('iduser_bo', $relatedTeacherIds);
+                    }
+                });
+            }
         }
 
         if ($request->filled('search')) {
@@ -43,18 +66,23 @@ class TeacherController extends Controller
             $teachers = $query->orderBy('nama', 'asc')->get();
             $mapped = $teachers->map(function ($t) {
                 return [
-                    'id' => $t->iduser_bo,
-                    'name' => $t->name,
-                    'email' => $t->email,
+                    'id' => (string) $t->iduser_bo,
+                    'name' => (string) ($t->nama ?: $t->name),
+                    'email' => (string) ($t->login_email ?: $t->email ?: '-'),
                     'username' => $t->username,
                     'phone' => $t->telp,
                     'role' => $t->role,
                     'institution' => $t->kategori?->nama_kategori,
                     'is_active' => $t->status_aktif === 'Y',
+                    'is_wali_kelas' => $t->kelasWali->isNotEmpty(),
+                    'wali_kelas' => $t->kelasWali->map(fn($k) => ['id' => $k->id, 'name' => $k->nama_kelas]),
+                    'wali_kelas_names' => $t->kelasWali->pluck('nama_kelas')->join(', '),
+                    'id_tahun_ajaran' => $t->id_tahun_ajaran,
+                    'academic_year' => $t->academicYear ? ['id' => $t->academicYear->id, 'name' => $t->academicYear->name] : null,
                     'teacher' => [
-                        'id' => $t->iduser_bo,
-                        'user_id' => $t->iduser_bo,
-                        'nip' => $t->iduser_bo,
+                        'id' => (string) $t->iduser_bo,
+                        'user_id' => (string) $t->iduser_bo,
+                        'nip' => (string) ($t->nip ?? $t->iduser_bo),
                         'subjects' => $t->mapelAjar->map(function ($m) {
                             return [
                                 'id' => $m->mataPelajaran?->id,
@@ -83,18 +111,23 @@ class TeacherController extends Controller
 
         $paginator->through(function ($t) {
             return [
-                'id' => $t->iduser_bo,
-                'name' => $t->name,
-                'email' => $t->email,
+                'id' => (string) $t->iduser_bo,
+                'name' => (string) ($t->nama ?: $t->name),
+                'email' => (string) ($t->login_email ?: $t->email ?: '-'),
                 'username' => $t->username,
                 'phone' => $t->telp,
                 'role' => $t->role,
                 'institution' => $t->kategori?->nama_kategori,
                 'is_active' => $t->status_aktif === 'Y',
+                'is_wali_kelas' => $t->kelasWali->isNotEmpty(),
+                'wali_kelas' => $t->kelasWali->map(fn($k) => ['id' => $k->id, 'name' => $k->nama_kelas]),
+                'wali_kelas_names' => $t->kelasWali->pluck('nama_kelas')->join(', '),
+                'id_tahun_ajaran' => $t->id_tahun_ajaran,
+                'academic_year' => $t->academicYear ? ['id' => $t->academicYear->id, 'name' => $t->academicYear->name] : null,
                 'teacher' => [
-                    'id' => $t->iduser_bo,
-                    'user_id' => $t->iduser_bo,
-                    'nip' => $t->iduser_bo,
+                    'id' => (string) $t->iduser_bo,
+                    'user_id' => (string) $t->iduser_bo,
+                    'nip' => (string) ($t->nip ?? $t->iduser_bo),
                     'subjects' => $t->mapelAjar->map(function ($m) {
                         return [
                             'id' => $m->mataPelajaran?->id,
@@ -131,9 +164,21 @@ class TeacherController extends Controller
 
         $pwd = Hash::make($request->password);
 
+        $activeYear = \App\Models\AcademicYear::where(function ($q) use ($idkategori) {
+            if ($idkategori) {
+                $q->where('idkategori', $idkategori)
+                  ->orWhere('idkategori', '27830150842287772')
+                  ->orWhereNull('idkategori');
+            }
+        })->where('is_active', 1)->first() ?? \App\Models\AcademicYear::orderBy('id', 'desc')->first();
+
+        $tahunAjaranName = $request->input('tahun_ajaran') ?: ($activeYear?->name ?? '2026/2027');
+        $idTahunAjaran = $request->input('id_tahun_ajaran') ?: ($activeYear?->id ?? null);
+
         $userBo = UserBo::create([
             'iduser_bo' => $id,
             'idkategori' => $idkategori,
+            'id_tahun_ajaran' => $idTahunAjaran,
             'nama' => $request->name,
             'login_email' => $request->email,
             'login_username' => $username,
@@ -151,7 +196,7 @@ class TeacherController extends Controller
                 GuruMataPelajaran::create([
                     'iduser_bo' => $userBo->iduser_bo,
                     'idmapel' => $mapelId,
-                    'tahun_ajaran' => '2026/2027',
+                    'tahun_ajaran' => $tahunAjaranName,
                 ]);
             }
         }
@@ -367,9 +412,9 @@ class TeacherController extends Controller
             }
         }
 
-        // Mode 2: File Upload (Preview Mode or Direct Import)
+        // Mode 2: File Upload (Preview Mode or Direct Import - Temuan 06)
         $request->validate([
-            'file' => 'required|file|max:10240',
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
         ]);
 
         $file = $request->file('file');
@@ -589,6 +634,113 @@ class TeacherController extends Controller
         return response()->json([
             'message' => "Password guru {$teacher->nama} berhasil direset.",
             'new_password' => $newPassword
+        ]);
+    }
+
+    /**
+     * Requirement 15: Export Excel / CSV for Teachers
+     */
+    public function export(Request $request)
+    {
+        $user = $request->user();
+        $query = UserBo::with(['kategori', 'mapelAjar.mataPelajaran', 'kelasWali', 'academicYear'])
+            ->where('status_remove', '!=', 'Y')
+            ->where(function ($q) {
+                $q->where('role_type', 'guru')
+                  ->orWhere('role_type', 'admin_sekolah')
+                  ->orWhere('status_admin', '2')
+                  ->orWhereNull('role_type');
+            });
+
+        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+            $query->where('idkategori', $user->idkategori);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama', 'like', "%{$search}%")
+                  ->orWhere('login_email', 'like', "%{$search}%")
+                  ->orWhere('login_username', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('id_tahun_ajaran')) {
+            $query->where('id_tahun_ajaran', $request->id_tahun_ajaran);
+        }
+
+        if ($request->filled('status')) {
+            $status = in_array(strtolower($request->status), ['aktif', 'y', '1']) ? 'Y' : 'N';
+            $query->where('status_aktif', $status);
+        }
+
+        $teachers = $query->orderBy('nama', 'asc')->limit(2000)->get();
+
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="data_guru_' . date('Ymd_His') . '.csv"',
+        ];
+
+        $callback = function () use ($teachers) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+            fputcsv($file, ['No', 'NIP / NUPTK', 'Nama Guru', 'Wali Kelas', 'Mata Pelajaran Diampu', 'Tahun Ajaran', 'Email', 'Username', 'Telepon', 'Status']);
+
+            foreach ($teachers as $idx => $t) {
+                $subjects = $t->mapelAjar->map(fn($m) => $m->mataPelajaran?->nama_mapel)->filter()->unique()->join(', ');
+                $waliKelas = $t->kelasWali->pluck('nama_kelas')->join(', ');
+
+                fputcsv($file, [
+                    $idx + 1,
+                    $t->nip ?: ($t->nuptk ?: '-'),
+                    $t->nama ?: $t->name,
+                    $waliKelas ? "Wali Kelas ({$waliKelas})" : 'Bukan Wali Kelas',
+                    $subjects ?: '-',
+                    $t->academicYear?->name ?: '-',
+                    $t->login_email ?: '-',
+                    $t->login_username ?: '-',
+                    $t->telp ?: '-',
+                    $t->status_aktif === 'Y' ? 'Aktif' : 'Nonaktif',
+                ]);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Toggle status aktif / nonaktif akun Guru
+     */
+    public function toggleStatus(Request $request, $id)
+    {
+        $teacher = UserBo::findOrFail($id);
+        $user = $request->user();
+        if ($user && $user->role === 'admin' && !empty($user->idkategori) && (string)$teacher->idkategori !== (string)$user->idkategori) {
+            return response()->json(['message' => 'Akses ditolak.'], 403);
+        }
+
+        $newStatus = ($teacher->status_aktif === 'Y') ? 'N' : 'Y';
+        $teacher->update([
+            'status_aktif' => $newStatus,
+            'active_session_token' => ($newStatus === 'N') ? null : $teacher->active_session_token
+        ]);
+        if ($newStatus === 'N') {
+            $teacher->tokens()->delete();
+        }
+
+        AuditLog::record(
+            'TOGGLE_STATUS_GURU',
+            'user_bo',
+            (string)$teacher->iduser_bo,
+            "Mengubah status akun guru {$teacher->nama} menjadi " . ($newStatus === 'Y' ? 'Aktif' : 'Nonaktif'),
+            ['id' => $teacher->iduser_bo, 'nama' => $teacher->nama, 'status_aktif' => $newStatus]
+        );
+
+        return response()->json([
+            'message' => 'Status guru berhasil diubah menjadi ' . ($newStatus === 'Y' ? 'Aktif' : 'Nonaktif'),
+            'status_aktif' => $newStatus,
+            'is_active' => $newStatus === 'Y'
         ]);
     }
 }

@@ -16,6 +16,8 @@ class MasterKurikulumController extends Controller
 
         if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
             $query->where('idkategori', $user->idkategori);
+        } elseif ($user && $user->role === 'super_admin') {
+            $query->where('idkategori', '27830150842287772');
         } elseif ($request->filled('idkategori')) {
             $query->where('idkategori', $request->idkategori);
         }
@@ -56,15 +58,12 @@ class MasterKurikulumController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        if ($user && $user->role === 'super_admin') {
-            return response()->json([
-                'message' => 'Akses ditolak: Super Administrator tidak diizinkan membuat data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
-            ], 403);
-        }
+        $isSuperAdmin = $user && $user->role === 'super_admin';
+        $globalIdkategori = '27830150842287772';
 
-        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+        if (!$isSuperAdmin && (!$user || $user->role !== 'admin' || empty($user->idkategori))) {
             return response()->json([
-                'message' => 'Akses ditolak: Hanya Admin Instansi yang berhak membuat data kurikulum sekolah.'
+                'message' => 'Akses ditolak: Hanya Admin Instansi atau Super Admin yang berhak membuat data kurikulum sekolah.'
             ], 403);
         }
 
@@ -76,16 +75,23 @@ class MasterKurikulumController extends Controller
             'status_aktif' => 'nullable|in:Y,N',
         ]);
 
-        $idkategori = $user->idkategori;
+        $idkategori = $isSuperAdmin ? $globalIdkategori : $user->idkategori;
         $kodeKurikulum = strtoupper(trim($validated['kode_kurikulum']));
+        $namaKurikulum = trim($validated['nama_kurikulum']);
 
-        if (MasterKurikulum::where('idkategori', $idkategori)->where('kode_kurikulum', $kodeKurikulum)->exists()) {
-            return response()->json(['message' => 'Kode kurikulum tersebut sudah terdaftar di instansi Anda.'], 422);
+        // Check duplicate by name or code for this instansi
+        if (MasterKurikulum::where('idkategori', $idkategori)
+            ->where(function ($q) use ($kodeKurikulum, $namaKurikulum) {
+                $q->where('kode_kurikulum', $kodeKurikulum)
+                  ->orWhere('nama_kurikulum', $namaKurikulum);
+            })
+            ->exists()) {
+            return response()->json(['message' => 'Kurikulum dengan nama atau kode tersebut sudah terdaftar di instansi Anda.'], 422);
         }
 
         $item = MasterKurikulum::create([
             'idkategori' => $idkategori,
-            'nama_kurikulum' => trim($validated['nama_kurikulum']),
+            'nama_kurikulum' => $namaKurikulum,
             'kode_kurikulum' => $kodeKurikulum,
             'tahun' => $validated['tahun'] ?? null,
             'keterangan' => $validated['keterangan'] ?? null,
@@ -93,11 +99,14 @@ class MasterKurikulumController extends Controller
         ]);
 
         AuditLog::record(
-            'Tambah Data',
+            'CREATE_KURIKULUM',
             'master_kurikulum',
             (string) $item->id,
             "Menambahkan kurikulum: {$item->nama_kurikulum}",
-            $validated,
+            [
+                'action' => 'create',
+                'after' => $item->toArray(),
+            ],
             null,
             null,
             null,
@@ -125,16 +134,17 @@ class MasterKurikulumController extends Controller
     public function update(Request $request, $id)
     {
         $user = $request->user();
-        if ($user && $user->role === 'super_admin') {
-            return response()->json([
-                'message' => 'Akses ditolak: Super Administrator tidak diizinkan mengubah data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
-            ], 403);
-        }
+        $isSuperAdmin = $user && $user->role === 'super_admin';
+        $globalIdkategori = '27830150842287772';
 
         $masterKurikulum = $id instanceof MasterKurikulum ? $id : MasterKurikulum::findOrFail($id);
 
-        if ($user && $user->role === 'admin' && $masterKurikulum->idkategori && $masterKurikulum->idkategori !== $user->idkategori) {
+        if (!$isSuperAdmin && $user && $user->role === 'admin' && $masterKurikulum->idkategori && $masterKurikulum->idkategori !== $user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
+        if (!$isSuperAdmin && (!$user || $user->role !== 'admin' || empty($user->idkategori))) {
+            return response()->json(['message' => 'Akses ditolak: Hanya Admin Instansi atau Super Admin yang dapat mengubah data kurikulum.'], 403);
         }
 
         $validated = $request->validate([
@@ -147,25 +157,40 @@ class MasterKurikulumController extends Controller
 
         $idkategori = $masterKurikulum->idkategori ?: ($user?->idkategori ?? null);
         $kodeKurikulum = strtoupper(trim($validated['kode_kurikulum']));
+        $namaKurikulum = trim($validated['nama_kurikulum']);
 
-        if ($idkategori && MasterKurikulum::where('idkategori', $idkategori)->where('kode_kurikulum', $kodeKurikulum)->where('id', '!=', $masterKurikulum->id)->exists()) {
-            return response()->json(['message' => 'Kode kurikulum tersebut sudah terdaftar di instansi Anda.'], 422);
+        if ($idkategori && MasterKurikulum::where('idkategori', $idkategori)
+            ->where(function ($q) use ($kodeKurikulum, $namaKurikulum) {
+                $q->where('kode_kurikulum', $kodeKurikulum)
+                  ->orWhere('nama_kurikulum', $namaKurikulum);
+            })
+            ->where('id', '!=', $masterKurikulum->id)
+            ->exists()) {
+            return response()->json(['message' => 'Kurikulum dengan nama atau kode tersebut sudah terdaftar di instansi Anda.'], 422);
         }
 
+        $before = $masterKurikulum->toArray();
+
         $masterKurikulum->update([
-            'nama_kurikulum' => trim($validated['nama_kurikulum']),
+            'nama_kurikulum' => $namaKurikulum,
             'kode_kurikulum' => $kodeKurikulum,
             'tahun' => $validated['tahun'] ?? $masterKurikulum->tahun,
             'keterangan' => $validated['keterangan'] ?? $masterKurikulum->keterangan,
             'status_aktif' => $validated['status_aktif'] ?? $masterKurikulum->status_aktif,
         ]);
 
+        $after = $masterKurikulum->fresh()->toArray();
+
         AuditLog::record(
-            'Edit Data',
+            'EDIT_KURIKULUM',
             'master_kurikulum',
             (string) $masterKurikulum->id,
             "Memperbarui kurikulum: {$masterKurikulum->nama_kurikulum}",
-            $validated,
+            [
+                'action' => 'edit',
+                'before' => $before,
+                'after' => $after,
+            ],
             null,
             null,
             null,
@@ -181,27 +206,34 @@ class MasterKurikulumController extends Controller
     public function destroy(Request $request, $id)
     {
         $user = $request->user();
-        if ($user && $user->role === 'super_admin') {
-            return response()->json([
-                'message' => 'Akses ditolak: Super Administrator tidak diizinkan menghapus data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
-            ], 403);
-        }
+        $isSuperAdmin = $user && $user->role === 'super_admin';
+        $globalIdkategori = '27830150842287772';
 
         $masterKurikulum = $id instanceof MasterKurikulum ? $id : MasterKurikulum::findOrFail($id);
 
-        if ($user && $user->role === 'admin' && $masterKurikulum->idkategori && $masterKurikulum->idkategori !== $user->idkategori) {
+        if (!$isSuperAdmin && $user && $user->role === 'admin' && $masterKurikulum->idkategori && $masterKurikulum->idkategori !== $user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
+        // Super Admin hanya bisa hapus data global
+        if ($isSuperAdmin && $masterKurikulum->idkategori !== $globalIdkategori) {
+            return response()->json(['message' => 'Akses ditolak: Super Admin hanya dapat menghapus data master global.'], 403);
         }
         $name = $masterKurikulum->nama_kurikulum;
         $strId = (string) $masterKurikulum->id;
+        $before = $masterKurikulum->toArray();
         $masterKurikulum->delete();
 
         AuditLog::record(
-            'Hapus Data',
+            'DELETE_KURIKULUM',
             'master_kurikulum',
             $strId,
             "Menghapus kurikulum: {$name}",
-            null,
+            [
+                'action' => 'delete',
+                'before' => $before,
+                'after' => null,
+            ],
             null,
             null,
             null,

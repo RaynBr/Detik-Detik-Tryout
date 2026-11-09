@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AcademicYear;
+use App\Models\MasterSemester;
 use App\Models\MasterMataPelajaran;
 use App\Models\MasterKelas;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -17,7 +19,11 @@ class AcademicYearController extends Controller
         $query = AcademicYear::query();
 
         // Multi-tenant scope
-        if ($user && $user->role === 'admin' && !empty($user->idkategori)) {
+        $globalIdkategori = '27830150842287772';
+        if ($user && $user->role === 'super_admin') {
+            $query->where('idkategori', $globalIdkategori);
+            $idkategori = $globalIdkategori;
+        } elseif ($user && $user->role === 'admin' && !empty($user->idkategori)) {
             $query->where('idkategori', $user->idkategori);
             $idkategori = $user->idkategori;
         } elseif ($request->filled('idkategori')) {
@@ -75,29 +81,28 @@ class AcademicYearController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        if ($user && $user->role === 'super_admin') {
-            return response()->json([
-                'message' => 'Akses ditolak: Super Administrator tidak diizinkan membuat data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
-            ], 403);
-        }
+        $isSuperAdmin = $user && $user->role === 'super_admin';
+        $globalIdkategori = '27830150842287772';
 
-        if (!$user || $user->role !== 'admin' || empty($user->idkategori)) {
+        // Super Admin mengelola Master Global dengan idkategori global
+        if (!$isSuperAdmin && (!$user || $user->role !== 'admin' || empty($user->idkategori))) {
             return response()->json([
-                'message' => 'Akses ditolak: Hanya Admin Instansi yang berhak membuat data tahun ajaran sekolah.'
+                'message' => 'Akses ditolak: Hanya Admin Instansi atau Super Admin yang berhak membuat data tahun ajaran.'
             ], 403);
         }
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'semester' => 'required|in:odd,even',
+            'semester' => 'nullable|in:odd,even',
             'is_active' => 'boolean',
         ]);
 
-        $idkategori = $user->idkategori;
+        $idkategori = $isSuperAdmin ? $globalIdkategori : $user->idkategori;
         $validated['idkategori'] = $idkategori;
+        $validated['semester'] = $validated['semester'] ?? 'odd';
 
-        if (AcademicYear::where('idkategori', $idkategori)->where('name', $validated['name'])->where('semester', $validated['semester'])->exists()) {
-            return response()->json(['message' => 'Tahun ajaran dan semester tersebut sudah terdaftar di instansi Anda.'], 422);
+        if (AcademicYear::where('idkategori', $idkategori)->where('name', $validated['name'])->exists()) {
+            return response()->json(['message' => 'Tahun ajaran tersebut sudah terdaftar.'], 422);
         }
 
         $academicYear = DB::transaction(function () use ($validated, $idkategori) {
@@ -105,9 +110,41 @@ class AcademicYearController extends Controller
 
             if ($is_active) {
                 AcademicYear::where('idkategori', $idkategori)->update(['is_active' => false]);
+                MasterSemester::where('idkategori', $idkategori)->update(['status_aktif' => 'N']);
             }
 
-            return AcademicYear::create($validated);
+            $ay = AcademicYear::create($validated);
+
+            // Automatically create Ganjil & Genap for this academic year
+            MasterSemester::create([
+                'idkategori' => $idkategori,
+                'academic_year_id' => $ay->id,
+                'nama_semester' => 'Semester Ganjil',
+                'kode_semester' => 'ganjil',
+                'urutan' => 1,
+                'status_aktif' => $is_active ? 'Y' : 'N',
+                'keterangan' => 'Semester Ganjil ' . $ay->name,
+            ]);
+
+            MasterSemester::create([
+                'idkategori' => $idkategori,
+                'academic_year_id' => $ay->id,
+                'nama_semester' => 'Semester Genap',
+                'kode_semester' => 'genap',
+                'urutan' => 2,
+                'status_aktif' => 'N',
+                'keterangan' => 'Semester Genap ' . $ay->name,
+            ]);
+
+            AuditLog::record(
+                'CREATE_TAHUN_AJARAN',
+                'academic_years',
+                (string)$ay->id,
+                "Menambahkan Tahun Ajaran: {$ay->name}",
+                $validated
+            );
+
+            return $ay;
         });
 
         return response()->json([
@@ -136,37 +173,35 @@ class AcademicYearController extends Controller
     public function update(Request $request, $id)
     {
         $user = $request->user();
-        if ($user && $user->role === 'super_admin') {
-            return response()->json([
-                'message' => 'Akses ditolak: Super Administrator tidak diizinkan mengubah data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
-            ], 403);
-        }
-
+        $isSuperAdmin = $user && $user->role === 'super_admin';
         $academicYear = $id instanceof AcademicYear ? $id : AcademicYear::findOrFail($id);
 
-        if ($user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
+        if (!$isSuperAdmin && $user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
         }
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'semester' => 'required|in:odd,even',
+            'semester' => 'nullable|in:odd,even',
             'is_active' => 'boolean',
         ]);
 
         $idkategori = $academicYear->idkategori ?: ($user?->idkategori ?? null);
 
-        if (AcademicYear::where('idkategori', $idkategori)->where('name', $validated['name'])->where('semester', $validated['semester'])->where('id', '!=', $academicYear->id)->exists()) {
-            return response()->json(['message' => 'Tahun ajaran dan semester tersebut sudah terdaftar di instansi Anda.'], 422);
+        if (AcademicYear::where('idkategori', $idkategori)->where('name', $validated['name'])->where('id', '!=', $academicYear->id)->exists()) {
+            return response()->json(['message' => 'Tahun ajaran tersebut sudah terdaftar di instansi Anda.'], 422);
         }
 
         $oldName = $academicYear->name;
+        $validated['semester'] = $validated['semester'] ?? $academicYear->semester;
 
         $academicYear = DB::transaction(function () use ($validated, $academicYear, $oldName, $idkategori) {
             $is_active = $validated['is_active'] ?? false;
 
             if ($is_active && $idkategori) {
                 AcademicYear::where('idkategori', $idkategori)->where('id', '!=', $academicYear->id)->update(['is_active' => false]);
+                MasterSemester::where('idkategori', $idkategori)->update(['status_aktif' => 'N']);
+                MasterSemester::where('idkategori', $idkategori)->where('academic_year_id', $academicYear->id)->where('kode_semester', 'ganjil')->update(['status_aktif' => 'Y']);
             }
 
             $academicYear->update($validated);
@@ -177,6 +212,14 @@ class AcademicYearController extends Controller
                 DB::table('siswa_kelas')->where('tahun_ajaran', $oldName)->update(['tahun_ajaran' => $validated['name']]);
                 DB::table('guru_mata_pelajaran')->where('tahun_ajaran', $oldName)->update(['tahun_ajaran' => $validated['name']]);
             }
+
+            AuditLog::record(
+                'EDIT_TAHUN_AJARAN',
+                'academic_years',
+                (string)$academicYear->id,
+                "Memperbarui Tahun Ajaran: {$academicYear->name}",
+                $validated
+            );
 
             return $academicYear;
         });
@@ -190,16 +233,18 @@ class AcademicYearController extends Controller
     public function destroy(Request $request, $id)
     {
         $user = $request->user();
-        if ($user && $user->role === 'super_admin') {
-            return response()->json([
-                'message' => 'Akses ditolak: Super Administrator tidak diizinkan menghapus data Master Akademik. Fitur ini dikelola penuh oleh Admin Instansi.'
-            ], 403);
-        }
+        $isSuperAdmin = $user && $user->role === 'super_admin';
+        $globalIdkategori = '27830150842287772';
 
         $academicYear = $id instanceof AcademicYear ? $id : AcademicYear::findOrFail($id);
 
-        if ($user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
+        if (!$isSuperAdmin && $user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
+        }
+
+        // Super Admin hanya bisa hapus data global (idkategori = globalIdkategori)
+        if ($isSuperAdmin && $academicYear->idkategori !== $globalIdkategori) {
+            return response()->json(['message' => 'Akses ditolak: Super Admin hanya dapat menghapus data master global.'], 403);
         }
 
         if ($academicYear->is_active) {
@@ -208,7 +253,21 @@ class AcademicYearController extends Controller
             ], 422);
         }
 
-        $academicYear->delete();
+        $oldName = $academicYear->name;
+        $yearId = $academicYear->id;
+
+        DB::transaction(function () use ($academicYear, $yearId, $oldName) {
+            MasterSemester::where('academic_year_id', $yearId)->delete();
+            $academicYear->delete();
+
+            AuditLog::record(
+                'DELETE_TAHUN_AJARAN',
+                'academic_years',
+                (string)$yearId,
+                "Menghapus Tahun Ajaran: {$oldName}",
+                ['deleted_name' => $oldName]
+            );
+        });
 
         return response()->json([
             'message' => 'Tahun ajaran berhasil dihapus.'
@@ -218,31 +277,64 @@ class AcademicYearController extends Controller
     public function activate(Request $request, $id)
     {
         $user = $request->user();
-        if ($user && $user->role === 'super_admin') {
-            return response()->json([
-                'message' => 'Akses ditolak: Super Administrator tidak diizinkan mengubah status aktif tahun ajaran. Fitur ini dikelola penuh oleh Admin Instansi.'
-            ], 403);
-        }
+        $isSuperAdmin = $user && $user->role === 'super_admin';
+        $globalIdkategori = '27830150842287772';
 
         $academicYear = $id instanceof AcademicYear ? $id : AcademicYear::findOrFail($id);
 
-        if ($user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
+        if (!$isSuperAdmin && $user && $user->role === 'admin' && $academicYear->idkategori && $academicYear->idkategori !== $user->idkategori) {
             return response()->json(['message' => 'Akses ditolak: Data akademik bukan milik instansi Anda.'], 403);
         }
 
-        $idkategori = $academicYear->idkategori ?: ($user?->idkategori ?? null);
+        $idkategori = $academicYear->idkategori ?: ($isSuperAdmin ? $globalIdkategori : ($user?->idkategori ?? null));
 
         DB::transaction(function () use ($academicYear, $idkategori) {
             if ($idkategori) {
                 AcademicYear::where('idkategori', $idkategori)->update(['is_active' => false]);
+                MasterSemester::where('idkategori', $idkategori)->update(['status_aktif' => 'N']);
             } else {
                 AcademicYear::query()->update(['is_active' => false]);
+                MasterSemester::query()->update(['status_aktif' => 'N']);
             }
+
             $academicYear->update(['is_active' => true]);
+
+            // Ensure semester Ganjil & Genap exist for this activated year
+            $ganjil = MasterSemester::where('academic_year_id', $academicYear->id)->where('kode_semester', 'ganjil')->first();
+            if (!$ganjil) {
+                $ganjil = MasterSemester::create([
+                    'idkategori' => $idkategori,
+                    'academic_year_id' => $academicYear->id,
+                    'nama_semester' => 'Semester Ganjil',
+                    'kode_semester' => 'ganjil',
+                    'urutan' => 1,
+                    'status_aktif' => 'Y',
+                    'keterangan' => 'Semester Ganjil ' . $academicYear->name,
+                ]);
+                MasterSemester::create([
+                    'idkategori' => $idkategori,
+                    'academic_year_id' => $academicYear->id,
+                    'nama_semester' => 'Semester Genap',
+                    'kode_semester' => 'genap',
+                    'urutan' => 2,
+                    'status_aktif' => 'N',
+                    'keterangan' => 'Semester Genap ' . $academicYear->name,
+                ]);
+            } else {
+                $ganjil->update(['status_aktif' => 'Y']);
+            }
+
+            AuditLog::record(
+                'ACTIVATE_TAHUN_AJARAN',
+                'academic_years',
+                (string)$academicYear->id,
+                "Mengaktifkan Tahun Ajaran: {$academicYear->name} dan menyinkronkan semester aktif",
+                ['activated_year' => $academicYear->name]
+            );
         });
 
         return response()->json([
-            'message' => "Tahun ajaran {$academicYear->name} ({$academicYear->semester}) berhasil diaktifkan.",
+            'message' => "Tahun ajaran {$academicYear->name} berhasil diaktifkan beserta semester aktifnya.",
             'data' => $academicYear
         ]);
     }

@@ -44,11 +44,25 @@ class Assessment extends Model
         'point_assessment',
         'point_assessment_nama',
         'idjenjang',
+        'tingkat',
+        'idtingkat',
         'idkelas',
         'idmapel',
         'id_tahun_ajaran',
         'tahun_soal_id',
+        'idkurikulum',
+        'source_type',
+        'acak_soal',
+        'acak_opsi',
         'status_aktif',
+        'status_paket',
+        'is_locked',
+        'locked_at',
+    ];
+
+    protected $casts = [
+        'is_locked' => 'boolean',
+        'locked_at' => 'datetime',
     ];
 
     protected $attributes = [
@@ -66,6 +80,9 @@ class Assessment extends Model
         'tampil_assessment_essay' => 0,
         'point_assessment' => 0,
         'point_assessment_nama' => 'JPtest',
+        'status_aktif' => 'Y',
+        'status_paket' => 'draft',
+        'is_locked' => false,
     ];
 
     protected static function booted()
@@ -98,6 +115,11 @@ class Assessment extends Model
         return $this->belongsTo(MasterJenjang::class, 'idjenjang', 'id');
     }
 
+    public function masterTingkat(): BelongsTo
+    {
+        return $this->belongsTo(MasterTingkatKelas::class, 'idtingkat', 'id');
+    }
+
     public function kelas(): BelongsTo
     {
         return $this->belongsTo(MasterKelas::class, 'idkelas', 'id');
@@ -106,6 +128,11 @@ class Assessment extends Model
     public function mapel(): BelongsTo
     {
         return $this->belongsTo(MasterMataPelajaran::class, 'idmapel', 'id');
+    }
+
+    public function kurikulum(): BelongsTo
+    {
+        return $this->belongsTo(MasterKurikulum::class, 'idkurikulum', 'id');
     }
 
     public function subject(): BelongsTo

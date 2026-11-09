@@ -1132,11 +1132,67 @@ export const QuestionBankPage: React.FC = () => {
             )}
 
             {previewingQuestion.explanation && (
-              <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl text-xs text-indigo-900 dark:text-indigo-300">
+              <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl text-xs text-indigo-900 dark:text-indigo-300 mb-4">
                 <p className="font-bold text-indigo-700 dark:text-indigo-200 mb-1">Pembahasan Soal:</p>
                 <LaTeXRenderer text={previewingQuestion.explanation} />
               </div>
             )}
+
+            {/* Academic Relations & Metadata (Requirement 2 & 8) */}
+            <div className="p-3.5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-2xl text-xs space-y-2 mb-4">
+              <span className="font-bold text-slate-700 dark:text-gray-300 block">Metadata & Relasi Akademik:</span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-gray-400">
+                <div>Mapel: <strong className="text-slate-900 dark:text-white">{previewingQuestion.subject?.name || '-'}</strong></div>
+                <div>Tahun Soal: <strong className="text-slate-900 dark:text-white">{previewingQuestion.tahun_soal || '-'}</strong></div>
+                <div>Status: <span className={`font-bold ${previewingQuestion.status_aktif === 'N' ? 'text-amber-600' : 'text-emerald-600'}`}>{previewingQuestion.status_aktif === 'N' ? 'Hidden (Arsip)' : 'Aktif (Tampil)'}</span></div>
+                <div>Pembuat: <strong className="text-slate-900 dark:text-white">{previewingQuestion.creator_name || 'Guru Pengajar'}</strong></div>
+                <div>ID Referensi: <span className="font-mono">{previewingQuestion.id}</span></div>
+              </div>
+            </div>
+
+            {/* Modal Footer Actions (Requirement 2) */}
+            <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex items-center justify-between gap-2">
+              {!isReadOnly && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleToggleStatus(previewingQuestion.id);
+                      setPreviewingQuestion(prev => prev ? { ...prev, status_aktif: prev.status_aktif === 'N' ? 'Y' : 'N' } : null);
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                      previewingQuestion.status_aktif === 'N'
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/20'
+                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-500/20'
+                    }`}
+                  >
+                    {previewingQuestion.status_aktif === 'N' ? <ToggleLeft className="h-4 w-4" /> : <ToggleRight className="h-4 w-4" />}
+                    <span>{previewingQuestion.status_aktif === 'N' ? 'Aktifkan Soal' : 'Sembunyikan Soal'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const qId = previewingQuestion.id;
+                      setPreviewingQuestion(null);
+                      handleEditQuestion(qId);
+                    }}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                    <span>Edit Soal</span>
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setPreviewingQuestion(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition ml-auto"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}
