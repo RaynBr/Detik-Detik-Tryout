@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Moon, Laptop } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import { useTheme, ThemeMode } from '../context/ThemeContext';
 
 interface ThemeToggleProps {
@@ -16,19 +16,26 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
   const options: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
     { mode: 'light', label: 'Terang', icon: Sun },
     { mode: 'dark', label: 'Gelap', icon: Moon },
-    { mode: 'system', label: 'Laptop', icon: Laptop },
   ];
 
   if (compact) {
     return (
-      <div className={`inline-flex items-center p-1 rounded-2xl bg-gray-200/70 dark:bg-white/5 border border-gray-300/60 dark:border-white/10 ${className}`}>
+      <div 
+        role="group"
+        aria-label="Pengaturan tema tampilan"
+        className={`inline-flex items-center p-1 rounded-2xl bg-gray-200/70 dark:bg-white/5 border border-gray-300/60 dark:border-white/10 gap-0.5 ${className}`}
+      >
         {options.map(({ mode, label, icon: Icon }) => {
           const isActive = themeMode === mode;
+          const labelText = `Mode ${label.toLowerCase()}`;
           return (
             <button
               key={mode}
+              type="button"
               onClick={() => setThemeMode(mode)}
-              title={`Mode ${label}`}
+              title={labelText}
+              aria-label={labelText}
+              aria-pressed={isActive}
               className={`p-1.5 rounded-xl transition flex items-center justify-center ${
                 isActive
                   ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm font-bold'
@@ -44,13 +51,22 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
   }
 
   return (
-    <div className={`inline-flex items-center p-1 rounded-2xl bg-gray-200/70 dark:bg-white/5 border border-gray-300/60 dark:border-white/10 gap-0.5 ${className}`}>
+    <div 
+      role="group"
+      aria-label="Pengaturan tema tampilan"
+      className={`inline-flex items-center p-1 rounded-2xl bg-gray-200/70 dark:bg-white/5 border border-gray-300/60 dark:border-white/10 gap-0.5 ${className}`}
+    >
       {options.map(({ mode, label, icon: Icon }) => {
         const isActive = themeMode === mode;
+        const labelText = `Mode ${label.toLowerCase()}`;
         return (
           <button
             key={mode}
+            type="button"
             onClick={() => setThemeMode(mode)}
+            title={labelText}
+            aria-label={labelText}
+            aria-pressed={isActive}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
               isActive
                 ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm font-bold'

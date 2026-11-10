@@ -94,6 +94,7 @@ export const App: React.FC = () => {
               {/* Student routes */}
               <Route element={<ProtectedRoute allowedRoles={['siswa']} />}>
                 <Route path="/student/dashboard" element={<StudentExamsPage />} />
+                <Route path="/student-dashboard" element={<Navigate to="/student/dashboard" replace />} />
                 <Route path="/student/profile" element={<StudentProfilePage />} />
                 <Route path="/student/session/:attemptId" element={<ExamSessionPage />} />
               </Route>

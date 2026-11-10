@@ -16,6 +16,7 @@ interface DonutProgressChartProps {
   items?: DonutItem[];
   size?: number;
   strokeWidth?: number;
+  children?: React.ReactNode;
 }
 
 export const DonutProgressChart: React.FC<DonutProgressChartProps> = ({
@@ -26,7 +27,8 @@ export const DonutProgressChart: React.FC<DonutProgressChartProps> = ({
   centerSublabel = 'Tuntas',
   items = [],
   size = 160,
-  strokeWidth = 14
+  strokeWidth = 14,
+  children
 }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -101,6 +103,8 @@ export const DonutProgressChart: React.FC<DonutProgressChartProps> = ({
           ))}
         </div>
       )}
+
+      {children}
     </div>
   );
 };

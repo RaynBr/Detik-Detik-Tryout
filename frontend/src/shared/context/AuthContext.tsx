@@ -147,7 +147,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(loggedInUser);
       return loggedInUser;
     } catch (error: any) {
-      throw error.response?.data || new Error('Terjadi kesalahan saat masuk.');
+      if (error.response?.data) {
+        throw error.response.data;
+      }
+      throw new Error(error.message || 'Tidak dapat terhubung ke server backend.');
     }
   };
 

@@ -29,16 +29,27 @@ class ResultController extends Controller
         $savedAnswers = $attempt->details->keyBy('idassessment_soal_pilgan');
 
         $correctCount = 0;
+        $incorrectCount = 0;
+        $unansweredCount = 0;
         $reviewQuestions = [];
 
         foreach ($questions as $idx => $q) {
             $studentAns = $savedAnswers->get($q->idassessment_soal_pilgan);
-            $chosen = $studentAns ? strtoupper(trim($studentAns->jawaban)) : null;
-            $correctKey = strtoupper(trim($q->jawaban));
-            $isCorrect = ($chosen !== null && $chosen === $correctKey);
+            $rawAnswer = $studentAns ? trim((string)$studentAns->jawaban) : '';
+            $chosen = ($rawAnswer !== '') ? strtoupper($rawAnswer) : null;
+            $correctKey = strtoupper(trim((string)$q->jawaban));
 
-            if ($isCorrect) {
-                $correctCount++;
+            $status = 'unanswered';
+            if ($chosen !== null) {
+                if ($chosen === $correctKey) {
+                    $status = 'correct';
+                    $correctCount++;
+                } else {
+                    $status = 'incorrect';
+                    $incorrectCount++;
+                }
+            } else {
+                $unansweredCount++;
             }
 
             $options = [];
@@ -66,13 +77,16 @@ class ResultController extends Controller
                 'options' => $options,
                 'student_answer' => $chosen,
                 'correct_answer' => $correctKey,
-                'is_correct' => $isCorrect,
+                'is_correct' => ($status === 'correct'),
+                'status' => $status, // 'correct' | 'incorrect' | 'unanswered'
                 'explanation' => $q->penjelasan_jawaban ?: 'Tidak ada pembahasan khusus untuk nomor ini.',
             ];
         }
 
         $totalQuestions = count($questions);
         $score = ($totalQuestions > 0) ? round(($correctCount / $totalQuestions) * 100, 2) : 0;
+        $kkm = (float) ($assessment->mapel?->kkm ?? 75);
+        $finalScore = (float) ($attempt->nilai ?? $score);
 
         // Flow Requirement (mod-siswa-end-session-check):
         // Pengecekan Status Sesi: Apakah Sesi Ujian Benar-benar Berakhir? (End Session)
@@ -133,11 +147,14 @@ class ResultController extends Controller
                 'assessment_id' => $assessment->idassessment,
                 'title' => $assessment->nama_assessment,
                 'subject' => $assessment->mapel?->nama_mapel ?? 'TryOut',
+                'kkm' => $kkm,
                 'status' => 'submitted',
-                'total_score' => (float) ($attempt->nilai ?? $score),
+                'total_score' => $finalScore,
                 'total_questions' => $totalQuestions,
                 'total_correct' => $correctCount,
-                'total_incorrect' => $totalQuestions - $correctCount,
+                'total_incorrect' => $incorrectCount,
+                'total_unanswered' => $unansweredCount,
+                'is_passed_kkm' => ($finalScore >= $kkm),
                 'duration_spent' => $attempt->lama_dikerjakan ?: '-',
                 'submitted_at' => $attempt->tgl_input_time,
                 'is_session_ended' => true,

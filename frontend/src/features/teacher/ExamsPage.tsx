@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
+import { broadcastExamUpdate } from '../../shared/utils/realtimeSync';
 
 interface Subject {
   id: number;
@@ -233,6 +234,7 @@ export const ExamsPage: React.FC = () => {
       };
       const res = await apiClient.post('/teacher/exams/generate-random', payload);
       toast.success(res.data?.message || 'Berhasil mengenerate 50 soal acak dari Bank Soal!');
+      broadcastExamUpdate();
       setShowGenerateModal(false);
       const activeAy = academicYears.find(a => a.is_active) || academicYears[0];
       setGenerateForm({
@@ -427,6 +429,7 @@ export const ExamsPage: React.FC = () => {
         await apiClient.post('/teacher/exams', payload);
         toast.success('Jadwal ujian baru berhasil dibuat!');
       }
+      broadcastExamUpdate();
       fetchData();
       setModalOpen(false);
     } catch (err: any) {
@@ -443,6 +446,7 @@ export const ExamsPage: React.FC = () => {
     try {
       await apiClient.delete(`/teacher/exams/${id}`);
       toast.success('Paket ujian berhasil dihapus!');
+      broadcastExamUpdate();
       fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Gagal menghapus ujian.');
@@ -515,6 +519,7 @@ export const ExamsPage: React.FC = () => {
     try {
       await apiClient.post('/teacher/exam-groups', payload);
       toast.success('Sesi gelombang ujian baru berhasil dibuat!');
+      broadcastExamUpdate();
       fetchData();
       setGroupModalOpen(false);
     } catch (err: any) {
@@ -529,6 +534,7 @@ export const ExamsPage: React.FC = () => {
     try {
       await apiClient.delete(`/teacher/exam-groups/${groupId}`);
       toast.success('Sesi gelombang berhasil dihapus!');
+      broadcastExamUpdate();
       fetchData();
     } catch (err: any) {
       toast.error('Gagal menghapus sesi.');

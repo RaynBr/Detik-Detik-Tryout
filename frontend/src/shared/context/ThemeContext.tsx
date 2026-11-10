@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
 interface ThemeContextType {
@@ -15,51 +15,30 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Default to 'light' per user preference, or load saved setting
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem('cbt_theme_mode');
-    if (saved === 'light' || saved === 'dark' || saved === 'system') {
+    if (saved === 'dark' || saved === 'light') {
       return saved;
+    }
+    // Otomatis migrasi jika sebelumnya bernilai 'system' atau data lama tidak valid
+    if (saved === 'system') {
+      localStorage.setItem('cbt_theme_mode', 'light');
     }
     return 'light';
   });
 
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
-    if (themeMode === 'system') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return themeMode;
-  });
+  const resolvedTheme: ResolvedTheme = themeMode;
 
   useEffect(() => {
     localStorage.setItem('cbt_theme_mode', themeMode);
 
-    const updateResolvedTheme = () => {
-      let current: ResolvedTheme = 'light';
-      if (themeMode === 'system') {
-        current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      } else {
-        current = themeMode;
-      }
-
-      setResolvedTheme(current);
-
-      const root = document.documentElement;
-      if (current === 'dark') {
-        root.classList.add('dark');
-        root.classList.remove('light');
-        root.style.colorScheme = 'dark';
-      } else {
-        root.classList.remove('dark');
-        root.classList.add('light');
-        root.style.colorScheme = 'light';
-      }
-    };
-
-    updateResolvedTheme();
-
-    if (themeMode === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handleChange = () => updateResolvedTheme();
-      mediaQuery.addEventListener('change', handleChange);
-      return () => mediaQuery.removeEventListener('change', handleChange);
+    const root = document.documentElement;
+    if (themeMode === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('light');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.classList.add('light');
+      root.style.colorScheme = 'light';
     }
   }, [themeMode]);
 

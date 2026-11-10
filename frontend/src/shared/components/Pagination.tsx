@@ -115,38 +115,45 @@ export const Pagination: React.FC<PaginationProps> = ({
           <span className="hidden sm:inline">Previous</span>
         </button>
 
-        {/* Page numbers */}
-        {pages.map((p, idx) => {
-          if (p === '...') {
+        {/* Mobile Compact Page Indicator (Revisi 7) */}
+        <span className="sm:hidden text-xs font-mono font-black text-slate-700 dark:text-gray-300 px-2.5 py-1.5 bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 min-h-[36px] flex items-center">
+          Hal {safeCurrentPage} / {safeLastPage}
+        </span>
+
+        {/* Page numbers (Desktop / Tablet) */}
+        <div className="hidden sm:flex items-center gap-1 sm:gap-1.5">
+          {pages.map((p, idx) => {
+            if (p === '...') {
+              return (
+                <span
+                  key={`ellipsis-${idx}`}
+                  className="px-2 py-1 text-xs font-mono text-slate-400 dark:text-gray-500 select-none"
+                >
+                  ...
+                </span>
+              );
+            }
+
+            const pageNum = Number(p);
+            const isActive = pageNum === safeCurrentPage;
+
             return (
-              <span
-                key={`ellipsis-${idx}`}
-                className="px-2 py-1 text-xs font-mono text-slate-400 dark:text-gray-500 select-none"
+              <button
+                key={`page-${pageNum}`}
+                type="button"
+                onClick={() => onPageChange(pageNum)}
+                disabled={loading || isActive}
+                className={`min-w-8 h-8 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                  isActive
+                    ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-500/20'
+                    : 'text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5 border border-slate-200/80 dark:border-white/10'
+                }`}
               >
-                ...
-              </span>
+                {pageNum}
+              </button>
             );
-          }
-
-          const pageNum = Number(p);
-          const isActive = pageNum === safeCurrentPage;
-
-          return (
-            <button
-              key={`page-${pageNum}`}
-              type="button"
-              onClick={() => onPageChange(pageNum)}
-              disabled={loading || isActive}
-              className={`min-w-8 h-8 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
-                isActive
-                  ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-500/20'
-                  : 'text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5 border border-slate-200/80 dark:border-white/10'
-              }`}
-            >
-              {pageNum}
-            </button>
-          );
-        })}
+          })}
+        </div>
 
         {/* Next button */}
         <button

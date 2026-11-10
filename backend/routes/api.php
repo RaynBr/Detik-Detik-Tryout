@@ -24,7 +24,15 @@ use App\Http\Controllers\Api\Proctoring\ViolationLogController;
 use Illuminate\Support\Facades\Route;
 
 // Public Auth & Platform routes
-Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:5,1')->name('login');
+Route::get('/', function () {
+    return response()->json([
+        'status' => 'online',
+        'app' => config('app.name', 'Detik Detik Tryout CBT'),
+        'message' => 'Backend API is running successfully',
+        'timestamp' => now()->toIso8601String(),
+    ]);
+});
+Route::post('/auth/login', [LoginController::class, 'login'])->middleware('throttle:60,1')->name('login');
 Route::get('/public/platform-settings', [\App\Http\Controllers\Api\SuperAdmin\PlatformSettingController::class, 'publicSettings']);
 
 // Protected routes (Requires Auth & Session Lock check)
@@ -222,6 +230,7 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
 
     // Student Exam pengerjaan routes with High-Throughput Burst Rate Limiting
     Route::middleware(['role:siswa'])->prefix('student')->group(function () {
+        Route::get('announcements', [\App\Http\Controllers\Api\Student\AnnouncementController::class, 'index']);
         Route::get('exams', [ExamAttemptController::class, 'availableExams']);
         Route::post('attempts/start', [ExamAttemptController::class, 'start'])->middleware('throttle:30,1');
         Route::get('attempts/{attempt}', [ExamAttemptController::class, 'showAttempt']);

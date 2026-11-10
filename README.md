@@ -66,7 +66,7 @@ Untuk keperluan pengujian lokal, gunakan akun-akun terverifikasi berikut yang te
 | **Super Admin IP** | `adminnyaadmin` | `coreofthecore` | Admin SertiDemi (Akses Global Seluruh Instansi) |
 | **Admin Sekolah** | `pgrislcc` | `12345` | PGRI SLCC (Manajemen Sekolah Mitra) |
 | **Guru** | `edismulyanta` | `12345` | Edi S. Mulyanta (Bank Soal & Paket Ujian) |
-| **Siswa** | `verinakris@gmail.com` | `123456` | Verina Kristanti (Pengerjaan TryOut & Hasil) |
+| **Siswa** | `0002026001` *(NISN)* / `US202207220000000001` *(ID)* | `123456` | Verina Kristanti (Pengerjaan TryOut & Hasil) |
 
 ---
 

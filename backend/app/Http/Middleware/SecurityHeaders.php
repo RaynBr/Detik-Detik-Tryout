@@ -21,13 +21,13 @@ class SecurityHeaders
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-        // Content Security Policy (Minimal policy allowing self, standard fonts, and Vite HMR/API in dev)
-        $csp = "default-src 'self'; "
+        // Content Security Policy (allows self, fonts, and local dev network connections)
+        $csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; "
              . "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
              . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
              . "font-src 'self' https://fonts.gstatic.com data:; "
-             . "img-src 'self' data: blob: https:; "
-             . "connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 ws://localhost:5173 http://localhost:5173; "
+             . "img-src 'self' data: blob: https: http:; "
+             . "connect-src * 'self' http: ws: https: wss:; "
              . "frame-ancestors 'self';";
         $response->headers->set('Content-Security-Policy', $csp);
 
