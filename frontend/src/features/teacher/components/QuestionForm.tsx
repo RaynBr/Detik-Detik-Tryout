@@ -39,6 +39,20 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ questionId, packageI
   const [content, setContent] = useState('');
   const [explanation, setExplanation] = useState('');
   
+  // Academic Relations (Requirement 8)
+  const [tahunSoalList, setTahunSoalList] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [semesters, setSemesters] = useState<any[]>([]);
+  const [jenjangList, setJenjangList] = useState<any[]>([]);
+  const [kelasList, setKelasList] = useState<any[]>([]);
+
+  const [tahunSoalId, setTahunSoalId] = useState<string>('');
+  const [academicYearId, setAcademicYearId] = useState<string>('');
+  const [semesterId, setSemesterId] = useState<string>('');
+  const [jenjangId, setJenjangId] = useState<string>('');
+  const [kelasId, setKelasId] = useState<string>('');
+  const [statusAktif, setStatusAktif] = useState<'Y' | 'N'>('Y');
+
   // Media files
   const [questionMedia, setQuestionMedia] = useState<File | null>(null);
   const [questionMediaUrl, setQuestionMediaUrl] = useState<string | null>(null);
@@ -58,15 +72,43 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ questionId, packageI
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const fetchSubjects = async () => {
+    const fetchDropdownOptions = async () => {
       try {
-        const response = await apiClient.get('/teacher/subjects');
-        setSubjects(response.data);
-        if (response.data.length > 0 && !questionId) {
-          setSubjectId(response.data[0].id.toString());
+        const [subRes, tahunRes, yearsRes, semRes, jenjangRes, kelasRes] = await Promise.all([
+          apiClient.get('/teacher/subjects').catch(() => ({ data: [] })),
+          apiClient.get('/admin/tahun-soal', { params: { all: true } }).catch(() => ({ data: [] })),
+          apiClient.get('/admin/academic-years', { params: { all: true } }).catch(() => ({ data: [] })),
+          apiClient.get('/admin/semesters', { params: { all: true } }).catch(() => ({ data: [] })),
+          apiClient.get('/teacher/jenjang', { params: { all: true } }).catch(() => ({ data: [] })),
+          apiClient.get('/teacher/classes', { params: { all: true } }).catch(() => ({ data: [] })),
+        ]);
+        
+        const subs = subRes.data?.data || (Array.isArray(subRes.data) ? subRes.data : []);
+        setSubjects(subs);
+        if (subs.length > 0 && !questionId) {
+          setSubjectId(subs[0].id.toString());
         }
+
+        const tList = tahunRes.data?.data || (Array.isArray(tahunRes.data) ? tahunRes.data : []);
+        setTahunSoalList(tList);
+
+        const yList = yearsRes.data?.data || (Array.isArray(yearsRes.data) ? yearsRes.data : []);
+        setAcademicYears(yList);
+        const activeAy = yList.find((y: any) => y.is_active);
+        if (activeAy && !academicYearId) {
+          setAcademicYearId(activeAy.id.toString());
+        }
+
+        const sList = semRes.data?.data || (Array.isArray(semRes.data) ? semRes.data : []);
+        setSemesters(sList);
+
+        const jList = jenjangRes.data?.data || (Array.isArray(jenjangRes.data) ? jenjangRes.data : []);
+        setJenjangList(jList);
+
+        const kList = kelasRes.data?.data || (Array.isArray(kelasRes.data) ? kelasRes.data : []);
+        setKelasList(kList);
       } catch (err) {
-        console.error('Failed to load subjects:', err);
+        console.error('Failed to load academic dropdown options:', err);
       }
     };
 
@@ -77,13 +119,21 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ questionId, packageI
         const response = await apiClient.get(`/teacher/questions/${questionId}`);
         const q = response.data;
         
-        setSubjectId(q.subject_id.toString());
-        setTopic(q.topic);
-        setDifficulty(q.difficulty);
-        setType(q.type);
-        setContent(q.content);
-        setExplanation(q.explanation || '');
-        setQuestionMediaUrl(q.media_url);
+        const subId = q.idmapel || q.subject_id || q.subject?.id || '';
+        if (subId) setSubjectId(subId.toString());
+        setTopic(q.topic || q.bab || '');
+        setDifficulty(q.difficulty || (q.tingkat_kesulitan?.toLowerCase() === 'sulit' ? 'hard' : q.tingkat_kesulitan?.toLowerCase() === 'mudah' ? 'easy' : 'medium'));
+        setType(q.type || 'multiple_choice_single');
+        setContent(q.soal_text || q.content || '');
+        setExplanation(q.penjelasan_jawaban || q.explanation || '');
+        setQuestionMediaUrl(q.media_url || q.soal_gambar);
+
+        if (q.tahun_soal_id) setTahunSoalId(q.tahun_soal_id.toString());
+        if (q.id_tahun_ajaran) setAcademicYearId(q.id_tahun_ajaran.toString());
+        if (q.semester_id) setSemesterId(q.semester_id.toString());
+        if (q.idjenjang) setJenjangId(q.idjenjang.toString());
+        if (q.idkelas) setKelasId(q.idkelas.toString());
+        if (q.status_aktif) setStatusAktif(q.status_aktif);
 
         if (q.type === 'multiple_choice_single' || q.type === 'multiple_choice_multi' || q.type === 'true_false') {
           setOptions(q.options.map((opt: any) => ({
@@ -107,7 +157,7 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ questionId, packageI
       }
     };
 
-    fetchSubjects().then(() => loadQuestionData());
+    fetchDropdownOptions().then(() => loadQuestionData());
   }, [questionId]);
 
   // Handle MCQ Options CRUD
@@ -183,11 +233,24 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ questionId, packageI
       formData.append('package_id', packageId.toString());
     }
     formData.append('subject_id', subjectId);
+    formData.append('idmapel', subjectId);
     formData.append('topic', topic);
+    formData.append('bab', topic);
     formData.append('difficulty', difficulty);
+    formData.append('tingkat_kesulitan', difficulty === 'hard' ? 'Sulit' : difficulty === 'easy' ? 'Mudah' : 'Sedang');
     formData.append('type', type);
     formData.append('content', content);
+    formData.append('soal_text', content);
     formData.append('explanation', explanation);
+    formData.append('penjelasan_jawaban', explanation);
+
+    // Academic Relations (Requirement 8)
+    if (tahunSoalId) formData.append('tahun_soal_id', tahunSoalId);
+    if (academicYearId) formData.append('id_tahun_ajaran', academicYearId);
+    if (semesterId) formData.append('semester_id', semesterId);
+    if (jenjangId) formData.append('idjenjang', jenjangId);
+    if (kelasId) formData.append('idkelas', kelasId);
+    formData.append('status_aktif', statusAktif);
 
     if (questionMedia) {
       formData.append('media', questionMedia);
@@ -319,6 +382,108 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ questionId, packageI
               <option value="true_false">Benar / Salah</option>
               <option value="matching">Menjodohkan (Matching)</option>
             </select>
+          </div>
+        </div>
+
+        {/* Academic Master Relations (Requirement 8) */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 space-y-3">
+          <span className="block text-xs font-black text-slate-800 dark:text-gray-200 uppercase tracking-wider">
+            Relasi Master Akademik & Status Soal
+          </span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-gray-400 mb-1">
+                Tahun Soal
+              </label>
+              <select
+                value={tahunSoalId}
+                onChange={(e) => setTahunSoalId(e.target.value)}
+                className="w-full px-2.5 py-2 glass-input rounded-xl text-slate-900 dark:text-white text-xs bg-white dark:bg-[#0f172a]"
+              >
+                <option value="">-- Pilih --</option>
+                {tahunSoalList.map((t) => (
+                  <option key={t.id} value={t.id}>{t.tahun}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-gray-400 mb-1">
+                Tahun Ajaran
+              </label>
+              <select
+                value={academicYearId}
+                onChange={(e) => setAcademicYearId(e.target.value)}
+                className="w-full px-2.5 py-2 glass-input rounded-xl text-slate-900 dark:text-white text-xs bg-white dark:bg-[#0f172a]"
+              >
+                <option value="">-- Pilih --</option>
+                {academicYears.map((y) => (
+                  <option key={y.id} value={y.id}>{y.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-gray-400 mb-1">
+                Semester
+              </label>
+              <select
+                value={semesterId}
+                onChange={(e) => setSemesterId(e.target.value)}
+                className="w-full px-2.5 py-2 glass-input rounded-xl text-slate-900 dark:text-white text-xs bg-white dark:bg-[#0f172a]"
+              >
+                <option value="">-- Pilih --</option>
+                {semesters.map((s) => (
+                  <option key={s.id} value={s.id}>{s.nama_semester}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-gray-400 mb-1">
+                Jenjang
+              </label>
+              <select
+                value={jenjangId}
+                onChange={(e) => setJenjangId(e.target.value)}
+                className="w-full px-2.5 py-2 glass-input rounded-xl text-slate-900 dark:text-white text-xs bg-white dark:bg-[#0f172a]"
+              >
+                <option value="">-- Pilih --</option>
+                {jenjangList.map((j) => (
+                  <option key={j.id} value={j.id}>{j.nama_jenjang}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-gray-400 mb-1">
+                Target Kelas
+              </label>
+              <select
+                value={kelasId}
+                onChange={(e) => setKelasId(e.target.value)}
+                className="w-full px-2.5 py-2 glass-input rounded-xl text-slate-900 dark:text-white text-xs bg-white dark:bg-[#0f172a]"
+              >
+                <option value="">-- Pilih --</option>
+                {kelasList.map((k) => (
+                  <option key={k.id} value={k.id}>{k.nama_kelas}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-gray-400 mb-1">
+                Status Soal
+              </label>
+              <select
+                value={statusAktif}
+                onChange={(e) => setStatusAktif(e.target.value as any)}
+                className="w-full px-2.5 py-2 glass-input rounded-xl text-slate-900 dark:text-white text-xs bg-white dark:bg-[#0f172a] font-bold"
+              >
+                <option value="Y">Aktif (Tampil)</option>
+                <option value="N">Hidden (Arsip)</option>
+              </select>
+            </div>
           </div>
         </div>
 

@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MasterKurikulum extends Model
 {
@@ -20,8 +22,18 @@ class MasterKurikulum extends Model
         'status_aktif',
     ];
 
-    public function kategori()
+    public function kategori(): BelongsTo
     {
         return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
+
+    public function mataPelajaran(): HasMany
+    {
+        return $this->hasMany(MasterMataPelajaran::class, 'idkurikulum');
+    }
+
+    public function classes(): HasMany
+    {
+        return $this->hasMany(MasterKelas::class, 'kurikulum_id');
     }
 }

@@ -29,16 +29,31 @@ class ExamAttemptController extends Controller
         $idkategori = $user->idkategori;
 
         $query = Assessment::with(['mapel', 'jenjang', 'kelas', 'examGroups'])
+            ->where('status_aktif', 'Y')
+            ->where(function ($q) {
+                $q->whereNull('status_paket')
+                  ->orWhere('status_paket', '!=', 'draft');
+            })
             ->where(function ($q) use ($idkelas, $idkategori, $user) {
+                // Must be National exam OR belong to student's institution
+                $q->where(function ($iq) use ($idkategori) {
+                    $iq->whereNull('idkategori')
+                       ->orWhere('idkategori', '27830150842287772');
+                    if ($idkategori) {
+                        $iq->orWhere('idkategori', $idkategori);
+                    }
+                });
+            })
+            ->where(function ($q) use ($idkelas, $user) {
+                // Target class: general (null/empty/0) OR matches student's class OR targeted in exam groups
+                $q->where(function ($sub) {
+                    $sub->whereNull('idkelas')
+                        ->orWhere('idkelas', '')
+                        ->orWhere('idkelas', 0);
+                });
                 if ($idkelas) {
-                    $q->where('idkelas', $idkelas);
+                    $q->orWhere('idkelas', $idkelas);
                 }
-                if ($idkategori) {
-                    $q->orWhere('idkategori', $idkategori);
-                }
-                $q->orWhereNull('idkelas');
-
-                // Include exams that have exam groups targeting this class or this student
                 $q->orWhereHas('examGroups', function ($gq) use ($idkelas, $user) {
                     if ($idkelas) {
                         $gq->whereJsonContains('class_ids', (int)$idkelas)
@@ -201,12 +216,24 @@ class ExamAttemptController extends Controller
 
         $assessment = Assessment::findOrFail($idassessment);
 
-        // Authorization check: Verify student is eligible/enrolled for this exam (Requirement 1 IDOR)
+        // Active status check (Temuan 26)
+        if ($assessment->status_aktif !== 'Y') {
+            return response()->json([
+                'message' => 'Ujian ini sedang tidak aktif atau dinonaktifkan oleh sekolah.'
+            ], 403);
+        }
+
+        // Authorization check: Verify student is eligible/enrolled for this exam (Hierarchical Scoping - Temuan 22)
         $idkelas = $user->idkelas;
         $idkategori = $user->idkategori;
-        $isClassTargeted = empty($assessment->idkelas) || ((string)$assessment->idkelas === (string)$idkelas);
         $isInstansiTargeted = empty($assessment->idkategori) || ((string)$assessment->idkategori === (string)$idkategori) || ($assessment->idkategori === '27830150842287772');
         
+        if (!$isInstansiTargeted) {
+            return response()->json([
+                'message' => 'Akses ditolak: Ujian bukan milik instansi Anda.'
+            ], 403);
+        }
+
         $isGroupTargeted = false;
         if ($group) {
             $classIds = $group->class_ids ?: [];
@@ -215,9 +242,17 @@ class ExamAttemptController extends Controller
                                ($idkelas && (in_array($idkelas, $classIds) || in_array((string)$idkelas, $classIds)));
         }
 
-        if (!$isClassTargeted && !$isInstansiTargeted && !$isGroupTargeted) {
+        // If exam has a specific class assigned, student must either belong to that class or be targeted via group
+        if (!empty($assessment->idkelas) && ((string)$assessment->idkelas !== (string)$idkelas) && !$isGroupTargeted) {
             return response()->json([
-                'message' => 'Akses ditolak: Anda tidak terdaftar sebagai peserta pada ujian ini.'
+                'message' => 'Akses ditolak: Ujian ini ditujukan khusus untuk kelas tertentu.'
+            ], 403);
+        }
+
+        // If exam group is explicitly targeted, verify student is included
+        if ($group && !$isGroupTargeted) {
+            return response()->json([
+                'message' => 'Akses ditolak: Anda tidak terdaftar pada sesi/gelombang ujian ini.'
             ], 403);
         }
 
@@ -254,57 +289,89 @@ class ExamAttemptController extends Controller
             ->where('iduser', $user->iduser)
             ->first();
 
+        // Disqualification check (Temuan 04)
+        if ($attempt && $attempt->komentar === 'disqualified') {
+            return response()->json([
+                'message' => 'Akses ditolak: Anda telah didiskualifikasi dari sesi ujian ini karena pelanggaran integritas.'
+            ], 403);
+        }
+
         $durationMinutes = (int) ($assessment->waktu_pengerjaan ?: 60);
 
         if (!$attempt) {
-            $attemptId = (string) (time() . rand(1000000, 9999999));
-            $trxId = (string) (time() . rand(1000000, 9999999));
+            // Atomic transaction for attempt + financial record creation (Temuan 28)
+            $attempt = DB::transaction(function () use ($user, $idassessment, $assessment, $group) {
+                $attemptId = (string) (time() . rand(1000000, 9999999));
+                $trxId = (string) (time() . rand(1000000, 9999999));
 
-            // Satisfy foreign key fk_assessment_transaksi -> transaksi(idtransaksi)
-            DB::table('transaksi')->insert([
-                'idtransaksi' => $trxId,
-                'invoice' => 'TR-' . date('ymd') . '-' . rand(1000, 9999),
-                'nama_sertifikat' => $user->nama ?? 'Siswa',
-                'jumlah_point' => 0,
-                'jenis_transaksi' => 'assessment',
-                'iduser' => $user->iduser,
-                'status_transaksi' => '7',
-                'alasan_tolak_pembayaran' => '',
-                'status_payment' => '1',
-                'total_pembayaran' => 0,
-                'tanggal_input' => now(),
-            ]);
+                // Satisfy foreign key fk_assessment_transaksi -> transaksi(idtransaksi)
+                DB::table('transaksi')->insert([
+                    'idtransaksi' => $trxId,
+                    'invoice' => 'TR-' . date('ymd') . '-' . rand(1000, 9999),
+                    'nama_sertifikat' => $user->nama ?? 'Siswa',
+                    'jumlah_point' => 0,
+                    'jenis_transaksi' => 'assessment',
+                    'iduser' => $user->iduser,
+                    'status_transaksi' => '7',
+                    'alasan_tolak_pembayaran' => '',
+                    'status_payment' => '1',
+                    'total_pembayaran' => 0,
+                    'tanggal_input' => now(),
+                ]);
 
-            $attempt = AssessmentJawabanPilgan::create([
-                'idassessment_jawaban_pilgan' => $attemptId,
-                'idassessment' => $idassessment,
-                'iduser' => $user->iduser,
-                'idtransaksi' => $trxId,
-                'nilai' => 0,
-                'komentar' => 'in_progress',
-                'lama_dikerjakan' => '',
-                'tgl_input_time' => now(),
-            ]);
-
-            AuditLog::record(
-                'MULAI_UJIAN',
-                'assessment_jawaban_pilgan',
-                $attemptId,
-                "Siswa {$user->nama} mulai mengerjakan ujian {$assessment->nama_assessment}",
-                [
+                $newAttempt = AssessmentJawabanPilgan::create([
+                    'idassessment_jawaban_pilgan' => $attemptId,
                     'idassessment' => $idassessment,
-                    'exam_group_id' => $group->id ?? null,
-                    'start_time' => now()->toIso8601String(),
-                ]
-            );
-        } else {
-            // If existing attempt was in progress but expired (started longer than duration ago),
-            // reset tgl_input_time to now so student gets the fresh full duration to take it
-            $elapsedSeconds = abs(now()->diffInSeconds(\Carbon\Carbon::parse($attempt->tgl_input_time)));
-            if ($attempt->komentar !== 'submitted' && $elapsedSeconds >= ($durationMinutes * 60)) {
-                $attempt->update([
-                    'tgl_input_time' => now(),
+                    'iduser' => $user->iduser,
+                    'idtransaksi' => $trxId,
+                    'nilai' => 0,
                     'komentar' => 'in_progress',
+                    'lama_dikerjakan' => '',
+                    'tgl_input_time' => now(),
+                ]);
+
+                // Auto-lock exam package immediately on first student attempt (Requirement 7)
+                if (!$assessment->is_locked || $assessment->status_paket !== 'terkunci') {
+                    $assessment->update([
+                        'status_paket' => 'terkunci',
+                        'is_locked' => true,
+                        'locked_at' => now(),
+                    ]);
+                }
+
+                AuditLog::record(
+                    'MULAI_UJIAN',
+                    'assessment_jawaban_pilgan',
+                    $attemptId,
+                    "Siswa {$user->nama} mulai mengerjakan ujian {$assessment->nama_assessment}",
+                    [
+                        'idassessment' => $idassessment,
+                        'exam_group_id' => $group->id ?? null,
+                        'start_time' => now()->toIso8601String(),
+                    ]
+                );
+
+                return $newAttempt;
+            });
+        } else {
+            // If already submitted, return without modifying (Temuan 04)
+            if ($attempt->komentar === 'submitted') {
+                return response()->json([
+                    'message' => 'Ujian telah selesai dikerjakan.',
+                    'attempt' => [
+                        'id' => $attempt->idassessment_jawaban_pilgan,
+                        'status' => 'submitted',
+                        'total_score' => (float)$attempt->nilai,
+                    ]
+                ]);
+            }
+
+            // If time expired, auto-submit instead of resetting timer (Temuan 04)
+            $elapsedSeconds = abs(now()->diffInSeconds(\Carbon\Carbon::parse($attempt->tgl_input_time)));
+            if ($elapsedSeconds >= ($durationMinutes * 60)) {
+                $attempt->update([
+                    'komentar' => 'submitted',
+                    'lama_dikerjakan' => $durationMinutes . ' Menit',
                 ]);
             }
         }
@@ -338,51 +405,17 @@ class ExamAttemptController extends Controller
             ->where('iduser', $user->iduser)
             ->firstOrFail();
 
+        // Disqualification check (Temuan 04)
+        if ($attempt->komentar === 'disqualified') {
+            return response()->json([
+                'message' => 'Anda telah didiskualifikasi dari sesi ujian ini karena pelanggaran integritas.'
+            ], 403);
+        }
+
         $assessment = $attempt->assessment;
         $allQuestions = AssessmentSoalPilgan::where('idassessment', $assessment->idassessment)
             ->orderBy('idassessment_soal_pilgan', 'asc')
             ->get();
-
-        // Safety fallback: if no questions attached, auto-populate from bank soal
-        if ($allQuestions->isEmpty()) {
-            $fallbackPool = AssessmentSoalPilgan::where(function ($q) use ($assessment) {
-                if ($assessment->idmapel) $q->where('idmapel', $assessment->idmapel);
-                if ($assessment->idjenjang) $q->where('idjenjang', $assessment->idjenjang);
-            })->limit(50)->get();
-
-            if ($fallbackPool->isEmpty()) {
-                $fallbackPool = AssessmentSoalPilgan::limit(50)->get();
-            }
-
-            foreach ($fallbackPool as $sq) {
-                $newSoalId = (string) (time() . rand(1000000, 9999999));
-                AssessmentSoalPilgan::create([
-                    'idassessment_soal_pilgan' => $newSoalId,
-                    'idassessment' => $assessment->idassessment,
-                    'idjenjang' => $sq->idjenjang ?: $assessment->idjenjang,
-                    'idmapel' => $sq->idmapel ?: $assessment->idmapel,
-                    'soal_text' => $sq->soal_text,
-                    'soal_gambar' => $sq->soal_gambar,
-                    'pilihan_a_text' => $sq->pilihan_a_text,
-                    'pilihan_a_gambar' => $sq->pilihan_a_gambar,
-                    'pilihan_b_text' => $sq->pilihan_b_text,
-                    'pilihan_b_gambar' => $sq->pilihan_b_gambar,
-                    'pilihan_c_text' => $sq->pilihan_c_text,
-                    'pilihan_c_gambar' => $sq->pilihan_c_gambar,
-                    'pilihan_d_text' => $sq->pilihan_d_text,
-                    'pilihan_d_gambar' => $sq->pilihan_d_gambar,
-                    'pilihan_e_text' => $sq->pilihan_e_text,
-                    'pilihan_e_gambar' => $sq->pilihan_e_gambar,
-                    'jawaban' => $sq->jawaban,
-                    'penjelasan_jawaban' => $sq->penjelasan_jawaban,
-                    'tanggal_input' => now(),
-                ]);
-            }
-
-            $allQuestions = AssessmentSoalPilgan::where('idassessment', $assessment->idassessment)
-                ->orderBy('idassessment_soal_pilgan', 'asc')
-                ->get();
-        }
 
         // 1. Calculate student personal duration remaining based on start time
         $durationMinutes = (int) ($assessment->waktu_pengerjaan ?: 60);
@@ -459,15 +492,20 @@ class ExamAttemptController extends Controller
                 $rawOptions[] = ['id' => 'E', 'content' => $q->pilihan_e_text ?: 'Pilihan E', 'media_url' => $q->pilihan_e_gambar];
             }
 
-            // Deterministic randomized shuffle per student attempt using seeded shuffle
-            $seed = crc32($attempt->idassessment_jawaban_pilgan . '_' . $q->idassessment_soal_pilgan);
-            mt_srand($seed);
-            $shuffledOptions = $rawOptions;
-            for ($i = count($shuffledOptions) - 1; $i > 0; $i--) {
-                $j = mt_rand(0, $i);
-                $tmp = $shuffledOptions[$i];
-                $shuffledOptions[$i] = $shuffledOptions[$j];
-                $shuffledOptions[$j] = $tmp;
+            // Deterministic randomized shuffle per student attempt using seeded shuffle (Temuan 10 & 27)
+            $isAcakOpsi = in_array($assessment->acak_opsi, ['Y', '1', 1, true], true);
+            if ($isAcakOpsi) {
+                $seed = crc32($attempt->idassessment_jawaban_pilgan . '_' . $q->idassessment_soal_pilgan);
+                mt_srand($seed);
+                $shuffledOptions = $rawOptions;
+                for ($i = count($shuffledOptions) - 1; $i > 0; $i--) {
+                    $j = mt_rand(0, $i);
+                    $tmp = $shuffledOptions[$i];
+                    $shuffledOptions[$i] = $shuffledOptions[$j];
+                    $shuffledOptions[$j] = $tmp;
+                }
+            } else {
+                $shuffledOptions = $rawOptions;
             }
 
             $questionsPayload[] = [
@@ -484,15 +522,17 @@ class ExamAttemptController extends Controller
             ];
         }
 
-        // Deterministic question sequence shuffle per student attempt:
-        // CBT Rule: All students get the EXACT SAME 50 questions, but each student gets a unique, consistent question sequence!
-        $qSeed = crc32($attempt->idassessment_jawaban_pilgan . '_questions_order');
-        mt_srand($qSeed);
-        for ($i = count($questionsPayload) - 1; $i > 0; $i--) {
-            $j = mt_rand(0, $i);
-            $tmp = $questionsPayload[$i];
-            $questionsPayload[$i] = $questionsPayload[$j];
-            $questionsPayload[$j] = $tmp;
+        // Deterministic question sequence shuffle per student attempt if acak_soal enabled (Temuan 10 & 27)
+        $isAcakSoal = in_array($assessment->acak_soal, ['Y', '1', 1, true], true);
+        if ($isAcakSoal) {
+            $qSeed = crc32($attempt->idassessment_jawaban_pilgan . '_questions_order');
+            mt_srand($qSeed);
+            for ($i = count($questionsPayload) - 1; $i > 0; $i--) {
+                $j = mt_rand(0, $i);
+                $tmp = $questionsPayload[$i];
+                $questionsPayload[$i] = $questionsPayload[$j];
+                $questionsPayload[$j] = $tmp;
+            }
         }
 
         // Canonical attempt status check based strictly on komentar === 'submitted'
@@ -537,6 +577,28 @@ class ExamAttemptController extends Controller
             ->where('idassessment_jawaban_pilgan', $attemptId)
             ->where('iduser', $user->iduser)
             ->firstOrFail();
+
+        // Disqualification check: Do NOT allow disqualified attempt to be submitted or restore score (Temuan 04)
+        if ($attempt->komentar === 'disqualified') {
+            return response()->json([
+                'message' => 'Akses ditolak: Lembar ujian Anda telah didiskualifikasi karena pelanggaran integritas.'
+            ], 403);
+        }
+
+        // Idempotent check: If already submitted, return existing submission data (Temuan 04)
+        if ($attempt->komentar === 'submitted') {
+            return response()->json([
+                'message' => 'Ujian ini sudah diselesaikan sebelumnya.',
+                'is_session_ended' => true,
+                'attempt' => [
+                    'id' => $attempt->idassessment_jawaban_pilgan,
+                    'status' => 'submitted',
+                    'is_session_ended' => true,
+                    'total_score' => (float)$attempt->nilai,
+                    'total_questions' => $attempt->assessment?->soal?->count() ?? 0,
+                ]
+            ], 200);
+        }
 
         $allQuestions = $attempt->assessment->soal;
         $totalQuestions = $allQuestions->count();

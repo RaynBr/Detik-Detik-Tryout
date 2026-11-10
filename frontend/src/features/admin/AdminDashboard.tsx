@@ -6,7 +6,7 @@ import {
   BookOpen, ShieldAlert, 
   Activity, ArrowRight, Building2, Layers,
   GraduationCap, UserCheck, Upload, Download, CheckCircle2,
-  Calendar, BookMarked, Compass
+  Calendar
 } from 'lucide-react';
 import { 
   WelcomeBanner, 
@@ -36,6 +36,11 @@ export const AdminDashboard: React.FC = () => {
     academic_years: 0,
     kurikulum: 0,
     jurusan: 0,
+    active_academic_year: '2024/2025',
+    active_semester: 'Ganjil',
+    tingkat: 3,
+    penempatan_guru: 0,
+    wali_kelas: 0,
   });
 
   const [liveData, setLiveData] = useState<{
@@ -133,6 +138,11 @@ export const AdminDashboard: React.FC = () => {
         academic_years: sData.total_academic_years ?? sData.jumlah_tahun_ajaran ?? 0,
         kurikulum: sData.total_kurikulum ?? sData.jumlah_kurikulum ?? 0,
         jurusan: sData.total_jurusan ?? sData.jumlah_jurusan ?? 0,
+        active_academic_year: sData.active_academic_year || '2024/2025',
+        active_semester: sData.active_semester || 'Ganjil',
+        tingkat: sData.total_tingkat_kelas || 3,
+        penempatan_guru: sData.total_penempatan_guru ?? tList.length,
+        wali_kelas: sData.total_wali_kelas ?? cList.length,
       });
 
       setClassesList(cList);
@@ -222,9 +232,9 @@ export const AdminDashboard: React.FC = () => {
             onClick={() => navigate('/admin/classes')}
           />
           <GradientStatCard
-            title="Paket Ujian"
-            value={`${stats.exams} Paket`}
-            subtitle="Paket TryOut terdaftar"
+            title="Jadwal Ujian"
+            value={`${stats.exams} Jadwal`}
+            subtitle="Jadwal ujian terdaftar"
             icon={Layers}
             variant="indigo"
             onClick={() => navigate('/admin/exams')}
@@ -255,89 +265,63 @@ export const AdminDashboard: React.FC = () => {
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-gray-400 font-medium">
-                Ringkasan data struktur akademik sekolah yang dikelola penuh oleh instansi
+                Pusat data struktur akademik operasional sekolah berdasarkan referensi Master Global Super Admin
               </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-full text-xs font-bold border border-emerald-200 dark:border-emerald-500/30 self-start sm:self-auto">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Sinkron dengan Master Global Super Admin</span>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {/* 1. Jumlah Tahun Ajaran */}
+          {/* 1. Tahun Ajaran Aktif */}
           <div 
-            onClick={() => navigate('/admin/master-akademik/tahun-ajaran')}
+            onClick={() => navigate('/admin/classes')}
             className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
           >
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300">Tahun Ajaran</span>
+              <span className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300">Tahun Ajaran Aktif</span>
               <Calendar className="w-3.5 h-3.5 text-amber-600 group-hover:scale-110 transition" />
             </div>
-            <div className="text-xl font-black text-[#161C2D] dark:text-white">
-              {stats.academic_years}
+            <div className="text-lg font-black text-[#161C2D] dark:text-white truncate">
+              {stats.active_academic_year}
             </div>
-            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Periode Terdaftar</span>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Semester {stats.active_semester}</span>
           </div>
 
-          {/* 2. Jumlah Kurikulum */}
+          {/* 2. Tingkat Kelas */}
           <div 
-            onClick={() => navigate('/admin/master-akademik/kurikulum')}
-            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-black uppercase text-emerald-800 dark:text-emerald-300">Kurikulum</span>
-              <BookMarked className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition" />
-            </div>
-            <div className="text-xl font-black text-[#161C2D] dark:text-white">
-              {stats.kurikulum}
-            </div>
-            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Kurikulum Aktif</span>
-          </div>
-
-          {/* 3. Jumlah Jenjang */}
-          <div 
-            onClick={() => navigate('/admin/master-akademik/jenjang')}
+            onClick={() => navigate('/admin/classes')}
             className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-blue-50 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
           >
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-black uppercase text-blue-800 dark:text-blue-300">Jenjang</span>
+              <span className="text-[10px] font-black uppercase text-blue-800 dark:text-blue-300">Kelas (Tingkat)</span>
               <Layers className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition" />
             </div>
             <div className="text-xl font-black text-[#161C2D] dark:text-white">
-              {stats.jenjang}
+              {stats.tingkat} Tingkat
             </div>
-            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Jenjang Sekolah</span>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Mengacu Jenjang Global</span>
           </div>
 
-          {/* 4. Jumlah Jurusan */}
-          <div 
-            onClick={() => navigate('/admin/master-akademik/jurusan')}
-            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100/60 dark:hover:bg-purple-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-black uppercase text-purple-800 dark:text-purple-300">Jurusan</span>
-              <Compass className="w-3.5 h-3.5 text-purple-600 group-hover:scale-110 transition" />
-            </div>
-            <div className="text-xl font-black text-[#161C2D] dark:text-white">
-              {stats.jurusan}
-            </div>
-            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Program / Jurusan</span>
-          </div>
-
-          {/* 5. Jumlah Kelas */}
+          {/* 3. Rombel Terdaftar */}
           <div 
             onClick={() => navigate('/admin/classes')}
             className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-cyan-50 dark:bg-cyan-950/20 hover:bg-cyan-100/60 dark:hover:bg-cyan-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
           >
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-black uppercase text-cyan-800 dark:text-cyan-300">Kelas</span>
+              <span className="text-[10px] font-black uppercase text-cyan-800 dark:text-cyan-300">Rombel</span>
               <Building2 className="w-3.5 h-3.5 text-cyan-600 group-hover:scale-110 transition" />
             </div>
             <div className="text-xl font-black text-[#161C2D] dark:text-white">
-              {stats.classes}
+              {stats.classes} Rombel
             </div>
             <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Rombongan Belajar</span>
           </div>
 
-          {/* 6. Jumlah Mata Pelajaran */}
+          {/* 4. Mata Pelajaran */}
           <div 
             onClick={() => navigate('/admin/master-akademik/mata-pelajaran')}
             className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
@@ -347,9 +331,39 @@ export const AdminDashboard: React.FC = () => {
               <BookOpen className="w-3.5 h-3.5 text-rose-600 group-hover:scale-110 transition" />
             </div>
             <div className="text-xl font-black text-[#161C2D] dark:text-white">
-              {stats.subjects}
+              {stats.subjects} Mapel
             </div>
-            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Mapel Kurikulum</span>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Kurikulum Sekolah</span>
+          </div>
+
+          {/* 5. Penempatan Guru */}
+          <div 
+            onClick={() => navigate('/admin/classes?tab=guru-mapel')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-emerald-800 dark:text-emerald-300">Penempatan Guru</span>
+              <UserCheck className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.penempatan_guru} Guru
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Pengampu Mata Pelajaran</span>
+          </div>
+
+          {/* 6. Wali Kelas */}
+          <div 
+            onClick={() => navigate('/admin/classes?tab=wali-kelas')}
+            className="p-3.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100/60 dark:hover:bg-purple-950/40 transition cursor-pointer group shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase text-purple-800 dark:text-purple-300">Wali Kelas</span>
+              <GraduationCap className="w-3.5 h-3.5 text-purple-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-xl font-black text-[#161C2D] dark:text-white">
+              {stats.wali_kelas} Ditugaskan
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Penetapan Wali Rombel</span>
           </div>
         </div>
       </div>

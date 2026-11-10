@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { apiClient } from '../../shared/api/client';
 import { toast } from '../../shared/context/ToastContext';
 import {
@@ -16,7 +17,8 @@ import {
   ListOrdered,
   AlertTriangle,
   Download,
-  Upload
+  Upload,
+  Calendar
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
@@ -24,6 +26,7 @@ import { BankSoalImportModal } from './components/BankSoalImportModal';
 
 interface CascadingOptions {
   jenjang: Array<{ id: number; nama_jenjang: string; kode_jenjang: string }>;
+  tingkat?: Array<{ id: number; idtingkat?: number | null; tingkat: number; nama_tingkat: string; label: string; idjenjang?: number | null }>;
   kelas: Array<{ id: number; idjenjang: number; nama_kelas: string; tingkat: number }>;
   mata_pelajaran: Array<{ id: number; idjenjang: number; nama_mapel: string; kode_mapel: string; kkm?: string }>;
   tahun_ajaran: Array<{ id: number; name: string; is_active: number }>;
@@ -37,8 +40,11 @@ interface QuestionPackageItem {
   deskripsi?: string;
   idjenjang: number;
   jenjang: string;
-  idkelas: number;
-  kelas: string;
+  tingkat?: number | null;
+  idtingkat?: number | null;
+  tingkat_label?: string;
+  idkelas?: number | null;
+  kelas?: string;
   idmapel: number;
   mata_pelajaran: string;
   id_tahun_ajaran: number;
@@ -74,15 +80,16 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
   // 1. Cascading Options from Database
   const [cascadingData, setCascadingData] = useState<CascadingOptions>({
     jenjang: [],
+    tingkat: [],
     kelas: [],
     mata_pelajaran: [],
     tahun_ajaran: [],
     tahun_soal: [],
   });
 
-  // 2. Cascading Filter Selection (Mandatory Entry Flow)
+  // 2. Cascading Filter Selection (Mandatory Entry Flow: Jenjang -> Tingkat -> Mapel -> TA -> Tahun Soal)
   const [selectedJenjang, setSelectedJenjang] = useState<string>('');
-  const [selectedKelas, setSelectedKelas] = useState<string>('');
+  const [selectedTingkat, setSelectedTingkat] = useState<string>('');
   const [selectedMapel, setSelectedMapel] = useState<string>('');
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>('');
   const [selectedTahunSoal, setSelectedTahunSoal] = useState<string>('');
@@ -116,7 +123,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
     nama_assessment: '',
     deskripsi_assessment: '',
     idjenjang: '',
-    idkelas: '',
+    tingkat: '',
     idmapel: '',
     id_tahun_ajaran: '',
     tahun_soal_id: '',
@@ -133,13 +140,26 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
     nama_assessment: '',
     deskripsi_assessment: '',
     idjenjang: '',
-    idkelas: '',
+    tingkat: '',
     idmapel: '',
     id_tahun_ajaran: '',
     tahun_soal_id: '',
     status_aktif: 'Y',
   });
   const [creating, setCreating] = useState(false);
+
+  // Helper to get allowed Tingkat numbers based on Jenjang
+  const getTingkatForJenjang = useCallback((jenjangId?: string | number): number[] => {
+    if (!jenjangId) {
+      return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    }
+    const j = cascadingData.jenjang.find(x => String(x.id) === String(jenjangId));
+    const kode = (j?.kode_jenjang || j?.nama_jenjang || '').toUpperCase();
+    if (kode.includes('SD') || kode.includes('MI') || kode.includes('DASAR')) return [1, 2, 3, 4, 5, 6];
+    if (kode.includes('SMP') || kode.includes('MTS') || kode.includes('PERTAMA')) return [7, 8, 9];
+    if (kode.includes('SMA') || kode.includes('SMK') || kode.includes('MA') || kode.includes('ATAS') || kode.includes('KEJURUAN')) return [10, 11, 12];
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  }, [cascadingData.jenjang]);
 
   // Upload Bank Soal Modal & Template Download state
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -184,18 +204,16 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
     fetchCascadingParams();
   }, []);
 
-  // When Jenjang changes, re-fetch classes and mapels for that Jenjang
+  // When Jenjang changes, re-fetch and reset child filters
   const handleJenjangChange = (newJenjang: string) => {
     setSelectedJenjang(newJenjang);
-    setSelectedKelas('');
+    setSelectedTingkat('');
     setSelectedMapel('');
     fetchCascadingParams(newJenjang);
   };
 
-  // Filter classes by selected Jenjang
-  const availableClasses = cascadingData.kelas.filter(k => 
-    !selectedJenjang || String(k.idjenjang) === String(selectedJenjang)
-  );
+  // Available Tingkat options according to selected Jenjang
+  const availableTingkat = getTingkatForJenjang(selectedJenjang);
 
   // Filter mapel by selected Jenjang
   const availableMapels = cascadingData.mata_pelajaran.filter(m => 
@@ -203,7 +221,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
   );
 
   // Check if primary entry criteria are satisfied
-  const isFilterActive = Boolean(selectedJenjang || selectedKelas || selectedMapel || search);
+  const isFilterActive = Boolean(selectedJenjang || selectedTingkat || selectedMapel || search);
 
   // Fetch question packages
   const fetchPackages = useCallback(async (page = currentPage) => {
@@ -217,7 +235,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
       };
 
       if (selectedJenjang) params.idjenjang = selectedJenjang;
-      if (selectedKelas) params.idkelas = selectedKelas;
+      if (selectedTingkat) params.tingkat = selectedTingkat;
       if (selectedMapel) params.idmapel = selectedMapel;
       if (selectedTahunAjaran) params.id_tahun_ajaran = selectedTahunAjaran;
       if (selectedTahunSoal) params.tahun_soal_id = selectedTahunSoal;
@@ -237,7 +255,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
   }, [
     currentPage,
     selectedJenjang,
-    selectedKelas,
+    selectedTingkat,
     selectedMapel,
     selectedTahunAjaran,
     selectedTahunSoal,
@@ -254,7 +272,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
     fetchPackages,
     currentPage,
     selectedJenjang,
-    selectedKelas,
+    selectedTingkat,
     selectedMapel,
     selectedTahunAjaran,
     selectedTahunSoal,
@@ -273,7 +291,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
   // Reset all cascading filters
   const handleResetFilters = () => {
     setSelectedJenjang('');
-    setSelectedKelas('');
+    setSelectedTingkat('');
     setSelectedMapel('');
     setSelectedTahunAjaran('');
     setSelectedTahunSoal('');
@@ -305,11 +323,13 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
   // 2. Edit Soal Action
   const handleOpenEdit = (item: QuestionPackageItem) => {
     setEditingItem(item);
+    const itemJenjang = String(item.idjenjang || '');
+    const itemTingkat = String(item.tingkat || '');
     setEditForm({
       nama_assessment: item.judul_soal,
       deskripsi_assessment: item.deskripsi || '',
-      idjenjang: String(item.idjenjang || ''),
-      idkelas: String(item.idkelas || ''),
+      idjenjang: itemJenjang,
+      tingkat: itemTingkat || '10',
       idmapel: String(item.idmapel || ''),
       id_tahun_ajaran: String(item.id_tahun_ajaran || selectedTahunAjaran),
       tahun_soal_id: String(item.tahun_soal_id || selectedTahunSoal),
@@ -324,20 +344,26 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
 
     setSavingEdit(true);
     try {
-      const res = await apiClient.put(`/super-admin/question-bank/${editingItem.id}`, editForm);
+      const payload = {
+        ...editForm,
+        tingkat: Number(editForm.tingkat),
+      };
+      const res = await apiClient.put(`/super-admin/question-bank/${editingItem.id}`, payload);
       const updated = res.data?.data;
 
       // Reactive instant state update without reloading page
       setPackages(prev => prev.map(p => {
         if (p.id === editingItem.id) {
+          const tkVal = Number(editForm.tingkat);
           return {
             ...p,
             judul_soal: editForm.nama_assessment,
             deskripsi: editForm.deskripsi_assessment,
             idjenjang: Number(editForm.idjenjang),
             jenjang: cascadingData.jenjang.find(j => String(j.id) === editForm.idjenjang)?.nama_jenjang || p.jenjang,
-            idkelas: Number(editForm.idkelas),
-            kelas: cascadingData.kelas.find(k => String(k.id) === editForm.idkelas)?.nama_kelas || p.kelas,
+            tingkat: tkVal,
+            tingkat_label: `Tingkat ${tkVal}`,
+            kelas: `Tingkat ${tkVal}`,
             idmapel: Number(editForm.idmapel),
             mata_pelajaran: cascadingData.mata_pelajaran.find(m => String(m.id) === editForm.idmapel)?.nama_mapel || p.mata_pelajaran,
             status: editForm.status === 'Aktif' ? 'Aktif' : 'Nonaktif',
@@ -414,11 +440,17 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
 
   // 5. Tambah Paket Soal Baru
   const handleOpenCreate = () => {
+    const defaultJenjang = selectedJenjang || (cascadingData.jenjang[0]?.id ? String(cascadingData.jenjang[0].id) : '3');
+    const defaultTingkats = getTingkatForJenjang(defaultJenjang);
+    const defaultTingkat = selectedTingkat && defaultTingkats.includes(Number(selectedTingkat))
+      ? selectedTingkat
+      : String(defaultTingkats[0] || 10);
+
     setCreateForm({
       nama_assessment: '',
       deskripsi_assessment: '',
-      idjenjang: selectedJenjang || (cascadingData.jenjang[0]?.id ? String(cascadingData.jenjang[0].id) : '1'),
-      idkelas: selectedKelas || (cascadingData.kelas[0]?.id ? String(cascadingData.kelas[0].id) : '1'),
+      idjenjang: defaultJenjang,
+      tingkat: defaultTingkat,
       idmapel: selectedMapel || (cascadingData.mata_pelajaran[0]?.id ? String(cascadingData.mata_pelajaran[0].id) : '1'),
       id_tahun_ajaran: selectedTahunAjaran || (cascadingData.tahun_ajaran[0]?.id ? String(cascadingData.tahun_ajaran[0].id) : '1'),
       tahun_soal_id: selectedTahunSoal || (cascadingData.tahun_soal[0]?.id ? String(cascadingData.tahun_soal[0].id) : '1'),
@@ -436,7 +468,11 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
 
     setCreating(true);
     try {
-      await apiClient.post('/super-admin/question-bank', createForm);
+      const payload = {
+        ...createForm,
+        tingkat: Number(createForm.tingkat),
+      };
+      await apiClient.post('/super-admin/question-bank', payload);
       toast.success('Paket bank soal berhasil ditambahkan.');
       setCreateModalOpen(false);
       resetPage();
@@ -469,12 +505,20 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                 Kelola Bank Soal
               </h2>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                Pintu masuk utama bank soal terpadu seluruh Indonesia dengan filter berjenjang (Jenjang → Kelas → Mapel → Tahun Ajaran → Tahun Soal).
+                Pintu masuk utama bank soal terpadu seluruh Indonesia dengan filter berjenjang (Jenjang → Tingkat → Mapel → Tahun Soal → Tahun Ajaran).
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <Link
+              to="/super-admin/bank-soal/tahun-soal"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer"
+              title="Kelola Referensi Tahun Soal"
+            >
+              <Calendar className="h-4 w-4" />
+              <span>Kelola Tahun Soal</span>
+            </Link>
             <button
               onClick={handleDownloadTemplate}
               disabled={downloadingTemplate}
@@ -529,7 +573,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                 </span>
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                Memilih Jenjang memfilter Kelas → Memilih Kelas memfilter Mata Pelajaran → Terkoneksi Tahun Ajaran & Tahun Soal.
+                Memilih Jenjang memfilter Tingkat → Memilih Mapel → Terkoneksi Tahun Ajaran & Tahun Soal.
               </p>
             </div>
           </div>
@@ -566,20 +610,20 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
             </select>
           </div>
 
-          {/* Step 2: Kelas (Filtered by Jenjang) */}
+          {/* Step 2: Tingkat (Filtered by Jenjang: SD 1-6, SMP 7-9, SMA/SMK 10-12) */}
           <div className="space-y-1">
             <label className="text-[11px] font-black uppercase text-slate-600 dark:text-gray-300 flex items-center gap-1.5">
               <span className="h-4 w-4 rounded-full bg-indigo-600 text-white text-[9px] flex items-center justify-center font-bold">2</span>
-              <span>Kelas</span>
+              <span>Tingkat</span>
             </label>
             <select
-              value={selectedKelas}
-              onChange={(e) => { setSelectedKelas(e.target.value); resetPage(); }}
+              value={selectedTingkat}
+              onChange={(e) => { setSelectedTingkat(e.target.value); resetPage(); }}
               className="w-full px-3 py-2 text-xs font-bold rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-white dark:bg-[#1A1E22] text-[#161C2D] dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
             >
-              <option value="">Semua Kelas</option>
-              {availableClasses.map((k) => (
-                <option key={k.id} value={k.id}>{k.nama_kelas} (Tk. {k.tingkat})</option>
+              <option value="">Semua Tingkat</option>
+              {availableTingkat.map((tNum) => (
+                <option key={tNum} value={tNum}>Tingkat {tNum}</option>
               ))}
             </select>
           </div>
@@ -728,7 +772,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
               <tr className="border-b-2 border-[#161C2D] dark:border-[#32363A] text-slate-600 dark:text-gray-400 uppercase font-black text-[10px] tracking-wider bg-slate-50 dark:bg-[#0B1014]/40">
                 <th className="py-3 px-3">Judul Soal / Paket</th>
                 <th className="py-3 px-3">Jenjang</th>
-                <th className="py-3 px-3">Kelas</th>
+                <th className="py-3 px-3">Tingkat</th>
                 <th className="py-3 px-3">Mata Pelajaran</th>
                 <th className="py-3 px-3 text-center">Tahun Soal</th>
                 <th className="py-3 px-3 text-center">Jumlah Soal</th>
@@ -756,7 +800,7 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                         Tidak Ada Paket Soal Sesuai Filter
                       </h4>
                       <p className="text-xs text-slate-500 dark:text-gray-400">
-                        Cobalah mengubah kombinasi Jenjang, Kelas, Mapel, atau Tahun Soal pada panel filter di atas.
+                        Cobalah mengubah kombinasi Jenjang, Tingkat, Mapel, atau Tahun Soal pada panel filter di atas.
                       </p>
                       <button
                         onClick={handleResetFilters}
@@ -791,9 +835,9 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                         </span>
                       </td>
 
-                      {/* Kelas */}
+                      {/* Tingkat */}
                       <td className="py-3.5 px-3 font-semibold text-slate-700 dark:text-gray-300">
-                        {item.kelas}
+                        {item.tingkat_label || (item.tingkat ? `Tingkat ${item.tingkat}` : (item.kelas || '-'))}
                       </td>
 
                       {/* Mata Pelajaran */}
@@ -950,8 +994,10 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                   <span className="font-black text-[#161C2D] dark:text-white">{detailHeader.jenjang}</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-white dark:bg-[#1A1E22] border border-slate-200 dark:border-white/10">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Kelas</span>
-                  <span className="font-black text-[#161C2D] dark:text-white">{detailHeader.kelas}</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Tingkat</span>
+                  <span className="font-black text-[#161C2D] dark:text-white">
+                    {detailHeader.tingkat_label || (detailHeader.tingkat ? `Tingkat ${detailHeader.tingkat}` : (detailHeader.kelas || '-'))}
+                  </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-white dark:bg-[#1A1E22] border border-slate-200 dark:border-white/10">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block">Mata Pelajaran</span>
@@ -1121,13 +1167,21 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                 />
               </div>
 
-              {/* Jenjang & Kelas */}
+              {/* Jenjang & Tingkat */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-600 dark:text-gray-300 block mb-1">Jenjang</label>
                   <select
                     value={editForm.idjenjang}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, idjenjang: e.target.value }))}
+                    onChange={(e) => {
+                      const newJ = e.target.value;
+                      const validTingkats = getTingkatForJenjang(newJ);
+                      setEditForm(prev => ({
+                        ...prev,
+                        idjenjang: newJ,
+                        tingkat: validTingkats.includes(Number(prev.tingkat)) ? prev.tingkat : String(validTingkats[0] || 10)
+                      }));
+                    }}
                     className="w-full px-3 py-2 font-bold rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-white dark:bg-[#1A1E22] text-[#161C2D] dark:text-white focus:outline-none"
                   >
                     {cascadingData.jenjang.map(j => (
@@ -1136,14 +1190,14 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="font-bold text-slate-600 dark:text-gray-300 block mb-1">Kelas</label>
+                  <label className="font-bold text-slate-600 dark:text-gray-300 block mb-1">Tingkat</label>
                   <select
-                    value={editForm.idkelas}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, idkelas: e.target.value }))}
+                    value={editForm.tingkat}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, tingkat: e.target.value }))}
                     className="w-full px-3 py-2 font-bold rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-white dark:bg-[#1A1E22] text-[#161C2D] dark:text-white focus:outline-none"
                   >
-                    {cascadingData.kelas.map(k => (
-                      <option key={k.id} value={k.id}>{k.nama_kelas}</option>
+                    {getTingkatForJenjang(editForm.idjenjang).map(tNum => (
+                      <option key={tNum} value={tNum}>Tingkat {tNum}</option>
                     ))}
                   </select>
                 </div>
@@ -1298,12 +1352,21 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                 />
               </div>
 
+              {/* Jenjang & Tingkat */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-600 dark:text-gray-300 block mb-1">Jenjang</label>
                   <select
                     value={createForm.idjenjang}
-                    onChange={(e) => setCreateForm(prev => ({ ...prev, idjenjang: e.target.value }))}
+                    onChange={(e) => {
+                      const newJ = e.target.value;
+                      const validTingkats = getTingkatForJenjang(newJ);
+                      setCreateForm(prev => ({
+                        ...prev,
+                        idjenjang: newJ,
+                        tingkat: validTingkats.includes(Number(prev.tingkat)) ? prev.tingkat : String(validTingkats[0] || 10)
+                      }));
+                    }}
                     className="w-full px-3 py-2 font-bold rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-white dark:bg-[#1A1E22] text-[#161C2D] dark:text-white focus:outline-none"
                   >
                     {cascadingData.jenjang.map(j => (
@@ -1312,14 +1375,14 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="font-bold text-slate-600 dark:text-gray-300 block mb-1">Kelas</label>
+                  <label className="font-bold text-slate-600 dark:text-gray-300 block mb-1">Tingkat</label>
                   <select
-                    value={createForm.idkelas}
-                    onChange={(e) => setCreateForm(prev => ({ ...prev, idkelas: e.target.value }))}
+                    value={createForm.tingkat}
+                    onChange={(e) => setCreateForm(prev => ({ ...prev, tingkat: e.target.value }))}
                     className="w-full px-3 py-2 font-bold rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-white dark:bg-[#1A1E22] text-[#161C2D] dark:text-white focus:outline-none"
                   >
-                    {cascadingData.kelas.map(k => (
-                      <option key={k.id} value={k.id}>{k.nama_kelas}</option>
+                    {getTingkatForJenjang(createForm.idjenjang).map(tNum => (
+                      <option key={tNum} value={tNum}>Tingkat {tNum}</option>
                     ))}
                   </select>
                 </div>

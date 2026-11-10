@@ -50,16 +50,51 @@ class DashboardController extends Controller
             $totalJurusan = \App\Models\Major::where('idkategori', $idkategori)->count();
             $totalMataPelajaran = \App\Models\MasterMataPelajaran::where('idkategori', $idkategori)->count();
             $totalSemesters = \App\Models\MasterSemester::where('idkategori', $idkategori)->count();
-            $totalTingkatKelas = \App\Models\MasterTingkatKelas::where('idkategori', $idkategori)->count();
+
+            // Active academic year and semester (inherited from Super Admin Global or instansi)
+            $activeYear = \App\Models\AcademicYear::where(function ($q) use ($idkategori) {
+                $q->where('idkategori', $idkategori)
+                  ->orWhere('idkategori', '27830150842287772')
+                  ->orWhereNull('idkategori');
+            })->where('is_active', 1)->first() ?? \App\Models\AcademicYear::where(function ($q) use ($idkategori) {
+                $q->where('idkategori', $idkategori)
+                  ->orWhere('idkategori', '27830150842287772')
+                  ->orWhereNull('idkategori');
+            })->orderBy('id', 'desc')->first();
+
+            $activeSemester = \App\Models\MasterSemester::where(function ($q) use ($idkategori) {
+                $q->where('idkategori', $idkategori)
+                  ->orWhere('idkategori', '27830150842287772')
+                  ->orWhereNull('idkategori');
+            })->where('status_aktif', 'Y')->first() ?? \App\Models\MasterSemester::where(function ($q) use ($idkategori) {
+                $q->where('idkategori', $idkategori)
+                  ->orWhere('idkategori', '27830150842287772')
+                  ->orWhereNull('idkategori');
+            })->orderBy('id', 'asc')->first();
+
+            $totalTingkatKelas = MasterKelas::where('idkategori', $idkategori)
+                ->pluck('idtingkat')->filter()->unique()->count();
+            if ($totalTingkatKelas === 0) {
+                $totalTingkatKelas = \App\Models\MasterTingkatKelas::where(function ($q) use ($idkategori) {
+                    $q->where('idkategori', $idkategori)->orWhere('idkategori', '27830150842287772')->orWhereNull('idkategori');
+                })->count();
+            }
+
+            $totalWaliKelas = MasterKelas::where('idkategori', $idkategori)->whereNotNull('wali_kelas_id')->count();
+            $totalPenempatanGuru = \App\Models\GuruMataPelajaran::whereHas('kelas', fn($q) => $q->where('idkategori', $idkategori))->count();
+            if ($totalPenempatanGuru === 0) {
+                $totalPenempatanGuru = $totalTeachers;
+            }
             
             $jenjangIds = MasterKelas::where('idkategori', $idkategori)
                 ->pluck('idjenjang')->unique()->filter()->values();
-            $totalQuestions = AssessmentSoalPilgan::whereHas('assessment', function ($q) use ($idkategori) {
-                $q->where('idkategori', $idkategori);
+            // Total Bank Soal available to this institution (instansi questions + national pool - Temuan 07)
+            $totalQuestions = AssessmentSoalPilgan::where(function ($q) use ($idkategori) {
+                $q->where('source_type', 'nasional')
+                  ->orWhereNull('iduser_bo')
+                  ->orWhereHas('creator', fn($c) => $c->where('idkategori', $idkategori))
+                  ->orWhereHas('assessment', fn($aq) => $aq->where('idkategori', $idkategori));
             })->count();
-            if ($totalQuestions === 0) {
-                $totalQuestions = AssessmentSoalPilgan::count();
-            }
 
             $totalInstansi = 1;
             
@@ -109,33 +144,24 @@ class DashboardController extends Controller
                 'total_subjects' => $totalMataPelajaran,
                 'total_semester' => $totalSemesters,
                 'total_tingkat_kelas' => $totalTingkatKelas,
+                'total_rombel' => $totalClasses,
+                'total_wali_kelas' => $totalWaliKelas,
+                'total_penempatan_guru' => $totalPenempatanGuru,
+                'active_academic_year' => $activeYear ? ($activeYear->tahun_ajaran ?? $activeYear->name) : '2024/2025',
+                'active_semester' => $activeSemester ? ($activeSemester->nama_semester ?? 'Ganjil') : 'Ganjil',
+                'is_master_global_synced' => true,
             ]);
         } else {
             $totalQuestions = AssessmentSoalPilgan::count();
             $totalAssessments = Assessment::count();
-            $today = now()->startOfDay();
-            $totalInstansi = KategoriUserBo::count();
 
-            $instansiExpired = KategoriUserBo::where('status_remove', '!=', 'Y')
-                ->whereNotNull('tanggal_berakhir')
-                ->where('tanggal_berakhir', '<', $today)
-                ->count();
-
-            $instansiWarning = KategoriUserBo::where('status_remove', '!=', 'Y')
-                ->whereNotNull('tanggal_berakhir')
-                ->where('tanggal_berakhir', '>=', $today)
-                ->where('tanggal_berakhir', '<=', $today->copy()->addDays(7))
-                ->count();
-
-            $instansiAktif = KategoriUserBo::where('status_remove', '!=', 'Y')
-                ->where(function ($q) {
-                    $q->whereNull('status_aktif')->orWhere('status_aktif', 'Y');
-                })
-                ->count();
-            $instansiNonAktif = KategoriUserBo::where(function ($q) {
-                $q->where('status_remove', 'Y')->orWhere('status_aktif', 'N');
-            })->count();
-            $totalInstansi = $instansiAktif + $instansiNonAktif;
+            // Single Source of Truth for Platform Access Statistics
+            $accessSummary = KategoriUserBo::getPlatformAccessSummary();
+            $totalInstansi = $accessSummary['total_instansi'];
+            $instansiAktif = $accessSummary['total_aktif'];
+            $instansiWarning = $accessSummary['total_warning'];
+            $instansiExpired = $accessSummary['total_expired'];
+            $instansiNonAktif = $accessSummary['total_nonaktif'];
 
             $totalJenjang = MasterJenjang::count();
             $totalClasses = MasterKelas::count();
@@ -282,24 +308,28 @@ class DashboardController extends Controller
             ];
         });
 
-        // 2. Daftar Siswa per Kelas
-        $siswaPerKelas = $classes->map(function ($c) {
-            $students = UserSiswa::where('idkelas', $c->id)
-                ->orderBy('nama', 'asc')
-                ->get()
-                ->map(function ($s) {
-                    return [
-                        'id' => $s->iduser,
-                        'nama' => $s->name,
-                        'name' => $s->name,
-                        'nisn' => $s->nisn,
-                        'nis' => $s->nisn,
-                        'email' => $s->email,
-                        'username' => $s->login_username ?? $s->nisn ?? 'siswa',
-                        'phone' => $s->telp,
-                        'status' => $s->status_aktif === 'Y' ? 'Aktif' : 'Non-aktif',
-                    ];
-                });
+        // 2. Daftar Siswa per Kelas (Optimized eager bulk query - Temuan 08)
+        $classIds = $classes->pluck('id')->filter()->values();
+        $allStudentsGrouped = UserSiswa::whereIn('idkelas', $classIds)
+            ->orderBy('nama', 'asc')
+            ->get()
+            ->groupBy('idkelas');
+
+        $siswaPerKelas = $classes->map(function ($c) use ($allStudentsGrouped) {
+            $studentsInClass = $allStudentsGrouped->get($c->id, collect());
+            $students = $studentsInClass->map(function ($s) {
+                return [
+                    'id' => $s->iduser,
+                    'nama' => $s->name,
+                    'name' => $s->name,
+                    'nisn' => $s->nisn,
+                    'nis' => $s->nisn,
+                    'email' => $s->email,
+                    'username' => $s->login_username ?? $s->nisn ?? 'siswa',
+                    'phone' => $s->telp,
+                    'status' => $s->status_aktif === 'Y' ? 'Aktif' : 'Non-aktif',
+                ];
+            });
 
             return [
                 'id' => $c->id,
@@ -313,21 +343,25 @@ class DashboardController extends Controller
             ];
         });
 
-        // 3. Nilai Siswa per Paket Ujian & Rekapitulasi Statistik
+        // 3. Nilai Siswa per Paket Ujian & Rekapitulasi Statistik (Optimized bulk query - Temuan 08)
         $assessmentsQuery = Assessment::with(['mapel', 'jenjang', 'kelas']);
         if (!empty($idkategori)) {
             $assessmentsQuery->where('idkategori', $idkategori);
         }
         $assessments = $assessmentsQuery->orderBy('idassessment', 'desc')->limit(20)->get();
 
-        $rekapNilaiUjian = $assessments->map(function ($exam) {
-            $attempts = AssessmentJawabanPilgan::with('siswa.kelas')
-                ->where('idassessment', $exam->idassessment)
-                ->where(function ($q) {
-                    $q->where('komentar', 'submitted')
-                      ->orWhereNotNull('nilai');
-                })
-                ->get();
+        $assessmentIds = $assessments->pluck('idassessment')->filter()->values();
+        $allAttemptsGrouped = AssessmentJawabanPilgan::with('siswa.kelas')
+            ->whereIn('idassessment', $assessmentIds)
+            ->where(function ($q) {
+                $q->where('komentar', 'submitted')
+                  ->orWhereNotNull('nilai');
+            })
+            ->get()
+            ->groupBy('idassessment');
+
+        $rekapNilaiUjian = $assessments->map(function ($exam) use ($allAttemptsGrouped) {
+            $attempts = $allAttemptsGrouped->get($exam->idassessment, collect());
 
             $scores = $attempts->pluck('nilai')->filter(fn($v) => is_numeric($v))->map(fn($v) => (float)$v);
             $totalPeserta = $scores->count();
@@ -388,30 +422,106 @@ class DashboardController extends Controller
             'rekap_nilai_ujian' => $rekapNilaiUjian,
         ]);
     }
-    public function liveMonitoring()
+    public function liveMonitoring(Request $request)
     {
         try {
-            $activeAttemptsCount = DB::table('assessment_jawaban_pilgan')->whereDate('tgl_input_time', today())->count();
-            $totalAttemptsCount = DB::table('assessment_jawaban_pilgan')->count();
-            $certificatesCount = DB::table('assessment_sertifikat')->count();
+            $user = $request->user();
+            $idkategori = ($user && $user->role === 'admin' && !empty($user->idkategori))
+                ? $user->idkategori
+                : ($request->idkategori ?? null);
+
+            $attemptsBase = DB::table('assessment_jawaban_pilgan as ajp')
+                ->join('assessment as a', 'ajp.idassessment', '=', 'a.idassessment');
+
+            if ($idkategori) {
+                $attemptsBase->where('a.idkategori', $idkategori);
+            }
+
+            // Peserta Online (aktif dalam 30 menit terakhir)
+            $onlineStudentsCount = DB::table('user')
+                ->when($idkategori, fn($q) => $q->where('idkategori', $idkategori))
+                ->where('status_aktif', 'Y')
+                ->where('last_login_at', '>=', now()->subMinutes(30))
+                ->count();
+
+            // Peserta Sedang Ujian
+            $activeAttemptsCount = (clone $attemptsBase)
+                ->where(function ($q) {
+                    $q->where('ajp.komentar', 'in_progress')
+                      ->orWhereNull('ajp.komentar');
+                })
+                ->count();
+
+            // Peserta Selesai Ujian
+            $totalAttemptsCount = (clone $attemptsBase)
+                ->where('ajp.komentar', 'submitted')
+                ->count();
+
+            $disqualifiedAttemptsCount = (clone $attemptsBase)
+                ->where('ajp.komentar', 'disqualified')
+                ->count();
+
+            // Progress Ujian (Rata-rata persentase pengerjaan soal di sesi aktif)
+            $totalAssignedOrStarted = max(1, $activeAttemptsCount + $totalAttemptsCount);
+            $overallProgressPercent = round(($totalAttemptsCount / $totalAssignedOrStarted) * 100, 1);
 
             $recentAttempts = DB::table('assessment_jawaban_pilgan as ajp')
                 ->join('user as u', 'ajp.iduser', '=', 'u.iduser')
                 ->join('assessment as a', 'ajp.idassessment', '=', 'a.idassessment')
-                ->select('ajp.idassessment_jawaban_pilgan as id', 'u.nama as student_name', 'a.nama_assessment as exam_title', 'ajp.nilai as score', 'ajp.tgl_input_time as date')
+                ->when($idkategori, fn($q) => $q->where('a.idkategori', $idkategori))
+                ->select(
+                    'ajp.idassessment_jawaban_pilgan as id',
+                    'u.nama as student_name',
+                    'a.nama_assessment as exam_title',
+                    'ajp.nilai as score',
+                    'ajp.komentar as status',
+                    'ajp.tgl_input_time as date'
+                )
                 ->latest('ajp.tgl_input_time')
-                ->limit(10)
+                ->limit(15)
+                ->get();
+
+            // Aktivitas Realtime
+            $realtimeActivities = DB::table('audit_logs')
+                ->when($idkategori, fn($q) => $q->where('metadata', 'LIKE', '%"idkategori":"' . $idkategori . '"%')->orWhere('metadata', 'LIKE', '%"idkategori":' . $idkategori . '%'))
+                ->whereIn('user_role', ['siswa', 'guru', 'admin'])
+                ->select('id', 'user_name', 'user_role', 'action', 'target_label', 'created_at', 'ip_address')
+                ->latest('created_at')
+                ->limit(15)
+                ->get();
+
+            $recentViolations = DB::table('assessment_jawaban_pilgan as ajp')
+                ->join('user as u', 'ajp.iduser', '=', 'u.iduser')
+                ->join('assessment as a', 'ajp.idassessment', '=', 'a.idassessment')
+                ->when($idkategori, fn($q) => $q->where('a.idkategori', $idkategori))
+                ->where('ajp.komentar', 'disqualified')
+                ->select(
+                    'ajp.idassessment_jawaban_pilgan as id',
+                    'u.nama as student_name',
+                    'a.nama_assessment as exam_title',
+                    'ajp.tgl_input_time as timestamp',
+                    DB::raw("'Pelanggaran batas sesi / diskualifikasi' as details")
+                )
+                ->latest('ajp.tgl_input_time')
+                ->limit(5)
                 ->get();
 
             return response()->json([
                 'stats' => [
+                    'online_students' => $onlineStudentsCount,
                     'active_attempts' => $activeAttemptsCount,
                     'submitted_attempts' => $totalAttemptsCount,
-                    'disqualified_attempts' => 0,
-                    'certificates_issued' => $certificatesCount,
+                    'disqualified_attempts' => $disqualifiedAttemptsCount,
+                    'overall_progress_percent' => $overallProgressPercent,
                 ],
+                'online_students' => $onlineStudentsCount,
+                'active_attempts' => $activeAttemptsCount,
+                'submitted_attempts' => $totalAttemptsCount,
+                'disqualified_attempts' => $disqualifiedAttemptsCount,
+                'overall_progress_percent' => $overallProgressPercent,
                 'recent_attempts' => $recentAttempts,
-                'recent_violations' => []
+                'realtime_activities' => $realtimeActivities,
+                'recent_violations' => $recentViolations
             ]);
         } catch (\Throwable $e) {
             return response()->json([
@@ -419,6 +529,7 @@ class DashboardController extends Controller
                     'active_attempts' => 0,
                     'submitted_attempts' => 0,
                     'disqualified_attempts' => 0,
+                    'certificates_issued' => 0,
                 ],
                 'recent_attempts' => [],
                 'recent_violations' => [],

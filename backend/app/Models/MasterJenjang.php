@@ -26,6 +26,16 @@ class MasterJenjang extends Model
         return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
     }
 
+    public function majors(): HasMany
+    {
+        return $this->hasMany(Major::class, 'idjenjang');
+    }
+
+    public function tingkatKelas(): HasMany
+    {
+        return $this->hasMany(MasterTingkatKelas::class, 'idjenjang');
+    }
+
     public function kelas(): HasMany
     {
         return $this->hasMany(MasterKelas::class, 'idjenjang', 'id');

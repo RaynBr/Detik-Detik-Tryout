@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MasterSemester extends Model
 {
@@ -13,6 +15,7 @@ class MasterSemester extends Model
 
     protected $fillable = [
         'idkategori',
+        'academic_year_id',
         'nama_semester',
         'kode_semester',
         'urutan',
@@ -20,8 +23,18 @@ class MasterSemester extends Model
         'status_aktif',
     ];
 
-    public function kategori()
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'academic_year_id');
+    }
+
+    public function kategori(): BelongsTo
     {
         return $this->belongsTo(KategoriUserBo::class, 'idkategori', 'idkategori');
+    }
+
+    public function classes(): HasMany
+    {
+        return $this->hasMany(MasterKelas::class, 'semester_id');
     }
 }

@@ -48,6 +48,6 @@ class ExamGroup extends Model
 
     public function attempts(): HasMany
     {
-        return $this->hasMany(StudentExamAttempt::class);
+        return $this->hasMany(AssessmentJawabanPilgan::class, 'idassessment', 'exam_id');
     }
 }

@@ -12,7 +12,6 @@ import {
   ShieldCheck, 
   Package, 
   Layers, 
-  PlayCircle, 
   Radio, 
   LayoutDashboard, 
   CreditCard, 
@@ -30,6 +29,8 @@ interface DashboardStats {
   total_instansi: number;
   instansi_aktif: number;
   instansi_non_aktif: number;
+  instansi_warning?: number;
+  instansi_expired?: number;
   total_guru: number;
   total_siswa: number;
   total_admin_instansi: number;
@@ -53,6 +54,8 @@ export const SuperAdminDashboard: React.FC = () => {
     total_instansi: 0,
     instansi_aktif: 0,
     instansi_non_aktif: 0,
+    instansi_warning: 0,
+    instansi_expired: 0,
     total_guru: 0,
     total_siswa: 0,
     total_admin_instansi: 0,
@@ -79,6 +82,8 @@ export const SuperAdminDashboard: React.FC = () => {
           total_instansi: statsRes.data.total_instansi ?? 0,
           instansi_aktif: statsRes.data.instansi_aktif ?? 0,
           instansi_non_aktif: statsRes.data.instansi_non_aktif ?? statsRes.data.instansi_nonaktif ?? 0,
+          instansi_warning: statsRes.data.instansi_warning ?? 0,
+          instansi_expired: statsRes.data.instansi_expired ?? 0,
           total_guru: statsRes.data.total_guru ?? statsRes.data.total_teachers ?? 0,
           total_siswa: statsRes.data.total_siswa ?? statsRes.data.total_students ?? 0,
           total_admin_instansi: statsRes.data.total_admin_instansi ?? 0,
@@ -134,6 +139,7 @@ export const SuperAdminDashboard: React.FC = () => {
   };
 
   const statCards = [
+    // BARIS PERTAMA
     {
       title: 'Total Instansi',
       value: stats.total_instansi,
@@ -159,7 +165,7 @@ export const SuperAdminDashboard: React.FC = () => {
     {
       title: 'Instansi Non Aktif',
       value: stats.instansi_non_aktif,
-      unit: 'Non Aktif',
+      unit: stats.instansi_expired ? `${stats.instansi_expired} Expired` : 'Non Aktif',
       icon: XCircle,
       color: 'from-rose-600 to-red-600',
       textColor: 'text-rose-600 dark:text-rose-400',
@@ -168,26 +174,17 @@ export const SuperAdminDashboard: React.FC = () => {
       onClick: () => navigate('/super-admin/instansi?status=nonaktif'),
     },
     {
-      title: 'Total Guru',
-      value: stats.total_guru,
-      unit: 'Guru',
-      icon: UserCheck,
-      color: 'from-teal-600 to-emerald-600',
-      textColor: 'text-teal-600 dark:text-teal-400',
-      bgColor: 'bg-teal-50 dark:bg-teal-950/30',
-      borderColor: 'border-teal-200 dark:border-teal-800',
-      onClick: () => navigate('/super-admin/users?role=guru'),
-    },
-    {
-      title: 'Total Siswa',
-      value: stats.total_siswa,
-      unit: 'Siswa',
-      icon: GraduationCap,
-      color: 'from-cyan-600 to-blue-600',
-      textColor: 'text-cyan-600 dark:text-cyan-400',
-      bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
-      borderColor: 'border-cyan-200 dark:border-cyan-800',
-      onClick: () => navigate('/super-admin/users?role=siswa'),
+      title: 'Instansi Akan Berakhir',
+      value: stats.instansi_warning ?? 0,
+      unit: 'Instansi',
+      badge: '≤ 7 Hari',
+      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700',
+      icon: Clock,
+      color: 'from-amber-600 to-orange-600',
+      textColor: 'text-amber-600 dark:text-amber-400',
+      bgColor: 'bg-amber-50 dark:bg-amber-950/30',
+      borderColor: 'border-amber-200 dark:border-amber-800',
+      onClick: () => navigate('/super-admin/subscriptions?status=warning'),
     },
     {
       title: 'Total Admin Instansi',
@@ -198,7 +195,31 @@ export const SuperAdminDashboard: React.FC = () => {
       textColor: 'text-purple-600 dark:text-purple-400',
       bgColor: 'bg-purple-50 dark:bg-purple-950/30',
       borderColor: 'border-purple-200 dark:border-purple-800',
-      onClick: () => navigate('/super-admin/users?role=admin'),
+      onClick: () => navigate('/super-admin/instansi'),
+    },
+
+    // BARIS KEDUA
+    {
+      title: 'Total Siswa',
+      value: stats.total_siswa,
+      unit: 'Siswa',
+      icon: GraduationCap,
+      color: 'from-cyan-600 to-blue-600',
+      textColor: 'text-cyan-600 dark:text-cyan-400',
+      bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
+      borderColor: 'border-cyan-200 dark:border-cyan-800',
+      onClick: () => navigate('/super-admin/instansi'),
+    },
+    {
+      title: 'Total Guru',
+      value: stats.total_guru,
+      unit: 'Guru',
+      icon: UserCheck,
+      color: 'from-teal-600 to-emerald-600',
+      textColor: 'text-teal-600 dark:text-teal-400',
+      bgColor: 'bg-teal-50 dark:bg-teal-950/30',
+      borderColor: 'border-teal-200 dark:border-teal-800',
+      onClick: () => navigate('/super-admin/instansi'),
     },
     {
       title: 'Total Paket Soal',
@@ -209,7 +230,7 @@ export const SuperAdminDashboard: React.FC = () => {
       textColor: 'text-amber-600 dark:text-amber-400',
       bgColor: 'bg-amber-50 dark:bg-amber-950/30',
       borderColor: 'border-amber-200 dark:border-amber-800',
-      onClick: () => navigate('/super-admin/subjects'),
+      onClick: () => navigate('/super-admin/bank-soal'),
     },
     {
       title: 'Total Bank Soal',
@@ -220,18 +241,7 @@ export const SuperAdminDashboard: React.FC = () => {
       textColor: 'text-indigo-600 dark:text-indigo-400',
       bgColor: 'bg-indigo-50 dark:bg-indigo-950/30',
       borderColor: 'border-indigo-200 dark:border-indigo-800',
-      onClick: () => navigate('/super-admin/subjects'),
-    },
-    {
-      title: 'Total Ujian Aktif',
-      value: stats.total_ujian_aktif,
-      unit: 'Sesi Ujian',
-      icon: PlayCircle,
-      color: 'from-violet-600 to-fuchsia-600',
-      textColor: 'text-violet-600 dark:text-violet-400',
-      bgColor: 'bg-violet-50 dark:bg-violet-950/30',
-      borderColor: 'border-violet-200 dark:border-violet-800',
-      onClick: () => navigate('/super-admin/monitoring'),
+      onClick: () => navigate('/super-admin/bank-soal'),
     },
     {
       title: 'Total User Online',
@@ -341,8 +351,8 @@ export const SuperAdminDashboard: React.FC = () => {
                 </div>
 
                 {card.badge && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${card.badgeColor || 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'}`}>
+                    {card.badge === 'Live' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
                     {card.badge}
                   </span>
                 )}
@@ -368,8 +378,8 @@ export const SuperAdminDashboard: React.FC = () => {
               <Building2 className="h-5 w-5" />
             </div>
             <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">1. Kelola Instansi</h4>
-              <p className="text-[10px] text-slate-400">Registrasi, Status & Statistik</p>
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Kelola Instansi</h4>
+              <p className="text-[10px] text-slate-400">Pusat Manajemen Sekolah & Data</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-indigo-600 transition" />
@@ -384,8 +394,8 @@ export const SuperAdminDashboard: React.FC = () => {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">2. Kelola Pengguna</h4>
-              <p className="text-[10px] text-slate-400">Super Admin & Admin Instansi</p>
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Kelola Pengguna</h4>
+              <p className="text-[10px] text-slate-400">Akun Super Administrator</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-purple-600 transition" />
@@ -400,8 +410,8 @@ export const SuperAdminDashboard: React.FC = () => {
               <CreditCard className="h-5 w-5" />
             </div>
             <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">4. Subscription Akses</h4>
-              <p className="text-[10px] text-slate-400">Hak Akses & Masa Aktif</p>
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Langganan Platform</h4>
+              <p className="text-[10px] text-slate-400">Hak Akses & Kuota</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-emerald-600 transition" />
@@ -416,8 +426,8 @@ export const SuperAdminDashboard: React.FC = () => {
               <History className="h-5 w-5" />
             </div>
             <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">5. Monitoring & Audit</h4>
-              <p className="text-[10px] text-slate-400">Live Metric & Audit Trail</p>
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Audit Trail</h4>
+              <p className="text-[10px] text-slate-400">Aktivitas & Log Sistem</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-amber-600 transition" />
@@ -460,7 +470,8 @@ export const SuperAdminDashboard: React.FC = () => {
               ) : instansiList.length === 0 ? (
                 <tr><td colSpan={8} className="py-6 text-center font-bold text-slate-500">Belum ada instansi mitra terdaftar.</td></tr>
               ) : instansiList.map((i: any) => {
-                const isAktif = i.status === 'aktif' || i.status_aktif === 'Y' || String(i.status_aktif).toLowerCase() === 'aktif';
+                const isExpired = i.status === 'expired' || i.is_expired;
+                const isAktif = !isExpired && (i.status === 'aktif' || i.status_aktif === 'Y' || String(i.status_aktif).toLowerCase() === 'aktif');
                 const isToggling = togglingId === String(i.idkategori);
                 return (
                   <tr key={i.idkategori} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
@@ -485,13 +496,15 @@ export const SuperAdminDashboard: React.FC = () => {
                         disabled={isToggling}
                         title={`Klik untuk mengubah status menjadi ${isAktif ? 'Non Aktif' : 'Aktif'}`}
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border transition cursor-pointer hover:opacity-80 active:scale-95 disabled:opacity-50 ${
-                          isAktif 
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700' 
-                            : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-700'
+                          isExpired
+                            ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700'
+                            : isAktif 
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700' 
+                              : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-700'
                         }`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${isAktif ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                        {isToggling ? 'Menyimpan...' : isAktif ? 'Aktif' : 'Non Aktif'}
+                        <span className={`h-1.5 w-1.5 rounded-full ${isExpired ? 'bg-amber-500' : isAktif ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                        {isToggling ? 'Menyimpan...' : isExpired ? 'Expired' : isAktif ? 'Aktif' : 'Non Aktif'}
                       </button>
                     </td>
                     <td className="py-3 px-3 text-right">

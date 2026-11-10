@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api\Proctoring;
 
 use App\Http\Controllers\Controller;
-use App\Models\StudentExamAttempt;
-use App\Models\ViolationLog;
+use App\Models\AssessmentJawabanPilgan;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 
 class ViolationLogController extends Controller
@@ -17,52 +17,78 @@ class ViolationLogController extends Controller
             return response()->json(['message' => 'ID sesi pengerjaan (attempt_id) wajib disertakan.'], 422);
         }
 
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
+        }
+
+        // Verify attempt belongs to the student (Temuan 14)
+        $attemptModel = AssessmentJawabanPilgan::with('assessment')
+            ->where('idassessment_jawaban_pilgan', $resolvedAttemptId)
+            ->where('iduser', $user->iduser)
+            ->first();
+
+        if (!$attemptModel) {
+            return response()->json(['message' => 'Sesi pengerjaan ujian tidak ditemukan.'], 404);
+        }
+
+        if ($attemptModel->komentar === 'submitted') {
+            return response()->json(['message' => 'Ujian telah diserahkan sebelumnya.'], 403);
+        }
+
         $type = $request->input('violation_type', $request->input('type', 'tab_switch'));
 
-        $student = $request->user()->student;
-        if (!$student) {
-            return response()->json(['message' => 'Profil siswa tidak ditemukan.'], 404);
-        }
-
-        // Verify attempt belongs to the student
-        $attempt = StudentExamAttempt::with('exam')->where('student_id', $student->id)->findOrFail($resolvedAttemptId);
-
-        if ($attempt->status !== 'in_progress') {
-            return response()->json(['message' => 'Ujian tidak aktif atau telah diserahkan sebelumnya.'], 403);
-        }
-
-        $log = ViolationLog::create([
-            'attempt_id' => $attempt->id,
-            'type' => $type,
-            'occurred_at' => now(),
-            'metadata' => $request->input('metadata', []),
-        ]);
-
-        // Auto submit / Disqualify if student switches tab or focus too many times
-        $violationsCount = ViolationLog::where('attempt_id', $attempt->id)
-            ->whereIn('type', ['tab_switch', 'window_blur', 'fullscreen_exit'])
+        // Count previous violations for this attempt
+        $previousCount = AuditLog::where('action', 'PELANGGARAN_UJIAN')
+            ->where('target_id', $attemptModel->idassessment_jawaban_pilgan)
             ->count();
+        $violationsCount = $previousCount + 1;
 
-        $maxAllowed = isset($attempt->exam->settings['max_tab_switches'])
-            ? (int) $attempt->exam->settings['max_tab_switches']
-            : 5;
+        // Record violation in AuditLog
+        AuditLog::record(
+            'PELANGGARAN_UJIAN',
+            'assessment_jawaban_pilgan',
+            $attemptModel->idassessment_jawaban_pilgan,
+            "Pelanggaran {$type} ke-{$violationsCount} oleh siswa {$user->nama}",
+            [
+                'type' => $type,
+                'violation_count' => $violationsCount,
+                'metadata' => $request->input('metadata', []),
+            ],
+            (string)$user->iduser,
+            $user->nama,
+            'siswa',
+            'proctoring',
+            $user->kategori?->nama_kategori
+        );
 
-        $attempt->update([
-            'tab_switch_count' => $violationsCount
-        ]);
+        $maxAllowed = 5;
 
         $shouldDisqualify = $request->boolean('is_disqualified') 
             || $request->boolean('force_disqualify') 
             || ($violationsCount >= $maxAllowed);
 
         if ($shouldDisqualify) {
-            $attempt->update([
-                'status' => 'disqualified',
-                'total_score' => 0,
-                'tab_switch_count' => max($violationsCount, $maxAllowed),
-                'submitted_at' => now(),
-                'time_remaining_seconds' => 0
+            $attemptModel->update([
+                'komentar' => 'disqualified',
+                'nilai' => 0,
             ]);
+
+            AuditLog::record(
+                'DISKUALIFIKASI_UJIAN',
+                'assessment_jawaban_pilgan',
+                $attemptModel->idassessment_jawaban_pilgan,
+                "Siswa {$user->nama} didiskualifikasi dari ujian " . ($attemptModel->assessment?->nama_assessment ?? 'Ujian') . " karena pelanggaran batas tab",
+                [
+                    'violations_count' => max($violationsCount, $maxAllowed),
+                    'max_allowed' => $maxAllowed,
+                ],
+                (string)$user->iduser,
+                $user->nama,
+                'siswa',
+                'proctoring',
+                $user->kategori?->nama_kategori
+            );
 
             return response()->json([
                 'message' => 'Anda telah didiskualifikasi karena melebihi batas perpindahan tab/jendela yang diizinkan.',
@@ -71,7 +97,6 @@ class ViolationLogController extends Controller
                 'tab_switch_count' => max($violationsCount, $maxAllowed),
                 'violations_count' => max($violationsCount, $maxAllowed),
                 'max_allowed' => $maxAllowed,
-                'data' => $log
             ], 200);
         }
 
@@ -82,7 +107,6 @@ class ViolationLogController extends Controller
             'tab_switch_count' => $violationsCount,
             'violations_count' => $violationsCount,
             'max_allowed' => $maxAllowed,
-            'data' => $log
         ]);
     }
 
@@ -94,19 +118,37 @@ class ViolationLogController extends Controller
             return response()->json(['message' => 'ID sesi pengerjaan (attempt_id) wajib disertakan.'], 422);
         }
 
-        $student = $request->user()->student;
-        if (!$student) {
-            return response()->json(['message' => 'Profil siswa tidak ditemukan.'], 404);
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
-        $attemptModel = StudentExamAttempt::with('exam')->where('student_id', $student->id)->findOrFail($resolvedAttemptId);
+        $attemptModel = AssessmentJawabanPilgan::with('assessment')
+            ->where('idassessment_jawaban_pilgan', $resolvedAttemptId)
+            ->where('iduser', $user->iduser)
+            ->first();
+
+        if (!$attemptModel) {
+            return response()->json(['message' => 'Sesi pengerjaan ujian tidak ditemukan.'], 404);
+        }
 
         $attemptModel->update([
-            'status' => 'disqualified',
-            'total_score' => 0,
-            'submitted_at' => now(),
-            'time_remaining_seconds' => 0
+            'komentar' => 'disqualified',
+            'nilai' => 0,
         ]);
+
+        AuditLog::record(
+            'DISKUALIFIKASI_UJIAN',
+            'assessment_jawaban_pilgan',
+            $attemptModel->idassessment_jawaban_pilgan,
+            "Siswa {$user->nama} didiskualifikasi secara permanen",
+            ['reason' => 'explicit_disqualify'],
+            (string)$user->iduser,
+            $user->nama,
+            'siswa',
+            'proctoring',
+            $user->kategori?->nama_kategori
+        );
 
         return response()->json([
             'message' => 'Sesi ujian telah didiskualifikasi secara permanen.',
@@ -114,7 +156,11 @@ class ViolationLogController extends Controller
             'disqualified' => true,
             'status' => 'disqualified',
             'score' => 0,
-            'attempt' => $attemptModel
+            'attempt' => [
+                'id' => $attemptModel->idassessment_jawaban_pilgan,
+                'status' => 'disqualified',
+                'total_score' => 0,
+            ]
         ], 200);
     }
 }

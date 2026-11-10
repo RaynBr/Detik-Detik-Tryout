@@ -28,8 +28,11 @@ interface PreviewRowData {
   data: {
     idjenjang: number;
     jenjang_name: string;
-    idkelas: number;
-    kelas_name: string;
+    tingkat?: number;
+    idtingkat?: number | null;
+    tingkat_label?: string;
+    idkelas?: number | null;
+    kelas_name?: string;
     idmapel: number;
     mapel_name: string;
     id_tahun_ajaran: number;
@@ -439,7 +442,7 @@ export const BankSoalImportModal: React.FC<BankSoalImportModalProps> = ({ isOpen
                     <tr>
                       <th className="py-2 px-2.5">Baris</th>
                       <th className="py-2 px-2.5">Paket Soal</th>
-                      <th className="py-2 px-2.5">Jenjang / Kelas / Mapel</th>
+                      <th className="py-2 px-2.5">Jenjang / Tingkat / Mapel</th>
                       <th className="py-2 px-2.5">Pertanyaan</th>
                       <th className="py-2 px-2.5 text-center">Kunci</th>
                       <th className="py-2 px-2.5">Status Validasi</th>
@@ -451,7 +454,7 @@ export const BankSoalImportModal: React.FC<BankSoalImportModalProps> = ({ isOpen
                         <td className="py-2 px-2.5 font-mono font-bold text-slate-500">{row.row}</td>
                         <td className="py-2 px-2.5 font-bold truncate max-w-[140px]">{row.data.judul_paket}</td>
                         <td className="py-2 px-2.5">
-                          <span className="font-semibold block">{row.data.jenjang_name} • {row.data.kelas_name}</span>
+                          <span className="font-semibold block">{row.data.jenjang_name} • {row.data.tingkat_label || (row.data.tingkat ? `Tingkat ${row.data.tingkat}` : (row.data.kelas_name || '-'))}</span>
                           <span className="text-[10px] text-slate-400 block">{row.data.mapel_name} ({row.data.tahun_ajaran_name})</span>
                         </td>
                         <td className="py-2 px-2.5 truncate max-w-[200px]" title={row.data.pertanyaan}>

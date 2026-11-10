@@ -161,7 +161,7 @@ export const TeacherDashboard: React.FC = () => {
           { label: 'Kelas Diampu', value: teachingClasses.length },
           { label: 'Total Murid', value: teacherProfile?.total_students_taught || 0 }
         ]}
-        actionLabel="Buat Paket Ujian"
+        actionLabel="Buat Jadwal Ujian"
         onAction={() => navigate('/teacher/exams')}
         icon={Sparkles}
       />
@@ -246,9 +246,9 @@ export const TeacherDashboard: React.FC = () => {
             onClick={() => navigate('/teacher/questions')}
           />
           <GradientStatCard
-            title="Paket Soal Ujian"
-            value={`${packages.length} Paket`}
-            subtitle="Kumpulan TryOut terstruktur"
+            title="Jadwal Ujian"
+            value={`${packages.length} Jadwal`}
+            subtitle="Jadwal TryOut terstruktur"
             icon={Layers}
             variant="indigo"
             onClick={() => navigate('/teacher/exams')}

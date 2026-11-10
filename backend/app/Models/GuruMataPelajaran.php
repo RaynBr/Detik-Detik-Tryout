@@ -16,6 +16,8 @@ class GuruMataPelajaran extends Model
         'iduser_bo',
         'idmapel',
         'idkelas',
+        'academic_year_id',
+        'semester_id',
         'tahun_ajaran',
         'status',
     ];
@@ -33,5 +35,15 @@ class GuruMataPelajaran extends Model
     public function kelas(): BelongsTo
     {
         return $this->belongsTo(MasterKelas::class, 'idkelas', 'id');
+    }
+
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'academic_year_id', 'id');
+    }
+
+    public function semester(): BelongsTo
+    {
+        return $this->belongsTo(MasterSemester::class, 'semester_id', 'id');
     }
 }

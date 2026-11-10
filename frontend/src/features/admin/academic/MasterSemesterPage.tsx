@@ -9,18 +9,28 @@ import {
   Trash2, 
   Search, 
   RefreshCw, 
-  X
+  X,
+  CheckCircle2,
+  CalendarDays
 } from 'lucide-react';
 import { Pagination } from '../../../shared/components/Pagination';
 import { usePaginationUrl } from '../../../shared/utils/usePaginationUrl';
 
+interface AcademicYearOption {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
 interface MasterSemesterItem {
   id: number;
+  academic_year_id: number | null;
   nama_semester: string;
   kode_semester: string;
   urutan: number;
   keterangan: string | null;
   status_aktif: 'Y' | 'N';
+  academic_year?: AcademicYearOption;
 }
 
 export const MasterSemesterPage: React.FC = () => {
@@ -31,17 +41,20 @@ export const MasterSemesterPage: React.FC = () => {
   const masterLink = isTenantAdmin ? '/admin/master-akademik/semester' : '/super-admin/master-akademik/semester';
 
   const [data, setData] = useState<MasterSemesterItem[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYearOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<MasterSemesterItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
-    nama_semester: '',
-    kode_semester: '',
+    academic_year_id: '' as string | number,
+    nama_semester: 'Semester Ganjil',
+    kode_semester: 'ganjil',
     urutan: 1,
     keterangan: '',
     status_aktif: 'Y' as 'Y' | 'N',
@@ -60,12 +73,23 @@ export const MasterSemesterPage: React.FC = () => {
     setPaginationFromResponse
   } = usePaginationUrl(15);
 
+  const fetchAcademicYears = async () => {
+    try {
+      const res = await apiClient.get(`${apiBase}/academic-years`, { params: { all: true } });
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setAcademicYears(list);
+    } catch (err) {
+      console.error('Failed to load academic years:', err);
+    }
+  };
+
   const fetchData = async (page = currentPage) => {
     setLoading(true);
     try {
       const params: any = { page, per_page: 15 };
       if (search.trim()) params.search = search.trim();
       if (statusFilter) params.status = statusFilter;
+      if (yearFilter) params.academic_year_id = yearFilter;
 
       const res = await apiClient.get(`${apiBase}/semesters`, { params });
       setPaginationFromResponse(res.data);
@@ -80,8 +104,12 @@ export const MasterSemesterPage: React.FC = () => {
   };
 
   useEffect(() => {
+    fetchAcademicYears();
+  }, []);
+
+  useEffect(() => {
     fetchData(currentPage);
-  }, [currentPage, statusFilter]);
+  }, [currentPage, statusFilter, yearFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,10 +119,12 @@ export const MasterSemesterPage: React.FC = () => {
 
   const handleOpenAdd = () => {
     setEditingItem(null);
+    const activeYear = academicYears.find(y => y.is_active);
     setForm({
-      nama_semester: '',
-      kode_semester: '',
-      urutan: data.length + 1,
+      academic_year_id: activeYear ? activeYear.id : (academicYears[0]?.id || ''),
+      nama_semester: 'Semester Ganjil',
+      kode_semester: 'ganjil',
+      urutan: 1,
       keterangan: '',
       status_aktif: 'Y',
     });
@@ -104,6 +134,7 @@ export const MasterSemesterPage: React.FC = () => {
   const handleOpenEdit = (item: MasterSemesterItem) => {
     setEditingItem(item);
     setForm({
+      academic_year_id: item.academic_year_id || '',
       nama_semester: item.nama_semester,
       kode_semester: item.kode_semester,
       urutan: item.urutan || 1,
@@ -122,15 +153,21 @@ export const MasterSemesterPage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      const payload = {
+        ...form,
+        academic_year_id: form.academic_year_id ? Number(form.academic_year_id) : null,
+      };
+
       if (editingItem) {
-        await apiClient.put(`${apiBase}/semesters/${editingItem.id}`, form);
+        await apiClient.put(`${apiBase}/semesters/${editingItem.id}`, payload);
         toast.success(`Semester ${form.nama_semester} berhasil diperbarui.`);
       } else {
-        await apiClient.post(`${apiBase}/semesters`, form);
+        await apiClient.post(`${apiBase}/semesters`, payload);
         toast.success(`Semester ${form.nama_semester} berhasil ditambahkan.`);
       }
       setShowModal(false);
       fetchData(currentPage);
+      fetchAcademicYears();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Gagal menyimpan semester.');
     } finally {
@@ -138,17 +175,14 @@ export const MasterSemesterPage: React.FC = () => {
     }
   };
 
-  const handleToggleStatus = async (item: MasterSemesterItem) => {
-    const nextStatus = item.status_aktif === 'Y' ? 'N' : 'Y';
+  const handleActivate = async (item: MasterSemesterItem) => {
     try {
-      await apiClient.put(`${apiBase}/semesters/${item.id}`, {
-        ...item,
-        status_aktif: nextStatus
-      });
-      toast.success(`Status semester ${item.nama_semester} berhasil diubah.`);
+      await apiClient.post(`${apiBase}/semesters/${item.id}/activate`);
+      toast.success(`Semester ${item.nama_semester} berhasil diaktifkan.`);
       fetchData(currentPage);
+      fetchAcademicYears();
     } catch (err: any) {
-      toast.error('Gagal mengubah status semester.');
+      toast.error(err.response?.data?.message || 'Gagal mengaktifkan semester.');
     }
   };
 
@@ -198,14 +232,14 @@ export const MasterSemesterPage: React.FC = () => {
                 Master Semester
               </h1>
               <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
-                Konfigurasi termin perkuliahan / persekolahan (Semester Ganjil, Genap, dsb).
+                Konfigurasi termin perkuliahan / persekolahan (Ganjil / Genap) per Tahun Ajaran instansi.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => fetchData(currentPage)}
+              onClick={() => { fetchData(currentPage); fetchAcademicYears(); }}
               className="p-2.5 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-[#161C2D] dark:text-white transition cursor-pointer"
               title="Segarkan Data"
             >
@@ -228,14 +262,27 @@ export const MasterSemesterPage: React.FC = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Cari semester atau kode..."
+            placeholder="Cari semester, tahun ajaran, kode..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-xs font-medium rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-slate-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[#161C2D] dark:text-white"
           />
         </form>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+          <select
+            value={yearFilter}
+            onChange={(e) => { setYearFilter(e.target.value); resetPage(); }}
+            className="px-3 py-2 text-xs font-bold rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-white dark:bg-[#1A1E22] text-[#161C2D] dark:text-white focus:outline-none cursor-pointer"
+          >
+            <option value="">Semua Tahun Ajaran</option>
+            {academicYears.map(ay => (
+              <option key={ay.id} value={ay.id}>
+                {ay.name} {ay.is_active ? '(Aktif)' : ''}
+              </option>
+            ))}
+          </select>
+
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}
@@ -254,6 +301,7 @@ export const MasterSemesterPage: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b-2 border-[#161C2D] dark:border-[#32363A] text-slate-600 dark:text-gray-400 uppercase font-black text-[10px] tracking-wider bg-slate-50 dark:bg-[#0B1014]/40">
+                <th className="py-3 px-3">Tahun Ajaran</th>
                 <th className="py-3 px-3">Nama Semester</th>
                 <th className="py-3 px-3">Kode</th>
                 <th className="py-3 px-3 text-center">Urutan</th>
@@ -265,14 +313,14 @@ export const MasterSemesterPage: React.FC = () => {
             <tbody className="divide-y border-[#161C2D]/10 dark:divide-white/5">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center font-bold text-slate-500">
+                  <td colSpan={7} className="py-10 text-center font-bold text-slate-500">
                     <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-indigo-600" />
                     Memuat data master semester...
                   </td>
                 </tr>
               ) : data.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center">
+                  <td colSpan={7} className="py-12 text-center">
                     <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-2">
                       <History className="h-10 w-10 text-slate-300" />
                       <p className="font-bold text-slate-600 dark:text-gray-300">Belum Ada Data Semester</p>
@@ -292,6 +340,15 @@ export const MasterSemesterPage: React.FC = () => {
                   return (
                     <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition">
                       <td className="py-3.5 px-3">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-indigo-600 shrink-0" />
+                          <span className="font-bold text-slate-800 dark:text-white">
+                            {item.academic_year?.name || 'Tahun Ajaran Induk'}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-3">
                         <span className="font-bold text-sm text-[#161C2D] dark:text-white block">
                           {item.nama_semester}
                         </span>
@@ -300,7 +357,7 @@ export const MasterSemesterPage: React.FC = () => {
                         </span>
                       </td>
 
-                      <td className="py-3.5 px-3 font-mono font-bold text-indigo-600">
+                      <td className="py-3.5 px-3 font-mono font-bold text-indigo-600 uppercase">
                         {item.kode_semester}
                       </td>
 
@@ -314,14 +371,16 @@ export const MasterSemesterPage: React.FC = () => {
 
                       <td className="py-3.5 px-3 text-center">
                         <button
-                          onClick={() => handleToggleStatus(item)}
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase border transition cursor-pointer ${
+                          onClick={() => handleActivate(item)}
+                          title={isAktif ? 'Semester sedang aktif' : 'Klik untuk mengaktifkan semester ini'}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border transition cursor-pointer ${
                             isAktif 
                               ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200' 
-                              : 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300'
                           }`}
                         >
-                          {isAktif ? 'Aktif' : 'Nonaktif'}
+                          <CheckCircle2 className={`h-3 w-3 ${isAktif ? 'text-emerald-600' : 'text-slate-400'}`} />
+                          <span>{isAktif ? 'Aktif' : 'Nonaktif'}</span>
                         </button>
                       </td>
 
@@ -382,7 +441,46 @@ export const MasterSemesterPage: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-600 dark:text-gray-300 mb-1">
-                  Nama Semester <span className="text-rose-500">*</span>
+                  Tahun Ajaran <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={form.academic_year_id}
+                  onChange={(e) => setForm({ ...form, academic_year_id: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-slate-50 dark:bg-white/5 font-bold"
+                  required
+                >
+                  <option value="">-- Pilih Tahun Ajaran --</option>
+                  {academicYears.map(ay => (
+                    <option key={ay.id} value={ay.id}>
+                      {ay.name} {ay.is_active ? '(Aktif)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 dark:text-gray-300 mb-1">
+                  Semester (Ganjil / Genap) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={form.kode_semester}
+                  onChange={(e) => {
+                    const kode = e.target.value;
+                    const nama = kode === 'ganjil' ? 'Semester Ganjil' : 'Semester Genap';
+                    const urut = kode === 'ganjil' ? 1 : 2;
+                    setForm({ ...form, kode_semester: kode, nama_semester: nama, urutan: urut });
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-slate-50 dark:bg-white/5 font-bold"
+                  required
+                >
+                  <option value="ganjil">Ganjil (Urutan 1)</option>
+                  <option value="genap">Genap (Urutan 2)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 dark:text-gray-300 mb-1">
+                  Nama Tampilan Semester <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -391,33 +489,6 @@ export const MasterSemesterPage: React.FC = () => {
                   onChange={(e) => setForm({ ...form, nama_semester: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-slate-50 dark:bg-white/5 font-bold"
                   required
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-600 dark:text-gray-300 mb-1">
-                  Kode Semester <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: ganjil atau 1"
-                  value={form.kode_semester}
-                  onChange={(e) => setForm({ ...form, kode_semester: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-slate-50 dark:bg-white/5 font-mono"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-600 dark:text-gray-300 mb-1">
-                  Nomor Urut
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={form.urutan}
-                  onChange={(e) => setForm({ ...form, urutan: parseInt(e.target.value, 10) || 1 })}
-                  className="w-full px-3 py-2 rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] bg-slate-50 dark:bg-white/5"
                 />
               </div>
 

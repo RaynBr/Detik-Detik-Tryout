@@ -15,7 +15,12 @@ class MasterMataPelajaran extends Model
 
     protected $fillable = [
         'idkategori',
+        'academic_year_id',
+        'semester_id',
+        'idkurikulum',
         'idjenjang',
+        'idjurusan',
+        'idtingkat',
         'tahun_ajaran',
         'kode_mapel',
         'nama_mapel',
@@ -29,9 +34,34 @@ class MasterMataPelajaran extends Model
         'kkm' => 'float',
     ];
 
+    public function academicYear(): BelongsTo
+    {
+        return $this->belongsTo(AcademicYear::class, 'academic_year_id', 'id');
+    }
+
+    public function semester(): BelongsTo
+    {
+        return $this->belongsTo(MasterSemester::class, 'semester_id', 'id');
+    }
+
+    public function kurikulum(): BelongsTo
+    {
+        return $this->belongsTo(MasterKurikulum::class, 'idkurikulum', 'id');
+    }
+
     public function jenjang(): BelongsTo
     {
         return $this->belongsTo(MasterJenjang::class, 'idjenjang', 'id');
+    }
+
+    public function jurusan(): BelongsTo
+    {
+        return $this->belongsTo(Major::class, 'idjurusan', 'id');
+    }
+
+    public function tingkatKelas(): BelongsTo
+    {
+        return $this->belongsTo(MasterTingkatKelas::class, 'idtingkat', 'id');
     }
 
     public function kategori(): BelongsTo

@@ -22,14 +22,23 @@ interface MasterJenjangOption {
   kode_jenjang: string;
 }
 
+interface MasterJurusanOption {
+  id: number;
+  name: string;
+  code: string;
+  jenjang: string | null;
+}
+
 interface MasterTingkatKelasItem {
   id: number;
   tingkat: number;
   nama_tingkat: string;
   idjenjang: number | null;
+  idjurusan: number | null;
   keterangan: string | null;
   status_aktif: 'Y' | 'N';
   jenjang?: MasterJenjangOption;
+  jurusan?: MasterJurusanOption;
 }
 
 export const MasterTingkatKelasPage: React.FC = () => {
@@ -41,6 +50,7 @@ export const MasterTingkatKelasPage: React.FC = () => {
 
   const [data, setData] = useState<MasterTingkatKelasItem[]>([]);
   const [jenjangList, setJenjangList] = useState<MasterJenjangOption[]>([]);
+  const [jurusanList, setJurusanList] = useState<MasterJurusanOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [jenjangFilter, setJenjangFilter] = useState('');
@@ -54,6 +64,7 @@ export const MasterTingkatKelasPage: React.FC = () => {
     tingkat: 10,
     nama_tingkat: '',
     idjenjang: '' as string | number,
+    idjurusan: '' as string | number,
     keterangan: '',
     status_aktif: 'Y' as 'Y' | 'N',
   });
@@ -71,13 +82,16 @@ export const MasterTingkatKelasPage: React.FC = () => {
     setPaginationFromResponse
   } = usePaginationUrl(15);
 
-  const fetchJenjangList = async () => {
+  const fetchAuxiliaryOptions = async () => {
     try {
-      const res = await apiClient.get(`${apiBase}/jenjang`, { params: { all: true } });
-      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
-      setJenjangList(list);
+      const [resJenjang, resJurusan] = await Promise.all([
+        apiClient.get(`${apiBase}/jenjang`, { params: { all: true } }),
+        apiClient.get(`${apiBase}/majors`, { params: { all: true } })
+      ]);
+      setJenjangList(resJenjang.data?.data || (Array.isArray(resJenjang.data) ? resJenjang.data : []));
+      setJurusanList(resJurusan.data?.data || (Array.isArray(resJurusan.data) ? resJurusan.data : []));
     } catch (err) {
-      console.error('Failed to load jenjang options:', err);
+      console.error('Failed to load options:', err);
     }
   };
 
@@ -102,7 +116,7 @@ export const MasterTingkatKelasPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchJenjangList();
+    fetchAuxiliaryOptions();
   }, []);
 
   useEffect(() => {
@@ -121,6 +135,7 @@ export const MasterTingkatKelasPage: React.FC = () => {
       tingkat: 10,
       nama_tingkat: '',
       idjenjang: jenjangList.length > 0 ? jenjangList[0].id : '',
+      idjurusan: '',
       keterangan: '',
       status_aktif: 'Y',
     });
@@ -133,6 +148,7 @@ export const MasterTingkatKelasPage: React.FC = () => {
       tingkat: Number(item.tingkat),
       nama_tingkat: item.nama_tingkat,
       idjenjang: item.idjenjang || '',
+      idjurusan: item.idjurusan || '',
       keterangan: item.keterangan || '',
       status_aktif: item.status_aktif || 'Y',
     });
@@ -152,6 +168,7 @@ export const MasterTingkatKelasPage: React.FC = () => {
         tingkat: Number(form.tingkat),
         nama_tingkat: form.nama_tingkat.trim(),
         idjenjang: form.idjenjang ? Number(form.idjenjang) : null,
+        idjurusan: form.idjurusan ? Number(form.idjurusan) : null,
         keterangan: form.keterangan.trim() || null,
         status_aktif: form.status_aktif,
       };
@@ -354,7 +371,8 @@ export const MasterTingkatKelasPage: React.FC = () => {
                   <th className="px-6 py-4 w-16 text-center">No</th>
                   <th className="px-6 py-4">Nomor Tingkat</th>
                   <th className="px-6 py-4">Nama Tingkat</th>
-                  <th className="px-6 py-4">Jenjang Terkait</th>
+                  <th className="px-6 py-4">Jenjang</th>
+                  <th className="px-6 py-4">Jurusan</th>
                   <th className="px-6 py-4">Keterangan</th>
                   <th className="px-6 py-4 text-center">Status</th>
                   <th className="px-6 py-4 text-right">Aksi</th>
@@ -387,6 +405,15 @@ export const MasterTingkatKelasPage: React.FC = () => {
                           </span>
                         ) : (
                           <span className="text-xs text-slate-400 italic">Semua</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {item.jurusan?.name ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                            {item.jurusan.name} ({item.jurusan.code})
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">-</span>
                         )}
                       </td>
                       <td className="px-6 py-4 text-slate-500 max-w-xs truncate" title={item.keterangan || ''}>
@@ -503,6 +530,24 @@ export const MasterTingkatKelasPage: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Jurusan (Nullable / Khusus SMA/SMK)
+                </label>
+                <select
+                  value={form.idjurusan}
+                  onChange={(e) => setForm({ ...form, idjurusan: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+                >
+                  <option value="">-- Tidak Ada / Umum (SD/SMP) --</option>
+                  {jurusanList.map((j) => (
+                    <option key={j.id} value={j.id}>
+                      {j.name} ({j.code})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

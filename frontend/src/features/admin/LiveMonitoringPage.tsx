@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../shared/api/client';
 import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
-import { ShieldAlert, CheckCircle2, User, AlertCircle, RefreshCw } from 'lucide-react';
+import { 
+  ShieldAlert, CheckCircle2, RefreshCw, 
+  Radio, PlayCircle, TrendingUp 
+} from 'lucide-react';
 
 interface Attempt {
   id: number;
@@ -49,12 +52,16 @@ interface PreFlightData {
 
 export const LiveMonitoringPage: React.FC = () => {
   const [stats, setStats] = useState({
+    online_students: 0,
     active_attempts: 0,
     submitted_attempts: 0,
     disqualified_attempts: 0,
+    overall_progress_percent: 0,
   });
   const [recentAttempts, setRecentAttempts] = useState<Attempt[]>([]);
   const [recentViolations, setRecentViolations] = useState<Violation[]>([]);
+  const [realtimeActivities, setRealtimeActivities] = useState<any[]>([]);
+  const [activeSideTab, setActiveSideTab] = useState<'violations' | 'realtime'>('violations');
   const [loading, setLoading] = useState(true);
 
   // Pre-flight check state
@@ -65,9 +72,18 @@ export const LiveMonitoringPage: React.FC = () => {
   const fetchLiveStats = async () => {
     try {
       const res = await apiClient.get('/admin/dashboard/live-monitoring');
-      setStats(res.data.stats);
-      setRecentAttempts(res.data.recent_attempts);
-      setRecentViolations(res.data.recent_violations);
+      if (res.data?.stats) {
+        setStats({
+          online_students: res.data.stats.online_students ?? res.data.stats.active_attempts ?? 0,
+          active_attempts: res.data.stats.active_attempts ?? 0,
+          submitted_attempts: res.data.stats.submitted_attempts ?? 0,
+          disqualified_attempts: res.data.stats.disqualified_attempts ?? 0,
+          overall_progress_percent: res.data.stats.overall_progress_percent ?? 0,
+        });
+      }
+      setRecentAttempts(res.data.recent_attempts || []);
+      setRecentViolations(res.data.recent_violations || []);
+      setRealtimeActivities(res.data.realtime_activities || []);
     } catch (err) {
       console.error('Failed to poll live monitoring stats:', err);
     }
@@ -244,38 +260,57 @@ export const LiveMonitoringPage: React.FC = () => {
         </div>
       )}
 
-      {/* Top Metrics Cards or Skeleton */}
+      {/* Top Metrics Cards (Requirement 3: Peserta Online, Sedang Ujian, Selesai Ujian, Progress Ujian) */}
       {loading ? (
-        <CardGridSkeleton count={3} cols="grid-cols-1 md:grid-cols-3" />
+        <CardGridSkeleton count={4} cols="grid-cols-2 md:grid-cols-4" />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6">
-          <div className="glass-panel p-6 rounded-3xl flex items-start gap-4 border-l-4 border-indigo-500 shadow-sm">
-            <div className="p-3.5 bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-200 dark:border-indigo-500/20">
-              <User className="h-6 w-6" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
+          <div className="glass-panel p-5 rounded-3xl flex items-start gap-3.5 border-l-4 border-cyan-500 shadow-sm">
+            <div className="p-3 bg-cyan-100 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-200 dark:border-cyan-500/20">
+              <Radio className="h-5 w-5 animate-pulse" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Siswa Aktif Mengerjakan</h3>
-              <p className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white font-mono mt-1">{stats.active_attempts} Orang</p>
+              <h3 className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Peserta Online</h3>
+              <p className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-0.5">{stats.online_students} Orang</p>
+              <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-bold">Terhubung ke sistem</span>
             </div>
           </div>
 
-          <div className="glass-panel p-6 rounded-3xl flex items-start gap-4 border-l-4 border-emerald-500 shadow-sm">
-            <div className="p-3.5 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-500/20">
-              <CheckCircle2 className="h-6 w-6" />
+          <div className="glass-panel p-5 rounded-3xl flex items-start gap-3.5 border-l-4 border-indigo-500 shadow-sm">
+            <div className="p-3 bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-200 dark:border-indigo-500/20">
+              <PlayCircle className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Total Lembar Terkumpul</h3>
-              <p className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white font-mono mt-1">{stats.submitted_attempts} Siswa</p>
+              <h3 className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Sedang Ujian</h3>
+              <p className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-0.5">{stats.active_attempts} Siswa</p>
+              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">Sesi aktif berjalan</span>
             </div>
           </div>
 
-          <div className="glass-panel p-6 rounded-3xl flex items-start gap-4 border-l-4 border-rose-500 shadow-sm">
-            <div className="p-3.5 bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-2xl border border-rose-200 dark:border-rose-500/20">
-              <AlertCircle className="h-6 w-6" />
+          <div className="glass-panel p-5 rounded-3xl flex items-start gap-3.5 border-l-4 border-emerald-500 shadow-sm">
+            <div className="p-3 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-500/20">
+              <CheckCircle2 className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Diskualifikasi Keamanan</h3>
-              <p className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white font-mono mt-1">{stats.disqualified_attempts} Siswa</p>
+              <h3 className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Selesai Ujian</h3>
+              <p className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-0.5">{stats.submitted_attempts} Siswa</p>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Jawaban tersimpan</span>
+            </div>
+          </div>
+
+          <div className="glass-panel p-5 rounded-3xl flex items-start gap-3.5 border-l-4 border-amber-500 shadow-sm">
+            <div className="p-3 bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-2xl border border-amber-200 dark:border-amber-500/20">
+              <TrendingUp className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Progress Ujian</h3>
+              <p className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-0.5">{stats.overall_progress_percent}%</p>
+              <div className="w-full bg-slate-200 dark:bg-white/10 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                <div 
+                  className="bg-amber-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(stats.overall_progress_percent, 100)}%` }} 
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -343,37 +378,77 @@ export const LiveMonitoringPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Real-time violations alert feed */}
+        {/* Real-time feed: Insiden & Aktivitas Realtime (Requirement 3) */}
         <div className="lg:col-span-1 space-y-3">
-          <h3 className="text-xs font-bold text-slate-600 dark:text-gray-400 uppercase tracking-wider px-1">
-            Log Pelanggaran Keamanan
-          </h3>
+          <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-2xl gap-1 text-xs font-bold">
+            <button
+              onClick={() => setActiveSideTab('violations')}
+              className={`flex-1 py-1.5 px-3 rounded-xl transition ${
+                activeSideTab === 'violations'
+                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-slate-600 dark:text-gray-400 hover:text-slate-900'
+              }`}
+            >
+              Insiden Keamanan ({recentViolations.length})
+            </button>
+            <button
+              onClick={() => setActiveSideTab('realtime')}
+              className={`flex-1 py-1.5 px-3 rounded-xl transition ${
+                activeSideTab === 'realtime'
+                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-slate-600 dark:text-gray-400 hover:text-slate-900'
+              }`}
+            >
+              Aktivitas Realtime ({realtimeActivities.length})
+            </button>
+          </div>
+
           <div className="glass-panel p-4 rounded-3xl max-h-[50vh] overflow-y-auto space-y-2.5 shadow-xl">
-            {recentViolations.length > 0 ? (
-              recentViolations.map((v) => (
-                <div key={v.id} className="p-3 bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 rounded-2xl space-y-1.5 transition hover:border-indigo-300 dark:hover:border-white/10">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[130px]">
-                      {v.attempt?.student?.user?.name || 'Siswa'}
-                    </span>
-                    <span className="text-[10px] text-slate-500 dark:text-gray-500 font-mono">
-                      {new Date(v.occurred_at).toLocaleTimeString('id-ID')}
-                    </span>
+            {activeSideTab === 'violations' ? (
+              recentViolations.length > 0 ? (
+                recentViolations.map((v) => (
+                  <div key={v.id} className="p-3 bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 rounded-2xl space-y-1.5 transition hover:border-indigo-300 dark:hover:border-white/10">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[130px]">
+                        {v.attempt?.student?.user?.name || 'Siswa'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-gray-500 font-mono">
+                        {new Date(v.occurred_at).toLocaleTimeString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-1 pt-0.5">
+                      <span className={`px-2 py-0.5 border text-[10px] font-bold rounded-lg ${getViolationBadgeColor(v.type)}`}>
+                        {getViolationLabel(v.type)}
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-gray-400 font-mono truncate max-w-[110px]" title={v.attempt?.exam?.title}>
+                        {v.attempt?.exam?.title}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-1 pt-0.5">
-                    <span className={`px-2 py-0.5 border text-[10px] font-bold rounded-lg ${getViolationBadgeColor(v.type)}`}>
-                      {getViolationLabel(v.type)}
-                    </span>
-                    <span className="text-[10px] text-slate-500 dark:text-gray-400 font-mono truncate max-w-[110px]" title={v.attempt?.exam?.title}>
-                      {v.attempt?.exam?.title}
-                    </span>
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-slate-500 dark:text-gray-500 text-xs font-medium">
+                  Belum ada insiden proctoring tercatat
                 </div>
-              ))
+              )
             ) : (
-              <div className="text-center py-12 text-slate-500 dark:text-gray-500 text-xs font-medium">
-                Belum ada insiden proctoring tercatat
-              </div>
+              realtimeActivities.length > 0 ? (
+                realtimeActivities.map((act, idx) => (
+                  <div key={idx} className="p-3 bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 rounded-2xl space-y-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 dark:text-white truncate max-w-[150px]">
+                        {act.user}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">{act.time}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-gray-300">{act.action}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-slate-500 dark:text-gray-500 text-xs font-medium">
+                  Belum ada aktivitas realtime tercatat saat ini.
+                </div>
+              )
             )}
           </div>
         </div>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiClient } from '../../shared/api/client';
 import { toast } from '../../shared/context/ToastContext';
-import { Calendar, Plus, Edit, Trash2, X, Check } from 'lucide-react';
+import { Calendar, Plus, Edit, Trash2, X, Check, ChevronRight, BookOpen } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 
@@ -90,16 +91,44 @@ export const MasterTahunSoalPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Breadcrumb & Navigation */}
+      <div className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-gray-400">
+        <Link to="/super-admin/dashboard" className="hover:text-indigo-600 transition">Dashboard</Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <Link to="/super-admin/bank-soal" className="hover:text-indigo-600 transition flex items-center gap-1.5">
+          <BookOpen className="h-3.5 w-3.5" />
+          <span>Kelola Bank Soal</span>
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <span className="text-slate-900 dark:text-white">Referensi Tahun Soal</span>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Master Tahun Soal</h1>
-          <p className="text-sm text-slate-500 dark:text-gray-400 mt-1">Kelola referensi tahun soal untuk bank soal (contoh: 2024, 2025, 2026/2027)</p>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md">
+              <Calendar className="h-6 w-6" />
+            </div>
+            <span>Referensi Tahun Soal</span>
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-gray-400 mt-1">
+            Pengelolaan referensi tahun soal untuk modul Bank Soal (contoh: 2024, 2025, 2026/2027)
+          </p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition">
-          <Plus className="h-4 w-4" />
-          <span>Tambah Tahun</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/super-admin/bank-soal"
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-gray-200 text-xs font-bold rounded-xl transition"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span>Lihat Bank Soal</span>
+          </Link>
+          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition">
+            <Plus className="h-4 w-4" />
+            <span>Tambah Tahun Soal</span>
+          </button>
+        </div>
       </div>
 
       {/* Table */}

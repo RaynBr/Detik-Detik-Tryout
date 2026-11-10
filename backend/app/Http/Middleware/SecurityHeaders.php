@@ -15,11 +15,13 @@ class SecurityHeaders
     {
         $response = $next($request);
 
-        // Standard OWASP Security Headers
+        // Standard OWASP Security Headers (Temuan 19)
         $response->headers->set('X-Frame-Options', 'SAMEORIGIN');
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+        $response->headers->set('Cross-Origin-Opener-Policy', 'same-origin');
+        $response->headers->set('Cross-Origin-Resource-Policy', 'same-origin');
 
         // Content Security Policy (allows self, fonts, and local dev network connections)
         $csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; "

@@ -38,7 +38,7 @@ export const TeacherLayout: React.FC = () => {
   const menuItems = [
     { name: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
     { name: 'Bank Soal', path: '/teacher/questions', icon: BookOpen },
-    { name: 'Paket TryOut & Ujian', path: '/teacher/exams', icon: Calendar },
+    { name: 'Jadwal Ujian', path: '/teacher/exams', icon: Calendar },
     { name: 'Laporan Nilai Siswa', path: '/teacher/reports', icon: BarChart3 },
     { name: 'Profil & Keamanan', path: '/teacher/profile', icon: UserCheck },
   ];

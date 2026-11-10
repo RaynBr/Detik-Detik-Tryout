@@ -6,7 +6,8 @@ import { CardGridSkeleton } from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../shared/context/ToastContext';
 import { 
   Sparkles, Plus, Edit2, Trash2, Calendar, Clock, Settings, Users, 
-  BookOpen, AlertCircle, X, Search, Folder, CheckCircle, ChevronDown, ChevronUp, BarChart3, Upload
+  BookOpen, AlertCircle, X, Search, Folder, CheckCircle, ChevronDown, ChevronUp, BarChart3, Upload,
+  Eye, Power, FileCheck, RefreshCw, ShieldAlert
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
@@ -51,6 +52,32 @@ export interface AcademicYear {
   is_active: boolean;
 }
 
+export interface ExamQuestionItem {
+  id: string;
+  idassessment_soal_pilgan: string;
+  urutan: number;
+  soal_text: string;
+  soal_gambar?: string | null;
+  pilihan_a_text?: string;
+  pilihan_a_gambar?: string | null;
+  pilihan_b_text?: string;
+  pilihan_b_gambar?: string | null;
+  pilihan_c_text?: string;
+  pilihan_c_gambar?: string | null;
+  pilihan_d_text?: string;
+  pilihan_d_gambar?: string | null;
+  pilihan_e_text?: string;
+  pilihan_e_gambar?: string | null;
+  jawaban?: string;
+  penjelasan_jawaban?: string;
+  tingkat_kesulitan?: string;
+  bab?: string;
+  source_type?: string;
+  is_annulled: boolean;
+  annulled_at?: string | null;
+  annulled_reason?: string | null;
+}
+
 interface Exam {
   id: number;
   title: string;
@@ -75,12 +102,18 @@ interface Exam {
   };
   kkm_score: number;
   status: string;
+  status_paket?: 'draft' | 'aktif' | 'terkunci' | 'selesai' | string;
+  status_aktif?: 'Y' | 'N' | string;
+  is_locked?: boolean;
+  locked_at?: string | null;
+  can_edit?: boolean;
   subject?: Subject;
   package?: QuestionPackage;
   questions?: any[];
   questions_count?: number;
   total_questions?: number;
   attempts_count?: number;
+  exam_groups_count?: number;
   exam_groups?: ExamGroup[];
 }
 
@@ -99,6 +132,162 @@ export const ExamsPage: React.FC = () => {
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
   const [activeExamForGroup, setActiveExamForGroup] = useState<Exam | null>(null);
+
+  // Detail Modal States (Requirement 2)
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedDetailExam, setSelectedDetailExam] = useState<Exam | null>(null);
+
+  // Manage Questions & Anulir Modal States (Requirement 4 & 8)
+  const [manageQuestionsModalOpen, setManageQuestionsModalOpen] = useState(false);
+  const [selectedExamForManage, setSelectedExamForManage] = useState<Exam | null>(null);
+  const [packageQuestions, setPackageQuestions] = useState<ExamQuestionItem[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+
+  // Anulir Modal States
+  const [annulModalOpen, setAnnulModalOpen] = useState(false);
+  const [questionToAnnul, setQuestionToAnnul] = useState<ExamQuestionItem | null>(null);
+  const [annulReason, setAnnulReason] = useState('');
+  const [submittingAnnul, setSubmittingAnnul] = useState(false);
+
+  // Add from Global Bank Modal States
+  const [addGlobalModalOpen, setAddGlobalModalOpen] = useState(false);
+  const [globalBankQuestions, setGlobalBankQuestions] = useState<any[]>([]);
+  const [loadingGlobalBank, setLoadingGlobalBank] = useState(false);
+  const [globalBankSearch, setGlobalBankSearch] = useState('');
+
+  const handleToggleExamStatus = async (exam: Exam) => {
+    try {
+      const res = await apiClient.patch(`/teacher/exams/${exam.id}/toggle-status`);
+      toast.success(res.data?.message || 'Status jadwal ujian berhasil diubah.');
+      if (selectedDetailExam && selectedDetailExam.id === exam.id) {
+        setSelectedDetailExam(prev => prev ? { ...prev, status: res.data.status } : null);
+      }
+      fetchData(currentPage);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mengubah status ujian.');
+    }
+  };
+
+  const handlePublishPackage = async (examId: number | string) => {
+    try {
+      const res = await apiClient.post(`/teacher/exams/${examId}/publish`);
+      toast.success(res.data?.message || 'Paket soal berhasil dipublikasikan dan berstatus AKTIF.');
+      fetchData(currentPage);
+      if (selectedExamForManage && selectedExamForManage.id === examId) {
+        setSelectedExamForManage(prev => prev ? { ...prev, status_paket: 'aktif', status_aktif: 'Y' } : null);
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mempublikasikan paket soal.');
+    }
+  };
+
+  const openManageQuestions = async (exam: Exam) => {
+    setSelectedExamForManage(exam);
+    setManageQuestionsModalOpen(true);
+    setLoadingQuestions(true);
+    try {
+      const res = await apiClient.get(`/teacher/exams/${exam.id}/questions`);
+      setPackageQuestions(res.data?.questions || []);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal memuat butir soal.');
+    } finally {
+      setLoadingQuestions(false);
+    }
+  };
+
+  const handleRemoveQuestion = async (soalId: string) => {
+    if (!selectedExamForManage) return;
+    if (!window.confirm('Apakah Anda yakin ingin menghapus butir soal ini dari paket?')) return;
+    try {
+      const res = await apiClient.delete(`/teacher/exams/${selectedExamForManage.id}/questions/${soalId}`);
+      toast.success(res.data?.message || 'Butir soal berhasil dihapus.');
+      const qRes = await apiClient.get(`/teacher/exams/${selectedExamForManage.id}/questions`);
+      setPackageQuestions(qRes.data?.questions || []);
+      fetchData(currentPage);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus butir soal.');
+    }
+  };
+
+  const handleReplaceQuestion = async (soalId: string) => {
+    if (!selectedExamForManage) return;
+    try {
+      const res = await apiClient.put(`/teacher/exams/${selectedExamForManage.id}/questions/${soalId}/replace`);
+      toast.success(res.data?.message || 'Soal berhasil diganti dengan butir baru dari Bank Soal Global.');
+      const qRes = await apiClient.get(`/teacher/exams/${selectedExamForManage.id}/questions`);
+      setPackageQuestions(qRes.data?.questions || []);
+      fetchData(currentPage);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal mengganti soal.');
+    }
+  };
+
+  const openAnnulModal = (question: ExamQuestionItem) => {
+    setQuestionToAnnul(question);
+    setAnnulReason('');
+    setAnnulModalOpen(true);
+  };
+
+  const handleConfirmAnnul = async () => {
+    if (!selectedExamForManage || !questionToAnnul) return;
+    if (!annulReason.trim()) {
+      toast.warning('Silakan masukkan alasan anulir soal.');
+      return;
+    }
+    setSubmittingAnnul(true);
+    try {
+      const res = await apiClient.post(`/teacher/exams/${selectedExamForManage.id}/questions/${questionToAnnul.id}/annul`, {
+        reason: annulReason.trim()
+      });
+      toast.success(res.data?.message || 'Soal berhasil dianulir.');
+      setAnnulModalOpen(false);
+      setAnnulReason('');
+      setQuestionToAnnul(null);
+      const qRes = await apiClient.get(`/teacher/exams/${selectedExamForManage.id}/questions`);
+      setPackageQuestions(qRes.data?.questions || []);
+      fetchData(currentPage);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal menganulir butir soal.');
+    } finally {
+      setSubmittingAnnul(false);
+    }
+  };
+
+  const openAddGlobalModal = async () => {
+    if (!selectedExamForManage) return;
+    setAddGlobalModalOpen(true);
+    setLoadingGlobalBank(true);
+    try {
+      const res = await apiClient.get('/teacher/questions', {
+        params: {
+          idmapel: selectedExamForManage.subject_id,
+          source_type: 'nasional',
+          all: true
+        }
+      });
+      setGlobalBankQuestions(Array.isArray(res.data) ? res.data : (res.data?.data || []));
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal memuat Bank Soal Global.');
+    } finally {
+      setLoadingGlobalBank(false);
+    }
+  };
+
+  const handleSelectGlobalQuestion = async (globalSoalId: string | number) => {
+    if (!selectedExamForManage) return;
+    try {
+      const res = await apiClient.post(`/teacher/exams/${selectedExamForManage.id}/questions/add-global`, {
+        idsoal_global: globalSoalId
+      });
+      toast.success(res.data?.message || 'Soal berhasil ditambahkan ke paket.');
+      setAddGlobalModalOpen(false);
+      const qRes = await apiClient.get(`/teacher/exams/${selectedExamForManage.id}/questions`);
+      setPackageQuestions(qRes.data?.questions || []);
+      fetchData(currentPage);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal menambahkan butir soal.');
+    }
+  };
 
   // Exam Form States
   const [title, setTitle] = useState('');
@@ -550,17 +739,17 @@ export const ExamsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header Bar */}
+      {/* Header Bar (Requirement 1: Jadwal Ujian) */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <div className="p-2 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-200 dark:border-cyan-500/30">
               <Calendar className="h-6 w-6" />
             </div>
-            <span>Manajemen Paket Ujian</span>
+            <span>Jadwal Ujian</span>
           </h1>
           <p className="text-xs md:text-sm text-slate-500 dark:text-gray-400 mt-1 font-medium">
-            Buat jadwal ujian instan dengan memilih berkas paket soal dan atur gelombang sesi pengerjaan siswa.
+            Kelola jadwal ujian, waktu pengerjaan, KKM, dan gelombang sesi pelaksanaan tryout/ujian CBT.
           </p>
         </div>
 
@@ -578,7 +767,7 @@ export const ExamsPage: React.FC = () => {
             className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30 self-start md:self-auto"
           >
             <Plus className="h-4 w-4" />
-            <span>Buat Paket Manual</span>
+            <span>Buat Jadwal Ujian</span>
           </button>
         </div>
       </div>
@@ -613,19 +802,34 @@ export const ExamsPage: React.FC = () => {
                     )}
                   </div>
                   
-                  <div className="flex items-center gap-1.5">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      exam.status === 'published' 
-                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/30' 
-                        : exam.status === 'closed'
-                        ? 'bg-rose-100 text-rose-700 border border-rose-300 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30'
-                        : 'bg-amber-100 text-amber-700 border border-amber-300 dark:bg-yellow-500/10 dark:text-yellow-400 dark:border-yellow-500/30'
-                    }`}>
-                      {exam.status}
-                    </span>
-                    {(exam.attempts_count ?? 0) > 0 && (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 text-[10px] font-bold rounded-full">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Status Paket Lifecycle Badge */}
+                    {exam.status_paket === 'draft' ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 dark:bg-yellow-500/10 dark:text-yellow-400 dark:border-yellow-500/30">
+                        Draft
+                      </span>
+                    ) : (exam.is_locked || (exam.attempts_count ?? 0) > 0) ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30">
+                        Terkunci
+                      </span>
+                    ) : exam.status_paket === 'aktif' || exam.status === 'published' ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/30">
+                        Aktif
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-300 dark:bg-white/10 dark:text-gray-300">
+                        {exam.status}
+                      </span>
+                    )}
+
+                    {/* Editability Indicator Badge */}
+                    {(exam.is_locked || (exam.attempts_count ?? 0) > 0) ? (
+                      <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20 text-[10px] font-bold rounded-full">
                         🔒 Terkunci ({exam.attempts_count} Peserta)
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 text-[10px] font-bold rounded-full">
+                        ✓ Bisa Diedit
                       </span>
                     )}
                   </div>
@@ -641,7 +845,7 @@ export const ExamsPage: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <BookOpen className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    <span>{exam.questions_count ?? exam.total_questions ?? exam.questions?.length ?? 50} Soal Terpasang</span>
+                    <span>{exam.questions_count ?? exam.total_questions ?? exam.questions?.length ?? 50} Butir Soal</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Settings className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -658,11 +862,11 @@ export const ExamsPage: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Users className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
-                      <span>Gelombang Sesi ({exam.exam_groups?.length || 0})</span>
+                      <span>Jadwal Sesi ({exam.exam_groups?.length || 0})</span>
                     </span>
                     <button
                       onClick={() => openGroupModal(exam)}
-                      className="text-[11px] text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 font-bold flex items-center gap-1 transition btn-press"
+                      className="text-[11px] text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 font-bold flex items-center gap-1 transition btn-press cursor-pointer"
                     >
                       <Plus className="h-3 w-3" />
                       <span>Tambah Sesi</span>
@@ -684,7 +888,7 @@ export const ExamsPage: React.FC = () => {
                           </div>
                           <button
                             onClick={() => handleDeleteGroup(group.id)}
-                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg btn-press"
+                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg btn-press cursor-pointer"
                             title="Hapus Sesi"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -694,31 +898,79 @@ export const ExamsPage: React.FC = () => {
                     </div>
                   ) : (
                     <p className="text-[11px] text-slate-500 dark:text-gray-500 italic bg-slate-50 dark:bg-white/[0.01] p-2.5 rounded-2xl border border-dashed border-slate-200 dark:border-white/5 font-medium">
-                      Belum ada gelombang sesi. Buat sesi untuk mengatur jadwal & siswa peserta.
+                      Belum ada sesi ujian. Buat sesi untuk mengatur jadwal & siswa peserta.
                     </p>
                   )}
                 </div>
               </div>
 
               {/* Actions Footer */}
-              <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex gap-2">
+              <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex flex-wrap gap-2">
+                {/* Review & Kelola Soal Button */}
+                <button
+                  onClick={() => openManageQuestions(exam)}
+                  className="flex-1 min-w-[120px] flex justify-center items-center gap-1.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-600/10 dark:hover:bg-indigo-600/20 border border-indigo-200 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold transition shadow-xs btn-press cursor-pointer"
+                  title="Review butir soal, ganti/tambah dari Bank Global, atau anulir soal"
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  <span>Kelola Soal</span>
+                </button>
+
+                {/* Quick Publish button for DRAFT packages */}
+                {exam.status_paket === 'draft' && (
+                  <button
+                    onClick={() => handlePublishPackage(exam.id)}
+                    className="flex-1 min-w-[110px] flex justify-center items-center gap-1.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs btn-press cursor-pointer"
+                    title="Publikasikan paket soal ini agar siap dijadwalkan"
+                  >
+                    <FileCheck className="h-3.5 w-3.5" />
+                    <span>Publikasikan</span>
+                  </button>
+                )}
+
+                {/* Quick Annul button if exam is locked */}
+                {(exam.is_locked || (exam.attempts_count ?? 0) > 0) && (
+                  <button
+                    onClick={() => openManageQuestions(exam)}
+                    className="flex-1 min-w-[100px] flex justify-center items-center gap-1.5 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-600/10 dark:hover:bg-rose-600/20 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-400 rounded-xl text-xs font-bold transition shadow-xs btn-press cursor-pointer"
+                    title="Anulir soal cacat/keliru (skor siswa otomatis dihitung ulang)"
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    <span>Anulir Soal</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    setSelectedDetailExam(exam);
+                    setDetailModalOpen(true);
+                  }}
+                  className="flex-1 min-w-[80px] flex justify-center items-center gap-1.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300 rounded-xl text-xs font-bold transition shadow-xs btn-press cursor-pointer"
+                  title="Detail Lengkap Jadwal Ujian"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  <span>Detail</span>
+                </button>
+
                 <button
                   onClick={() => navigate(`/teacher/reports?exam_id=${exam.id}`)}
-                  className="flex-1 flex justify-center items-center gap-1.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-600/10 dark:hover:bg-indigo-600/20 border border-indigo-200 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-400 rounded-xl text-xs font-bold transition shadow-xs btn-press"
+                  className="flex-1 min-w-[80px] flex justify-center items-center gap-1.5 py-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-gray-300 rounded-xl text-xs font-bold transition shadow-xs btn-press cursor-pointer"
                 >
                   <BarChart3 className="h-3.5 w-3.5" />
                   <span>Laporan</span>
                 </button>
+
                 <button
                   onClick={() => openEditModal(exam)}
-                  className="flex-1 flex justify-center items-center gap-1.5 py-2.5 bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-600/10 dark:hover:bg-cyan-600/20 border border-cyan-200 dark:border-cyan-500/20 text-cyan-700 dark:text-cyan-400 rounded-xl text-xs font-bold transition shadow-xs btn-press"
+                  className="flex-1 min-w-[70px] flex justify-center items-center gap-1.5 py-2.5 bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-600/10 dark:hover:bg-cyan-600/20 border border-cyan-200 dark:border-cyan-500/20 text-cyan-700 dark:text-cyan-400 rounded-xl text-xs font-bold transition shadow-xs btn-press cursor-pointer"
                 >
                   <Edit2 className="h-3.5 w-3.5" />
                   <span>Edit</span>
                 </button>
+
                 <button
                   onClick={() => handleDeleteExam(exam.id)}
-                  className="p-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-600/10 dark:hover:bg-rose-600/20 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-400 rounded-xl text-xs font-bold transition shadow-xs btn-press"
+                  className="p-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-600/10 dark:hover:bg-rose-600/20 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-400 rounded-xl text-xs font-bold transition shadow-xs btn-press cursor-pointer"
                   title="Hapus Ujian"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -799,11 +1051,14 @@ export const ExamsPage: React.FC = () => {
                   className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm bg-white dark:bg-[#0f172a] font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">-- Pilih Berkas Paket Soal --</option>
-                  {packages.map((pkg) => (
-                    <option key={pkg.id} value={pkg.id}>
-                      [{pkg.code}] {pkg.title} — ({pkg.questions_count ?? pkg.total_questions ?? 0} Soal - {pkg.subject?.name})
-                    </option>
-                  ))}
+                  {packages.map((pkg: any) => {
+                    const isDraft = pkg.status_paket === 'draft';
+                    return (
+                      <option key={pkg.id} value={pkg.id} disabled={isDraft}>
+                        [{pkg.code}] {pkg.title} — ({pkg.questions_count ?? pkg.total_questions ?? 0} Soal - {pkg.subject?.name}) {isDraft ? '— [DRAFT: Wajib Dipublikasikan]' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
 
                 {selectedPackageObj && (
@@ -1520,6 +1775,555 @@ export const ExamsPage: React.FC = () => {
                   Tutup
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= DETAIL JADWAL UJIAN MODAL (Requirement 2) ================= */}
+      {detailModalOpen && selectedDetailExam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-2xl glass-panel rounded-3xl p-6 sm:p-7 border border-slate-200 dark:border-white/10 shadow-2xl relative animate-scale-up max-h-[90vh] flex flex-col">
+            <button
+              onClick={() => setDetailModalOpen(false)}
+              className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl transition cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 mb-4 shrink-0">
+              <div className="p-3 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-200 dark:border-cyan-500/20">
+                <Calendar className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                    {selectedDetailExam.title}
+                  </h3>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                    selectedDetailExam.status === 'published'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      : selectedDetailExam.status === 'draft'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                      : 'bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300'
+                  }`}>
+                    {selectedDetailExam.status === 'published' ? 'Aktif (Published)' : selectedDetailExam.status === 'draft' ? 'Draf' : 'Ditutup'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
+                  Mata Pelajaran: <strong>{selectedDetailExam.subject?.name || 'Umum'}</strong> ({selectedDetailExam.subject?.code || '-'}) • ID Jadwal: #{selectedDetailExam.id}
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
+              {/* Exam Info Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Durasi Pengerjaan</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
+                    {selectedDetailExam.duration_minutes ? `${selectedDetailExam.duration_minutes} Menit` : 'Tanpa Batas'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Ambang Batas KKM</span>
+                  <span className="text-sm font-black text-cyan-600 dark:text-cyan-400 mt-0.5 block">
+                    {selectedDetailExam.kkm_score || 75} Poin
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Jumlah Butir Soal</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
+                    {selectedDetailExam.questions_count ?? selectedDetailExam.total_questions ?? selectedDetailExam.questions?.length ?? 50} Soal
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 sm:col-span-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Rentang Waktu Pelaksanaan</span>
+                  <span className="text-xs font-bold text-slate-800 dark:text-gray-200 mt-1 block">
+                    {new Date(selectedDetailExam.start_time).toLocaleString('id-ID')} s.d. {new Date(selectedDetailExam.end_time).toLocaleString('id-ID')}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Tahun Ajaran</span>
+                  <span className="text-xs font-bold text-slate-800 dark:text-gray-200 mt-1 block">
+                    {selectedDetailExam.academic_year?.name || '2026/2027'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Sesi Gelombang Section */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Users className="h-4 w-4 text-cyan-600" />
+                    <span>Daftar Sesi Gelombang ({selectedDetailExam.exam_groups?.length || 0})</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      setDetailModalOpen(false);
+                      openGroupModal(selectedDetailExam);
+                    }}
+                    className="text-[11px] text-cyan-600 font-bold hover:underline"
+                  >
+                    + Tambah Sesi
+                  </button>
+                </div>
+                {selectedDetailExam.exam_groups && selectedDetailExam.exam_groups.length > 0 ? (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {selectedDetailExam.exam_groups.map((g) => (
+                      <div key={g.id} className="p-2.5 rounded-xl bg-white dark:bg-black/20 border border-slate-200 dark:border-white/5 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-bold text-slate-900 dark:text-white mr-2">{g.name}</span>
+                          <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 font-bold">Token: {g.token || 'AKTIF'}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(g.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} - {new Date(g.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic text-[11px]">Belum ada sesi gelombang yang dibuat.</p>
+                )}
+              </div>
+
+              {/* Anti Cheat & Exam Rules */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 space-y-2">
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">Konfigurasi Sistem & Anti-Cheat:</span>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div>Acak Soal: <strong className={selectedDetailExam.settings?.shuffle_questions ? 'text-emerald-600' : 'text-slate-500'}>{selectedDetailExam.settings?.shuffle_questions ? 'Aktif' : 'Nonaktif'}</strong></div>
+                  <div>Acak Opsi: <strong className={selectedDetailExam.settings?.shuffle_options ? 'text-emerald-600' : 'text-slate-500'}>{selectedDetailExam.settings?.shuffle_options ? 'Aktif' : 'Nonaktif'}</strong></div>
+                  <div>Boleh Lompat Soal: <strong className={selectedDetailExam.settings?.allow_backtrack ? 'text-emerald-600' : 'text-rose-500'}>{selectedDetailExam.settings?.allow_backtrack ? 'Ya' : 'Linear (Dilarang Kembali)'}</strong></div>
+                  <div>Maksimal Pindah Tab: <strong className="text-indigo-600">{selectedDetailExam.settings?.max_tab_switches ?? 5} Kali</strong></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer (Requirement 2) */}
+            <div className="pt-4 mt-3 border-t border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleToggleExamStatus(selectedDetailExam)}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer ${
+                  selectedDetailExam.status === 'published'
+                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 border border-amber-200 dark:border-amber-500/20'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-500/20'
+                }`}
+              >
+                <Power className="h-3.5 w-3.5" />
+                <span>{selectedDetailExam.status === 'published' ? 'Ubah ke Draf / Nonaktif' : 'Aktifkan (Publish Ujian)'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailModalOpen(false);
+                    navigate(`/teacher/reports?exam_id=${selectedDetailExam.id}`);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 rounded-xl text-xs font-bold transition shadow-xs"
+                >
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  <span>Buka Laporan</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailModalOpen(false);
+                    openEditModal(selectedDetailExam);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                  <span>Edit Jadwal</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDetailModalOpen(false)}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KELOLA BUTIR SOAL (REVIEW, DRAFT, ANULIR, GANTI) */}
+      {manageQuestionsModalOpen && selectedExamForManage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col my-8 animate-scale-up overflow-hidden">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-start justify-between bg-slate-50/50 dark:bg-white/[0.02]">
+              <div>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400">
+                    {selectedExamForManage.subject?.name || 'Mata Pelajaran'}
+                  </span>
+                  {selectedExamForManage.status_paket === 'draft' ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
+                      Status: DRAFT (Bisa Diedit Bebas)
+                    </span>
+                  ) : (selectedExamForManage.is_locked || (selectedExamForManage.attempts_count ?? 0) > 0) ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-400">
+                      Status: TERKUNCI ({selectedExamForManage.attempts_count} Siswa Ujian)
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
+                      Status: AKTIF (Siap Dijadwalkan)
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-500 dark:text-gray-400 font-medium">
+                    Total: {packageQuestions.length} Butir Soal
+                  </span>
+                </div>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                  Kelola Butir Soal: {selectedExamForManage.title}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-gray-400 mt-1">
+                  {(selectedExamForManage.is_locked || (selectedExamForManage.attempts_count ?? 0) > 0)
+                    ? 'Paket terkunci karena sudah ada siswa yang mengerjakan. Anda dapat melakukan Anulir Soal jika ditemukan butir soal cacat/salah.'
+                    : 'Anda dapat meninjau butir soal, menghapus butir, mengganti atau menambah butir dari Bank Soal Global sebelum mempublikasikannya.'}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setManageQuestionsModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Sub-toolbar */}
+            <div className="px-6 py-3 bg-slate-100/50 dark:bg-white/[0.01] border-b border-slate-200 dark:border-white/5 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                {!(selectedExamForManage.is_locked || (selectedExamForManage.attempts_count ?? 0) > 0) && (
+                  <button
+                    onClick={openAddGlobalModal}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Tambah Butir dari Bank Soal Global</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {selectedExamForManage.status_paket === 'draft' && (
+                  <button
+                    onClick={() => handlePublishPackage(selectedExamForManage.id)}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                  >
+                    <FileCheck className="h-3.5 w-3.5" />
+                    <span>Publikasikan Paket Soal (Aktifkan)</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Questions List */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {loadingQuestions ? (
+                <div className="text-center py-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent mx-auto mb-3" />
+                  <p className="text-xs font-medium text-slate-500">Memuat butir soal paket...</p>
+                </div>
+              ) : packageQuestions.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 dark:text-gray-400">
+                  <BookOpen className="h-10 w-10 mx-auto text-slate-400 mb-2 opacity-50" />
+                  <p className="text-sm font-bold">Belum ada butir soal dalam paket ini.</p>
+                  <p className="text-xs mt-1">Gunakan tombol "Tambah Butir dari Bank Soal Global" di atas.</p>
+                </div>
+              ) : (
+                packageQuestions.map((q, idx) => (
+                  <div
+                    key={q.idassessment_soal_pilgan}
+                    className={`p-5 rounded-2xl border transition ${
+                      q.is_annulled
+                        ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900/40 opacity-80'
+                        : 'bg-white dark:bg-slate-800/60 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-lg text-xs font-black bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                          No. {q.urutan || (idx + 1)}
+                        </span>
+                        {q.is_annulled ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-xs">
+                            DIANULIR
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-gray-300">
+                            {q.tingkat_kesulitan || 'Sedang'}
+                          </span>
+                        )}
+                        {q.is_annulled && q.annulled_reason && (
+                          <span className="text-xs font-medium text-rose-700 dark:text-rose-400 italic">
+                            Alasan Anulir: "{q.annulled_reason}"
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Question Actions */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {!(selectedExamForManage.is_locked || (selectedExamForManage.attempts_count ?? 0) > 0) ? (
+                          <>
+                            <button
+                              onClick={() => handleReplaceQuestion(q.idassessment_soal_pilgan)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg border border-indigo-200 dark:border-indigo-500/20 transition cursor-pointer"
+                              title="Ganti soal ini dengan soal alternatif dari Bank Soal Global"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              <span>Ganti Soal</span>
+                            </button>
+                            <button
+                              onClick={() => handleRemoveQuestion(q.idassessment_soal_pilgan)}
+                              className="p-1 text-rose-600 hover:text-rose-700 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                              title="Hapus soal ini dari paket"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        ) : (
+                          !q.is_annulled && (
+                            <button
+                              onClick={() => openAnnulModal(q)}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+                              title="Anulir butir soal ini jika terdapat kesalahan"
+                            >
+                              <ShieldAlert className="h-3 w-3" />
+                              <span>Anulir Soal</span>
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Question Content */}
+                    <div className="text-sm text-slate-800 dark:text-gray-200 font-medium mb-3 prose dark:prose-invert max-w-none">
+                      <LaTeXRenderer text={q.soal_text || '-'} />
+                    </div>
+
+                    {/* Options Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                      {[
+                        { key: 'A', text: q.pilihan_a_text },
+                        { key: 'B', text: q.pilihan_b_text },
+                        { key: 'C', text: q.pilihan_c_text },
+                        { key: 'D', text: q.pilihan_d_text },
+                        { key: 'E', text: q.pilihan_e_text },
+                      ].map((opt) => {
+                        if (!opt.text) return null;
+                        const isCorrectKey = (q.jawaban || '').trim().toUpperCase() === opt.key;
+                        return (
+                          <div
+                            key={opt.key}
+                            className={`p-2.5 rounded-xl border flex items-start gap-2 ${
+                              isCorrectKey
+                                ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-600/40 text-emerald-900 dark:text-emerald-200 font-bold'
+                                : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 text-slate-700 dark:text-gray-300'
+                            }`}
+                          >
+                            <span className={`px-1.5 py-0.5 rounded font-black text-[10px] ${
+                              isCorrectKey
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-gray-200'
+                            }`}>
+                              {opt.key}
+                            </span>
+                            <div className="flex-1">
+                              <LaTeXRenderer text={opt.text} />
+                            </div>
+                            {isCorrectKey && (
+                              <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">
+                                (Kunci)
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] flex justify-end">
+              <button
+                onClick={() => setManageQuestionsModalOpen(false)}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Selesai / Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ANULIR SOAL */}
+      {annulModalOpen && questionToAnnul && selectedExamForManage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-rose-300 dark:border-rose-900/50 shadow-2xl w-full max-w-lg p-6 animate-scale-up">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <div className="p-3 bg-rose-100 dark:bg-rose-950/40 rounded-2xl">
+                <ShieldAlert className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  Anulir Butir Soal Nomor {questionToAnnul.urutan}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-gray-400">
+                  Pembatalan soal yang cacat / keliru pada paket terkunci
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 p-3.5 rounded-2xl text-xs text-amber-900 dark:text-amber-200 mb-4 leading-relaxed">
+              <p className="font-bold mb-1">Penting:</p>
+              <ul className="list-disc list-inside space-y-1 text-[11px]">
+                <li>Soal nomor {questionToAnnul.urutan} akan dikeluarkan dari pembagi penilaian.</li>
+                <li>Seluruh nilai peserta yang telah mengumpulkan ujian akan dihitung ulang secara otomatis tanpa butir ini.</li>
+                <li>Rekaman lembar jawaban siswa tetap tersimpan untuk audit integritas.</li>
+              </ul>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
+                Alasan Anulir Soal <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={annulReason}
+                onChange={(e) => setAnnulReason(e.target.value)}
+                placeholder="Contoh: Kunci jawaban ganda / teks soal tidak lengkap / salah gambar..."
+                rows={3}
+                className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-slate-800 dark:text-white"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setAnnulModalOpen(false)}
+                disabled={submittingAnnul}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAnnul}
+                disabled={submittingAnnul || !annulReason.trim()}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-rose-600/20 disabled:opacity-50 cursor-pointer"
+              >
+                {submittingAnnul ? 'Menganulir...' : 'Ya, Anulir Soal Ini'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH SOAL DARI BANK SOAL GLOBAL */}
+      {addGlobalModalOpen && selectedExamForManage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-scale-up overflow-hidden">
+            <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  Pilih Butir dari Bank Soal Global
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-gray-400">
+                  Mata Pelajaran: {selectedExamForManage.subject?.name || 'Umum'} (Sumber: Super Admin Platform)
+                </p>
+              </div>
+              <button
+                onClick={() => setAddGlobalModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 border-b border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01]">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={globalBankSearch}
+                  onChange={(e) => setGlobalBankSearch(e.target.value)}
+                  placeholder="Cari berdasarkan teks soal atau bab..."
+                  className="w-full pl-10 pr-4 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+              {loadingGlobalBank ? (
+                <div className="text-center py-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent mx-auto mb-3" />
+                  <p className="text-xs text-slate-500">Memuat Bank Soal Global...</p>
+                </div>
+              ) : globalBankQuestions.length === 0 ? (
+                <p className="text-center py-12 text-xs text-slate-500">
+                  Tidak ada butir soal di Bank Soal Global untuk mata pelajaran ini.
+                </p>
+              ) : (
+                globalBankQuestions
+                  .filter((q: any) => {
+                    const text = (q.soal_text || q.content || '').toLowerCase();
+                    const bab = (q.bab || q.topic || '').toLowerCase();
+                    const s = globalBankSearch.toLowerCase();
+                    return text.includes(s) || bab.includes(s);
+                  })
+                  .slice(0, 50)
+                  .map((q: any) => (
+                    <div
+                      key={q.idassessment_soal_pilgan || q.id}
+                      className="p-4 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] flex items-center justify-between gap-4"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400">
+                            {q.bab || q.topic || 'Umum'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300">
+                            {q.tingkat_kesulitan || 'Sedang'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-800 dark:text-gray-200 font-medium line-clamp-2">
+                          {q.soal_text || q.content}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => handleSelectGlobalQuestion(q.idassessment_soal_pilgan || q.id)}
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs shrink-0 cursor-pointer"
+                      >
+                        Pilih Soal
+                      </button>
+                    </div>
+                  ))
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] flex justify-end">
+              <button
+                onClick={() => setAddGlobalModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

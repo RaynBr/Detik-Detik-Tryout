@@ -7,12 +7,13 @@ interface ThemeContextType {
   themeMode: ThemeMode;
   resolvedTheme: ResolvedTheme;
   setThemeMode: (mode: ThemeMode) => void;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Default to 'light' per user preference, or load saved setting
+  // Hanya simpan 2 nilai: 'light' atau 'dark' (default 'light')
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem('cbt_theme_mode');
     if (saved === 'dark' || saved === 'light') {
@@ -46,8 +47,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setThemeModeState(mode);
   };
 
+  const toggleTheme = () => {
+    setThemeModeState(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   return (
-    <ThemeContext.Provider value={{ themeMode, resolvedTheme, setThemeMode }}>
+    <ThemeContext.Provider value={{ themeMode, resolvedTheme, setThemeMode, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

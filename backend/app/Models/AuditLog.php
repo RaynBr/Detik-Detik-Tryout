@@ -29,6 +29,95 @@ class AuditLog extends Model
         'updated_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'device_browser',
+        'human_description',
+    ];
+
+    /**
+     * Parse browser and device from User-Agent string
+     */
+    public function getDeviceBrowserAttribute(): string
+    {
+        $ua = $this->user_agent ?? '';
+        if (empty($ua)) return 'Perangkat Tidak Diketahui';
+
+        $os = 'Perangkat Lain';
+        if (stripos($ua, 'Windows NT 10.0') !== false) $os = 'Windows 10/11';
+        elseif (stripos($ua, 'Windows NT 6.3') !== false) $os = 'Windows 8.1';
+        elseif (stripos($ua, 'Windows') !== false) $os = 'Windows';
+        elseif (stripos($ua, 'Macintosh') !== false || stripos($ua, 'Mac OS') !== false) $os = 'macOS';
+        elseif (stripos($ua, 'iPhone') !== false) $os = 'iPhone (iOS)';
+        elseif (stripos($ua, 'iPad') !== false) $os = 'iPad (iPadOS)';
+        elseif (stripos($ua, 'Android') !== false) $os = 'Android';
+        elseif (stripos($ua, 'Linux') !== false) $os = 'Linux';
+
+        $browser = 'Browser';
+        if (stripos($ua, 'Edg/') !== false) $browser = 'Microsoft Edge';
+        elseif (stripos($ua, 'Chrome/') !== false) $browser = 'Google Chrome';
+        elseif (stripos($ua, 'Firefox/') !== false) $browser = 'Mozilla Firefox';
+        elseif (stripos($ua, 'Safari/') !== false) $browser = 'Apple Safari';
+        elseif (stripos($ua, 'Opera') !== false || stripos($ua, 'OPR/') !== false) $browser = 'Opera';
+
+        return "{$browser} pada {$os}";
+    }
+
+    /**
+     * Produce human-friendly Indonesian description
+     */
+    public function getHumanDescriptionAttribute(): string
+    {
+        $roleTitle = match($this->user_role) {
+            'super_admin' => 'Super Administrator',
+            'admin' => 'Admin Instansi',
+            'guru' => 'Guru',
+            'siswa' => 'Siswa',
+            default => ucfirst((string)$this->user_role)
+        };
+
+        $actor = "{$roleTitle} ({$this->user_name})";
+        $target = $this->target_label ?: ($this->target_type ?: 'data');
+
+        if (str_contains($this->action, 'LOGIN')) {
+            return "{$actor} berhasil masuk ke sistem melalui {$this->device_browser}";
+        }
+        if (str_contains($this->action, 'LOGOUT')) {
+            return "{$actor} keluar dari sesi akun";
+        }
+        if (str_contains($this->action, 'CREATE') || str_contains($this->action, 'TAMBAH')) {
+            return "{$actor} menambahkan data baru: {$target}";
+        }
+        if (str_contains($this->action, 'UPDATE') || str_contains($this->action, 'EDIT') || str_contains($this->action, 'UBAH')) {
+            $meta = $this->metadata;
+            if (is_array($meta) && isset($meta['before']) && isset($meta['after'])) {
+                $changes = [];
+                foreach ($meta['after'] as $k => $v) {
+                    $b = $meta['before'][$k] ?? '-';
+                    $changes[] = "{$k} dari '{$b}' menjadi '{$v}'";
+                }
+                return "{$actor} mengubah {$target}: " . implode(', ', $changes);
+            }
+            return "{$actor} mengubah rincian data: {$target}";
+        }
+        if (str_contains($this->action, 'DELETE') || str_contains($this->action, 'HAPUS')) {
+            return "{$actor} menghapus data: {$target}";
+        }
+        if (str_contains($this->action, 'START_EXAM') || str_contains($this->action, 'MULAI_UJIAN')) {
+            return "{$actor} mulai mengerjakan ujian: {$target}";
+        }
+        if (str_contains($this->action, 'SUBMIT_EXAM') || str_contains($this->action, 'SELESAI_UJIAN')) {
+            return "{$actor} menyelesaikan dan mengirimkan lembar jawaban: {$target}";
+        }
+        if (str_contains($this->action, 'IMPORT')) {
+            return "{$actor} melakukan import berkas ke: {$target}";
+        }
+        if (str_contains($this->action, 'EXPORT')) {
+            return "{$actor} mengunduh berkas laporan/data: {$target}";
+        }
+
+        return "{$actor} melakukan aksi {$this->action} pada {$target}";
+    }
+
     /**
      * Quick helper to record an audit entry
      */
