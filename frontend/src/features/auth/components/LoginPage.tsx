@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { ThemeToggle } from '../../../shared/components/ThemeToggle';
+import { BrandLogo } from '../../../shared/components/BrandLogo';
 import { 
   LogIn, User, ShieldAlert, GraduationCap, Eye, EyeOff, 
   ArrowLeft, ShieldCheck, Building2, BookOpen, RefreshCw 
@@ -119,14 +120,8 @@ export const LoginPage: React.FC = () => {
       <div className="w-full max-w-md bg-white dark:bg-[#1A1E22] rounded-xl shadow-[5px_5px_0px_0px_#171717] dark:shadow-[5px_5px_0px_0px_#000000] p-6 sm:p-8 relative border-2 border-[#161C2D] dark:border-[#32363A]">
         
         {/* Brand Header */}
-        <div className="text-center mb-6 relative">
-          <div className="inline-flex items-center justify-center p-3.5 bg-[#38B1ED] text-white rounded-xl mb-2.5 border-2 border-[#161C2D] dark:border-[#38B1ED] shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000]">
-            <GraduationCap className="h-8 w-8 stroke-[2.5]" />
-          </div>
-          <h1 className="text-2xl font-black tracking-tight text-[#161C2D] dark:text-white">Detik Detik TryOut</h1>
-          <p className="text-[#5D6371] dark:text-gray-400 text-xs mt-0.5 font-semibold">
-            Platform CBT & Simulasi Ujian Terpadu
-          </p>
+        <div className="text-center mb-6 relative flex flex-col items-center">
+          <BrandLogo showSubtitle={true} imgClassName="h-14 sm:h-16 w-auto" />
 
           {/* Role Status Badge & Switcher */}
           <div className="mt-4 flex items-center justify-center gap-2">

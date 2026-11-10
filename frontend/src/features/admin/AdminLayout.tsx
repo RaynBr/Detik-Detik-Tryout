@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../shared/context/AuthContext';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
+import { BrandLogo } from '../../shared/components/BrandLogo';
 import { 
   LayoutDashboard, 
   GraduationCap, 
@@ -106,16 +107,11 @@ export const AdminLayout: React.FC = () => {
         {/* Header Sidebar & Collapse Toggle */}
         {!isCollapsed ? (
           <div className="flex items-center justify-between gap-2 mb-8 px-1">
-            <div className="flex items-center gap-3 overflow-hidden min-w-0">
-              <div className="p-2.5 bg-[#38B1ED] text-white rounded-xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000] shrink-0">
-                <School className="h-6 w-6 stroke-[2.5]" />
-              </div>
-              <div className="overflow-hidden">
-                <h1 className="font-black text-sm tracking-tight text-[#161C2D] dark:text-white truncate">Detik Detik TryOut</h1>
-                <p className="text-xs text-[#5D6371] dark:text-gray-400 font-semibold truncate">
-                  {user?.profile?.institution || 'Admin Instansi / Sekolah'}
-                </p>
-              </div>
+            <div className="flex flex-col overflow-hidden min-w-0">
+              <BrandLogo imgClassName="h-8 w-auto" />
+              <p className="text-[10px] text-[#5D6371] dark:text-gray-400 font-semibold truncate mt-1">
+                {user?.profile?.institution || 'Admin Instansi / Sekolah'}
+              </p>
             </div>
             <button
               onClick={toggleSidebar}
@@ -129,10 +125,10 @@ export const AdminLayout: React.FC = () => {
         ) : (
           <div className="flex flex-col items-center gap-4 mb-6 pt-1">
             <div 
-              className="p-2.5 bg-[#38B1ED] text-white rounded-xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]"
+              className="p-1 rounded-xl"
               title="Detik Detik TryOut"
             >
-              <School className="h-6 w-6 stroke-[2.5]" />
+              <BrandLogo iconOnly imgClassName="h-7 w-auto" />
             </div>
             <button
               onClick={toggleSidebar}

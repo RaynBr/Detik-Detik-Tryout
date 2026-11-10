@@ -4,6 +4,7 @@ import { useAuth } from '../../shared/context/AuthContext';
 import { useToast } from '../../shared/context/ToastContext';
 import { apiClient } from '../../shared/api/client';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
+import { BrandLogo } from '../../shared/components/BrandLogo';
 import { 
   GraduationCap, 
   ArrowLeft, 
@@ -96,11 +97,8 @@ export const StudentProfilePage: React.FC = () => {
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="p-2 bg-indigo-600/10 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-500/20">
-            <GraduationCap className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="font-extrabold text-sm text-slate-900 dark:text-white tracking-tight">Detik Detik TryOut</h1>
+          <BrandLogo imgClassName="h-8 w-auto" />
+          <div className="hidden sm:block border-l-2 border-slate-200 dark:border-white/10 pl-3">
             <p className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Profil Peserta Didik</p>
           </div>
         </div>

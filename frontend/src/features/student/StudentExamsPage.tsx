@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../shared/context/AuthContext';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
+import { BrandLogo } from '../../shared/components/BrandLogo';
 import { toast } from '../../shared/context/ToastContext';
 import {
   WelcomeBanner,
@@ -511,14 +512,16 @@ export const StudentExamsPage: React.FC = () => {
       {/* Top Navbar */}
       <header className="h-16 bg-white dark:bg-[#1A1E22] border-b-2 border-[#161C2D] dark:border-[#32363A] px-4 md:px-8 flex items-center justify-between shrink-0 sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#38B1ED] text-white rounded-xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
-            <GraduationCap className="h-5 w-5 stroke-[2.5]" />
-          </div>
-          <div>
-            <h1 className="font-black text-sm text-[#161C2D] dark:text-white tracking-tight">Detik Detik TryOut</h1>
-            <p className="text-[10px] text-[#5D6371] dark:text-gray-400 font-semibold">
-              {user?.profile?.institution || 'Portal Ujian Siswa'} {user?.profile?.class_name ? `• ${user.profile.class_name}` : ''}
+          <BrandLogo imgClassName="h-8 sm:h-9 w-auto" />
+          <div className="hidden sm:block border-l-2 border-slate-200 dark:border-white/10 pl-3">
+            <p className="text-[11px] text-[#5D6371] dark:text-gray-400 font-semibold leading-tight">
+              {user?.profile?.institution || 'Portal Ujian Siswa'}
             </p>
+            {user?.profile?.class_name && (
+              <p className="text-[10px] font-mono text-[#38B1ED] font-bold">
+                Kelas: {user.profile.class_name}
+              </p>
+            )}
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import {
   Trophy, User, Send
 } from 'lucide-react';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
+import { BrandLogo } from '../../shared/components/BrandLogo';
 import { RoleSelectionModal } from '../auth/components/RoleSelectionModal';
 import heroStudentImg from '../../assets/hero-student.png';
 import roleTeacherImg from '../../assets/role-teacher.png';
@@ -22,20 +23,10 @@ export const LandingPage: React.FC = () => {
       <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#1A1E22]/95 backdrop-blur-md border-b-2 border-[#161C2D] dark:border-[#32363A] transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
 
-          {/* Kiri: Logo + Teks "Detik Detik TryOut" + Subjudul */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="h-11 w-11 rounded-2xl bg-[#38B1ED] border-2 border-[#161C2D] flex items-center justify-center text-white shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
-              <GraduationCap className="h-6 w-6 stroke-[2.5]" />
-            </div>
-            <div>
-              <span className="text-lg sm:text-xl font-black tracking-tight text-[#161C2D] dark:text-white leading-none block">
-                Detik Detik TryOut
-              </span>
-              <span className="text-[10px] font-mono font-bold text-[#5D6371] dark:text-gray-400 tracking-wider uppercase mt-1 block">
-                SISTEM CBT &amp; SIMULASI UJIAN
-              </span>
-            </div>
-          </div>
+          {/* Kiri: Logo Detik Detik TryOut */}
+          <a href="#beranda" className="flex items-center shrink-0">
+            <BrandLogo showSubtitle={true} imgClassName="h-9 sm:h-10 w-auto" />
+          </a>
 
 
           {/* Kanan: Toggle Tema & Tombol "Masuk ke Sistem" */}
@@ -474,19 +465,9 @@ export const LandingPage: React.FC = () => {
           {/* Baris Atas Footer */}
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-8 border-b border-white/10">
 
-            {/* Kiri: Logo + "Detik Detik TryOut" + Subjudul */}
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-[#38B1ED] border-2 border-white/20 flex items-center justify-center text-white shadow-md">
-                <GraduationCap className="h-5 w-5 stroke-[2.5]" />
-              </div>
-              <div className="text-left">
-                <span className="text-lg font-black tracking-tight text-white block leading-none">
-                  Detik Detik TryOut
-                </span>
-                <span className="text-[10px] font-mono text-cyan-300 font-bold uppercase tracking-wider mt-1 block">
-                  SISTEM CBT &amp; SIMULASI UJIAN
-                </span>
-              </div>
+            {/* Kiri: Logo Detik Detik TryOut */}
+            <div className="flex items-center">
+              <BrandLogo forceVariant="dark" showSubtitle={true} imgClassName="h-9 sm:h-10 w-auto" />
             </div>
 
             {/* Tengah: Link Beranda | Fitur | Keunggulan | Tentang | FAQ */}

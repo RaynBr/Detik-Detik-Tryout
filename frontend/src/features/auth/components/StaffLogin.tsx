@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { ThemeToggle } from '../../../shared/components/ThemeToggle';
-import { LogIn, Mail, ShieldAlert, KeyRound } from 'lucide-react';
+import { BrandLogo } from '../../../shared/components/BrandLogo';
+import { LogIn, Mail, ShieldAlert } from 'lucide-react';
 
 export const StaffLogin: React.FC = () => {
   const { login } = useAuth();
@@ -54,12 +55,8 @@ export const StaffLogin: React.FC = () => {
         <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
 
         {/* Title */}
-        <div className="text-center mb-8 relative">
-          <div className="inline-flex items-center justify-center p-3 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-2xl mb-3 border border-cyan-500/20 shadow-sm">
-            <KeyRound className="h-8 w-8 animate-pulse-subtle" />
-          </div>
-          <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Portal Staf & Guru</h2>
-          <p className="text-slate-500 dark:text-gray-400 text-xs mt-1 font-medium">CBT Ujian Online Management</p>
+        <div className="text-center mb-8 relative flex flex-col items-center">
+          <BrandLogo showSubtitle={true} subtitleText="PORTAL STAF, GURU & ADMIN" imgClassName="h-14 sm:h-16 w-auto" />
         </div>
 
         {/* Error alert */}
