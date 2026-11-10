@@ -137,8 +137,8 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({ isOpen, 
             </div>
 
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center p-3.5 bg-purple-100 text-purple-900 border-2 border-[#161C2D] shadow-[3px_3px_0px_0px_#171717] rounded-xl mb-3">
-                <ShieldCheck className="h-6 w-6 stroke-[2.5]" />
+              <div className="inline-flex items-center justify-center p-2.5 bg-purple-600 rounded-xl mb-3 border-2 border-[#161C2D] shadow-[3px_3px_0px_0px_#171717]">
+                <BrandLogo iconOnly forceVariant="dark" imgClassName="h-7 w-auto" />
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-[#161C2D] dark:text-white tracking-tight">
                 Pilih Tingkat Administrator
