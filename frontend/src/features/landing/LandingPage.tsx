@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   GraduationCap, LogIn, CheckCircle2, ArrowRight, Clock,
   Play, BarChart3, Zap, Settings, ShieldCheck,
-  Star, Trophy, User, Send
+  Trophy, User, Send
 } from 'lucide-react';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
 import { RoleSelectionModal } from '../auth/components/RoleSelectionModal';
@@ -37,44 +37,6 @@ export const LandingPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Tengah: Menu Beranda (aktif), Fitur, Keunggulan, Tentang, FAQ */}
-          <nav className="hidden md:flex items-center bg-slate-100 dark:bg-white/5 p-1 rounded-full border border-slate-200 dark:border-white/10 text-xs font-bold shadow-xs">
-            <a
-              href="#beranda"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#38B1ED] text-white shadow-xs font-black transition"
-            >
-              <GraduationCap className="h-3.5 w-3.5" />
-              <span>Beranda</span>
-            </a>
-            <a
-              href="#fitur"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition"
-            >
-              <Star className="h-3.5 w-3.5" />
-              <span>Fitur</span>
-            </a>
-            <a
-              href="#keunggulan"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition"
-            >
-              <Clock className="h-3.5 w-3.5" />
-              <span>Keunggulan</span>
-            </a>
-            <a
-              href="#tentang"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition"
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>Tentang</span>
-            </a>
-            <a
-              href="#faq"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition"
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              <span>FAQ</span>
-            </a>
-          </nav>
 
           {/* Kanan: Toggle Tema & Tombol "Masuk ke Sistem" */}
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
