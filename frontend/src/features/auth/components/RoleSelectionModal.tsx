@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   X, ChevronLeft, ShieldCheck, Building2, 
-  GraduationCap, BookOpen, ArrowRight, Sparkles 
+  GraduationCap, BookOpen, ArrowRight 
 } from 'lucide-react';
+import { BrandLogo } from '../../../shared/components/BrandLogo';
 
 interface RoleSelectionModalProps {
   isOpen: boolean;
@@ -42,8 +43,8 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({ isOpen, 
         {level === 'main' ? (
           <div>
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center p-3.5 bg-[#38B1ED] text-white rounded-xl mb-3 border-2 border-[#161C2D] shadow-[3px_3px_0px_0px_#171717]">
-                <Sparkles className="h-6 w-6 stroke-[2.5]" />
+              <div className="inline-flex items-center justify-center p-2.5 bg-[#38B1ED] rounded-xl mb-3 border-2 border-[#161C2D] shadow-[3px_3px_0px_0px_#171717]">
+                <BrandLogo iconOnly forceVariant="dark" imgClassName="h-7 w-auto" />
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-[#161C2D] dark:text-white tracking-tight">
                 Pilih Peran Anda

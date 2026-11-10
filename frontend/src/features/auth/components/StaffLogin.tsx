@@ -8,7 +8,7 @@ import { LogIn, Mail, ShieldAlert } from 'lucide-react';
 export const StaffLogin: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -42,14 +42,14 @@ export const StaffLogin: React.FC = () => {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4 bg-slate-100/70 dark:bg-[#070a13] transition-colors duration-200 relative">
-      
+
       {/* Theme Toggle Top Right */}
       <div className="absolute top-5 right-5 z-20">
         <ThemeToggle compact />
       </div>
 
       <div className="w-full max-w-md glass-panel rounded-3xl shadow-2xl p-8 relative overflow-hidden">
-        
+
         {/* Decorative subtle glows */}
         <div className="absolute -top-10 -right-10 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl"></div>
         <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
