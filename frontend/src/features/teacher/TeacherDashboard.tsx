@@ -154,10 +154,10 @@ export const TeacherDashboard: React.FC = () => {
       {/* 1. Welcome Banner */}
       <WelcomeBanner
         title={`Selamat Mengajar, ${user?.name || 'Bapak/Ibu Guru'} 📚`}
-        subtitle="Kelola bank soal mandiri, susun paket TryOut, dan pantau hasil belajar siswa binaan Anda secara real-time."
+        subtitle="Eksplorasi Katalog Bank Soal Global, susun Jadwal Ujian mandiri, dan pantau hasil belajar siswa binaan Anda secara real-time."
         roleBadge="Panel Pengajar"
         metrics={[
-          { label: 'Bank Soal', value: (totalQuestionsCount || 4665).toLocaleString('id-ID'), highlight: true },
+          { label: 'Katalog Soal', value: (totalQuestionsCount || 5361).toLocaleString('id-ID'), highlight: true },
           { label: 'Kelas Diampu', value: teachingClasses.length },
           { label: 'Total Murid', value: teacherProfile?.total_students_taught || 0 }
         ]}
@@ -560,8 +560,8 @@ export const TeacherDashboard: React.FC = () => {
                   <BookOpen className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-white">Bank Soal TryOut</p>
-                  <p className="text-[11px] text-slate-500 dark:text-gray-400">Input & impor template soal</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">Katalog Bank Soal Global</p>
+                  <p className="text-[11px] text-slate-500 dark:text-gray-400">Eksplorasi & telaah butir soal resmi</p>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-1 transition" />
@@ -576,8 +576,8 @@ export const TeacherDashboard: React.FC = () => {
                   <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-white">Generate 50 Soal Acak</p>
-                  <p className="text-[11px] text-slate-500 dark:text-gray-400">Acak paket soal otomatis</p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">Jadwal Ujian (Pusat Aktivitas)</p>
+                  <p className="text-[11px] text-slate-500 dark:text-gray-400">Generate atau salin paket ujian</p>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-1 transition" />

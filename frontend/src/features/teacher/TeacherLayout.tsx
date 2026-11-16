@@ -14,7 +14,8 @@ import {
   BarChart3,
   PanelLeftClose,
   PanelLeftOpen,
-  UserCheck
+  UserCheck,
+  Megaphone
 } from 'lucide-react';
 
 export const TeacherLayout: React.FC = () => {
@@ -38,9 +39,10 @@ export const TeacherLayout: React.FC = () => {
 
   const menuItems = [
     { name: 'Dashboard', path: '/teacher/dashboard', icon: LayoutDashboard },
-    { name: 'Bank Soal', path: '/teacher/questions', icon: BookOpen },
+    { name: 'Katalog Bank Soal', path: '/teacher/questions', icon: BookOpen },
     { name: 'Jadwal Ujian', path: '/teacher/exams', icon: Calendar },
     { name: 'Laporan Nilai Siswa', path: '/teacher/reports', icon: BarChart3 },
+    { name: 'Pengumuman', path: '/teacher/announcements', icon: Megaphone },
     { name: 'Profil & Keamanan', path: '/teacher/profile', icon: UserCheck },
   ];
 

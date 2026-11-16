@@ -43,6 +43,8 @@ export interface ExamGroup {
   token: string;
   start_time: string;
   end_time: string;
+  class_ids?: number[];
+  student_ids?: (number | string)[];
 }
 
 export interface AcademicYear {
@@ -83,6 +85,9 @@ interface Exam {
   title: string;
   package_id?: number | null;
   subject_id: number;
+  class_id?: number | null;
+  idkelas?: number | null;
+  class_name?: string;
   duration_minutes: number | null;
   id_tahun_ajaran?: number | null;
   academic_year?: {
@@ -132,6 +137,7 @@ export const ExamsPage: React.FC = () => {
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
   const [activeExamForGroup, setActiveExamForGroup] = useState<Exam | null>(null);
+  const [editingGroup, setEditingGroup] = useState<ExamGroup | null>(null);
 
   // Detail Modal States (Requirement 2)
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -159,8 +165,24 @@ export const ExamsPage: React.FC = () => {
     try {
       const res = await apiClient.patch(`/teacher/exams/${exam.id}/toggle-status`);
       toast.success(res.data?.message || 'Status jadwal ujian berhasil diubah.');
+      const nextAktif = res.data?.status_aktif || (exam.status_aktif === 'Y' ? 'N' : 'Y');
+      const nextPaket = res.data?.status_paket || (nextAktif === 'Y' ? 'aktif' : 'draft');
+      const nextStatus = nextAktif === 'Y' ? 'published' : 'draft';
+
+      setExams(prev => prev.map(e => e.id === exam.id ? {
+        ...e,
+        status_aktif: nextAktif,
+        status_paket: nextPaket,
+        status: nextStatus
+      } : e));
+
       if (selectedDetailExam && selectedDetailExam.id === exam.id) {
-        setSelectedDetailExam(prev => prev ? { ...prev, status: res.data.status } : null);
+        setSelectedDetailExam(prev => prev ? {
+          ...prev,
+          status_aktif: nextAktif,
+          status_paket: nextPaket,
+          status: nextStatus
+        } : null);
       }
       fetchData(currentPage);
     } catch (err: any) {
@@ -172,10 +194,25 @@ export const ExamsPage: React.FC = () => {
     try {
       const res = await apiClient.post(`/teacher/exams/${examId}/publish`);
       toast.success(res.data?.message || 'Paket soal berhasil dipublikasikan dan berstatus AKTIF.');
-      fetchData(currentPage);
-      if (selectedExamForManage && selectedExamForManage.id === examId) {
-        setSelectedExamForManage(prev => prev ? { ...prev, status_paket: 'aktif', status_aktif: 'Y' } : null);
+      setExams(prev => prev.map(e => e.id === examId ? {
+        ...e,
+        status_aktif: 'Y',
+        status_paket: 'aktif',
+        status: 'published'
+      } : e));
+
+      if (selectedDetailExam && selectedDetailExam.id === examId) {
+        setSelectedDetailExam(prev => prev ? {
+          ...prev,
+          status_aktif: 'Y',
+          status_paket: 'aktif',
+          status: 'published'
+        } : null);
       }
+      if (selectedExamForManage && selectedExamForManage.id === examId) {
+        setSelectedExamForManage(prev => prev ? { ...prev, status_paket: 'aktif', status_aktif: 'Y', status: 'published' } : null);
+      }
+      fetchData(currentPage);
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Gagal mempublikasikan paket soal.');
     }
@@ -323,19 +360,37 @@ export const ExamsPage: React.FC = () => {
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   
   const [jenjangList, setJenjangList] = useState<any[]>([]);
+  const [tahunSoalList, setTahunSoalList] = useState<any[]>([]);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [creationMode, setCreationMode] = useState<'generate' | 'package'>('generate');
+  
+  // Pilihan 1: Generate Form
   const [generateForm, setGenerateForm] = useState({
     nama_assessment: '',
     deskripsi_assessment: '',
     idjenjang: 1,
+    tingkat: '' as number | string,
     idmapel: 1,
+    tahun_soal_id: '' as number | string,
     idkelas: '',
     id_tahun_ajaran: '',
     total_soal: 50,
-    waktu_pengerjaan: '' as number | '',
+    waktu_pengerjaan: 90 as number | '',
     tanggal_mulai_assessment: '',
     tanggal_batas_assessment: '',
+    acak_soal: true,
+    acak_opsi: true,
   });
+
+  // Pilihan 2: Copy Package Form
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+  const [packageExamTitle, setPackageExamTitle] = useState<string>('');
+  const [packageDuration, setPackageDuration] = useState<number | ''>(90);
+  const [packageStartTime, setPackageStartTime] = useState<string>('');
+  const [packageEndTime, setPackageEndTime] = useState<string>('');
+  const [packageClassId, setPackageClassId] = useState<string>('');
+  const [packageAcakSoal, setPackageAcakSoal] = useState<boolean>(true);
+  const [packageAcakOpsi, setPackageAcakOpsi] = useState<boolean>(true);
 
   const [emptyBankPrompt, setEmptyBankPrompt] = useState<{
     show: boolean;
@@ -360,10 +415,25 @@ export const ExamsPage: React.FC = () => {
     setPaginationFromResponse
   } = usePaginationUrl(15);
 
+  const getTingkatOptions = (idjenjang?: number) => {
+    const j = jenjangList.find(item => item.id === idjenjang);
+    const kode = (j?.kode_jenjang || j?.nama_jenjang || '').toUpperCase();
+    if (kode.includes('SD') || kode.includes('MI')) {
+      return [1, 2, 3, 4, 5, 6];
+    }
+    if (kode.includes('SMP') || kode.includes('MTS')) {
+      return [7, 8, 9];
+    }
+    if (kode.includes('SMA') || kode.includes('SMK') || kode.includes('MA')) {
+      return [10, 11, 12];
+    }
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  };
+
   const fetchData = async (page = currentPage) => {
     setLoadingExams(true);
     try {
-      const [examsRes, packagesRes, subjectsRes, questionsRes, studentsRes, classesRes, jenjangRes, academicYearsRes] = await Promise.all([
+      const [examsRes, packagesRes, subjectsRes, questionsRes, studentsRes, classesRes, jenjangRes, academicYearsRes, tahunRes] = await Promise.all([
         apiClient.get('/teacher/exams', { params: { page } }),
         apiClient.get('/teacher/packages', { params: { all: true } }),
         apiClient.get('/teacher/subjects', { params: { all: true } }),
@@ -372,6 +442,7 @@ export const ExamsPage: React.FC = () => {
         apiClient.get('/teacher/classes', { params: { all: true } }),
         apiClient.get('/teacher/jenjang', { params: { all: true } }).catch(() => ({ data: [] })),
         apiClient.get('/teacher/academic-years', { params: { all: true } }).catch(() => ({ data: [] })),
+        apiClient.get('/admin/tahun-soal', { params: { all: true } }).catch(() => ({ data: [] })),
       ]);
       setPaginationFromResponse(examsRes.data);
       setExams(Array.isArray(examsRes.data) ? examsRes.data : (examsRes.data?.data || []));
@@ -381,6 +452,7 @@ export const ExamsPage: React.FC = () => {
       setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : (studentsRes.data?.data || []));
       setClasses(Array.isArray(classesRes.data) ? classesRes.data : (classesRes.data?.data || []));
       setJenjangList(Array.isArray(jenjangRes.data) ? jenjangRes.data : (jenjangRes.data?.data || []));
+      setTahunSoalList(Array.isArray(tahunRes.data) ? tahunRes.data : (tahunRes.data?.data || []));
       
       const ayList = Array.isArray(academicYearsRes.data) ? academicYearsRes.data : (academicYearsRes.data?.data || []);
       setAcademicYears(ayList);
@@ -407,6 +479,29 @@ export const ExamsPage: React.FC = () => {
     fetchData(currentPage);
   }, [currentPage]);
 
+  // Handle URL shortcut from Katalog Bank Soal
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'from_package') {
+      const pkgId = params.get('package_id');
+      if (pkgId) {
+        setCreationMode('package');
+        setSelectedPackageId(pkgId);
+        setShowGenerateModal(true);
+      }
+    }
+  }, []);
+
+  // Sync package title when selectedPackageId changes
+  useEffect(() => {
+    if (selectedPackageId) {
+      const found = packages.find(p => String(p.id) === String(selectedPackageId));
+      if (found) {
+        setPackageExamTitle(found.title || (found as any).nama_paket || '');
+      }
+    }
+  }, [selectedPackageId, packages]);
+
   const handleGenerateRandomSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!generateForm.nama_assessment.trim()) {
@@ -416,13 +511,23 @@ export const ExamsPage: React.FC = () => {
     setLoading(true);
     try {
       const payload: any = {
-        ...generateForm,
+        nama_assessment: generateForm.nama_assessment,
+        deskripsi_assessment: generateForm.deskripsi_assessment,
+        idjenjang: generateForm.idjenjang,
+        tingkat: generateForm.tingkat ? parseInt(generateForm.tingkat as any) : undefined,
+        idmapel: generateForm.idmapel,
+        tahun_soal_id: generateForm.tahun_soal_id ? parseInt(generateForm.tahun_soal_id as any) : undefined,
         idkelas: generateForm.idkelas ? parseInt(generateForm.idkelas) : null,
         id_tahun_ajaran: generateForm.id_tahun_ajaran ? parseInt(generateForm.id_tahun_ajaran) : null,
+        total_soal: generateForm.total_soal || 50,
         waktu_pengerjaan: generateForm.waktu_pengerjaan !== '' ? parseInt(generateForm.waktu_pengerjaan as any) : null,
+        tanggal_mulai_assessment: generateForm.tanggal_mulai_assessment || undefined,
+        tanggal_batas_assessment: generateForm.tanggal_batas_assessment || undefined,
+        acak_soal: generateForm.acak_soal,
+        acak_opsi: generateForm.acak_opsi,
       };
-      const res = await apiClient.post('/teacher/exams/generate-random', payload);
-      toast.success(res.data?.message || 'Berhasil mengenerate 50 soal acak dari Bank Soal!');
+      const res = await apiClient.post('/teacher/exams/generate-from-global', payload);
+      toast.success(res.data?.message || 'Berhasil mengenerate soal acak dari Bank Soal Global!');
       broadcastExamUpdate();
       setShowGenerateModal(false);
       const activeAy = academicYears.find(a => a.is_active) || academicYears[0];
@@ -430,29 +535,65 @@ export const ExamsPage: React.FC = () => {
         nama_assessment: '',
         deskripsi_assessment: '',
         idjenjang: jenjangList[0]?.id || 1,
+        tingkat: '',
         idmapel: subjects[0]?.id || 1,
+        tahun_soal_id: '',
         idkelas: '',
         id_tahun_ajaran: activeAy ? activeAy.id.toString() : '',
         total_soal: 50,
-        waktu_pengerjaan: '',
+        waktu_pengerjaan: 90,
         tanggal_mulai_assessment: '',
         tanggal_batas_assessment: '',
+        acak_soal: true,
+        acak_opsi: true,
       });
-      fetchData();
+      fetchData(1);
     } catch (err: any) {
       if (err.response?.data?.error === 'EMPTY_QUESTION_BANK' || err.response?.status === 422) {
         const foundMapel = subjects.find(s => s.id === generateForm.idmapel)?.name || 'Mata Pelajaran';
         const foundJenjang = jenjangList.find(j => j.id === generateForm.idjenjang)?.nama_jenjang || 'Jenjang';
         setEmptyBankPrompt({
           show: true,
-          message: err.response?.data?.message || 'Bank Soal belum memiliki butir soal untuk mata pelajaran dan jenjang yang Anda pilih.',
+          message: err.response?.data?.message || 'Bank Soal Global belum memiliki butir soal untuk mata pelajaran dan jenjang yang Anda pilih.',
           mapelName: foundMapel,
           jenjangName: foundJenjang
         });
         setShowGenerateModal(false);
       } else {
-        toast.error(err.response?.data?.message || 'Gagal mengenerate soal dari Bank Soal.');
+        toast.error(err.response?.data?.message || 'Gagal mengenerate soal dari Bank Soal Global.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyPackageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPackageId) {
+      toast.warning('Silakan pilih salah satu Paket Bank Soal.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload = {
+        package_id: selectedPackageId,
+        nama_assessment: packageExamTitle.trim() || undefined,
+        waktu_pengerjaan: packageDuration !== '' ? parseInt(packageDuration as any) : 90,
+        tanggal_mulai_assessment: packageStartTime || undefined,
+        tanggal_batas_assessment: packageEndTime || undefined,
+        idkelas: packageClassId ? parseInt(packageClassId) : null,
+        acak_soal: packageAcakSoal,
+        acak_opsi: packageAcakOpsi,
+      };
+      const res = await apiClient.post('/teacher/exams/copy-from-global-package', payload);
+      toast.success(res.data?.message || 'Berhasil menyalin paket ke Jadwal Ujian baru!');
+      broadcastExamUpdate();
+      setShowGenerateModal(false);
+      setSelectedPackageId('');
+      setPackageExamTitle('');
+      fetchData(1);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal menyalin paket ke Jadwal Ujian.');
     } finally {
       setLoading(false);
     }
@@ -461,43 +602,6 @@ export const ExamsPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
-
-  const openAddModal = () => {
-    setEditingExam(null);
-    setTitle('');
-    const defaultPkg = packages[0];
-    if (defaultPkg) {
-      setPackageId(defaultPkg.id.toString());
-      setSubjectId(defaultPkg.subject_id.toString());
-      apiClient.get('/teacher/questions', { params: { package_id: defaultPkg.id, per_page: 100 } })
-        .then(res => {
-          const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
-          setSelectedQuestions(list.map((q: any) => ({ id: q.id, weight: 2 })));
-          setAllQuestions(list);
-        })
-        .catch(() => {});
-    } else {
-      setPackageId('');
-      setSubjectId(subjects[0]?.id.toString() || '');
-      setSelectedQuestions([]);
-    }
-    const activeAy = academicYears.find(a => a.is_active) || academicYears[0];
-    setAcademicYearId(activeAy ? activeAy.id.toString() : '');
-    setDurationMinutes(90);
-    setStartTime('');
-    setEndTime('');
-    setKkmScore(75);
-    setStatus('draft');
-    setAllowBacktrack(true);
-    setAllowFlag(true);
-    setShuffleQuestions(false);
-    setShuffleOptions(false);
-    setShowResultImmediately(false);
-    setMaxTabSwitches(5);
-    setShowManualQuestionPicker(false);
-    setError(null);
-    setModalOpen(true);
-  };
 
   const openEditModal = async (exam: Exam) => {
     setEditingExam(exam);
@@ -645,11 +749,27 @@ export const ExamsPage: React.FC = () => {
   // Group / Wave Management
   const openGroupModal = (exam: Exam) => {
     setActiveExamForGroup(exam);
+    setEditingGroup(null);
     setGroupName('');
-    setGroupStartTime(new Date(exam.start_time).toISOString().substring(0, 16));
-    setGroupEndTime(new Date(exam.end_time).toISOString().substring(0, 16));
-    setSelectedClassIds([]);
+    const defaultStart = exam.start_time ? new Date(exam.start_time) : new Date();
+    const defaultEnd = exam.end_time ? new Date(exam.end_time) : new Date(Date.now() + 7 * 86400000);
+    setGroupStartTime(defaultStart.toISOString().substring(0, 16));
+    setGroupEndTime(defaultEnd.toISOString().substring(0, 16));
+    setSelectedClassIds(exam.class_id ? [exam.class_id] : []);
     setSelectedStudentIds([]);
+    setGroupModalOpen(true);
+  };
+
+  const openEditGroupModal = (exam: Exam, group: ExamGroup) => {
+    setActiveExamForGroup(exam);
+    setEditingGroup(group);
+    setGroupName(group.name || '');
+    const startIso = group.start_time ? new Date(group.start_time).toISOString().substring(0, 16) : '';
+    const endIso = group.end_time ? new Date(group.end_time).toISOString().substring(0, 16) : '';
+    setGroupStartTime(startIso);
+    setGroupEndTime(endIso);
+    setSelectedClassIds(group.class_ids || (exam.class_id ? [exam.class_id] : []));
+    setSelectedStudentIds((group.student_ids as number[]) || []);
     setGroupModalOpen(true);
   };
 
@@ -706,13 +826,19 @@ export const ExamsPage: React.FC = () => {
     };
 
     try {
-      await apiClient.post('/teacher/exam-groups', payload);
-      toast.success('Sesi gelombang ujian baru berhasil dibuat!');
+      if (editingGroup) {
+        await apiClient.put(`/teacher/exam-groups/${editingGroup.id}`, payload);
+        toast.success('Sesi gelombang ujian berhasil diperbarui!');
+      } else {
+        await apiClient.post('/teacher/exam-groups', payload);
+        toast.success('Sesi gelombang ujian baru berhasil dibuat!');
+      }
       broadcastExamUpdate();
       fetchData();
       setGroupModalOpen(false);
+      setEditingGroup(null);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Gagal membuat sesi gelombang.');
+      toast.error(err.response?.data?.message || 'Gagal menyimpan sesi gelombang.');
     } finally {
       setLoading(false);
     }
@@ -755,16 +881,22 @@ export const ExamsPage: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => setShowGenerateModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/20 active:scale-95"
+            onClick={() => {
+              setCreationMode('generate');
+              setShowGenerateModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/20 active:scale-95 cursor-pointer"
           >
             <Sparkles className="h-4 w-4" />
-            <span>Generate 50 Soal Random (Bank Soal)</span>
+            <span>Generate dari Bank Soal</span>
           </button>
 
           <button
-            onClick={openAddModal}
-            className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30 self-start md:self-auto"
+            onClick={() => {
+              setCreationMode('package');
+              setShowGenerateModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30 self-start md:self-auto cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>Buat Jadwal Ujian</span>
@@ -886,13 +1018,22 @@ export const ExamsPage: React.FC = () => {
                               Token: {group.token || 'AKTIF'}
                             </span>
                           </div>
-                          <button
-                            onClick={() => handleDeleteGroup(group.id)}
-                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg btn-press cursor-pointer"
-                            title="Hapus Sesi"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openEditGroupModal(exam, group)}
+                              className="text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 p-1 rounded-lg btn-press cursor-pointer"
+                              title="Ubah Sesi"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGroup(group.id)}
+                              className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg btn-press cursor-pointer"
+                              title="Hapus Sesi"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1381,7 +1522,7 @@ export const ExamsPage: React.FC = () => {
               <div className="p-2 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-200 dark:border-cyan-500/20">
                 <Users className="h-5 w-5" />
               </div>
-              <span>Tambah Gelombang Sesi Baru</span>
+              <span>{editingGroup ? 'Ubah Gelombang Sesi' : 'Tambah Gelombang Sesi Baru'}</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-gray-400 mb-4 font-medium">
               Konfigurasi wave pengerjaan dan mapping siswa untuk ujian: <span className="text-cyan-600 dark:text-cyan-400 font-bold">{activeExamForGroup.title}</span>
@@ -1558,7 +1699,7 @@ export const ExamsPage: React.FC = () => {
                   {loading ? (
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
                   ) : (
-                    <span>Simpan Sesi Gelombang</span>
+                    <span>{editingGroup ? 'Simpan Perubahan Sesi' : 'Simpan Sesi Gelombang'}</span>
                   )}
                 </button>
               </div>
@@ -1567,170 +1708,441 @@ export const ExamsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Generate 50 Soal Random dari Bank Soal */}
+      {/* Modal Buat Jadwal Ujian (Pilihan 1: Generate Otomatis / Pilihan 2: Pilih Paket Bank Soal) */}
       {showGenerateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-[#0c101d] rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-white/10 animate-scale-up">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-white/5 mb-5">
+          <div className="bg-white dark:bg-[#0c101d] rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-white/10 animate-scale-up max-h-[92vh] overflow-y-auto">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-white/5 mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-gradient-to-tr from-indigo-500 to-cyan-400 text-white rounded-xl shadow-md">
-                  <Sparkles className="h-5 w-5" />
+                <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-cyan-500 text-white rounded-2xl shadow-md">
+                  <Calendar className="h-5 w-5" />
                 </div>
                 <div>
                   <h2 className="text-lg font-black text-slate-900 dark:text-white">
-                    Generate 50 Soal Acak (Form Terpadu)
+                    Buat Jadwal Ujian Baru
                   </h2>
                   <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                    Otomatis mengambil butir soal dari Bank Soal sesuai kurikulum dan tahun ajaran
+                    Pilih metode penyusunan paket ujian CBT untuk peserta didik
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowGenerateModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"
+                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleGenerateRandomSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                  Judul Paket TryOut <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: TryOut Akbar Ujian Nasional Matematika Seri A"
-                  value={generateForm.nama_assessment}
-                  onChange={(e) => setGenerateForm({ ...generateForm, nama_assessment: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
-                />
-              </div>
+            {/* Mode Selection Tabs (Pilihan 1 vs Pilihan 2) */}
+            <div className="flex rounded-2xl bg-slate-100 dark:bg-white/5 p-1 mb-5">
+              <button
+                type="button"
+                onClick={() => setCreationMode('generate')}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  creationMode === 'generate'
+                    ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Sparkles className="h-4 w-4" />
+                <span>Pilihan 1: Generate Otomatis</span>
+              </button>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                  Tahun Ajaran <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={generateForm.id_tahun_ajaran}
-                  onChange={(e) => setGenerateForm({ ...generateForm, id_tahun_ajaran: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
-                >
-                  <option value="">-- Pilih Tahun Ajaran --</option>
-                  {academicYears.map((ay) => (
-                    <option key={ay.id} value={ay.id}>
-                      {ay.name} ({ay.semester === 'odd' ? 'Ganjil' : 'Genap'}){ay.is_active ? ' — Aktif' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <button
+                type="button"
+                onClick={() => setCreationMode('package')}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  creationMode === 'package'
+                    ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <BookOpen className="h-4 w-4" />
+                <span>Pilihan 2: Pilih Paket Bank Soal</span>
+              </button>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
+            {/* TAB CONTENT 1: GENERATE OTOMATIS DARI BANK SOAL GLOBAL */}
+            {creationMode === 'generate' && (
+              <form onSubmit={handleGenerateRandomSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                    Jenjang Pendidikan <span className="text-rose-500">*</span>
+                    Judul Ujian <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={generateForm.idjenjang}
-                    onChange={(e) => setGenerateForm({ ...generateForm, idjenjang: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
-                  >
-                    {jenjangList.map((j) => (
-                      <option key={j.id} value={j.id}>{j.kode_jenjang} - {j.nama_jenjang}</option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Penilaian Harian Matematika Wajib"
+                    value={generateForm.nama_assessment}
+                    onChange={(e) => setGenerateForm({ ...generateForm, nama_assessment: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                  />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                    Mata Pelajaran <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={generateForm.idmapel}
-                    onChange={(e) => setGenerateForm({ ...generateForm, idmapel: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
-                  >
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Jenjang */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Jenjang <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={generateForm.idjenjang}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setGenerateForm({ ...generateForm, idjenjang: val, tingkat: '' });
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
+                    >
+                      {jenjangList.map((j) => (
+                        <option key={j.id} value={j.id}>{j.kode_jenjang} - {j.nama_jenjang}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Tingkat */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Tingkat Kelas <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={generateForm.tingkat}
+                      onChange={(e) => setGenerateForm({ ...generateForm, tingkat: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
+                    >
+                      <option value="">Semua Tingkat</option>
+                      {getTingkatOptions(generateForm.idjenjang).map((t) => (
+                        <option key={t} value={t}>Tingkat {t}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                  Tugaskan Langsung ke Kelas (Opsional)
-                </label>
-                <select
-                  value={generateForm.idkelas}
-                  onChange={(e) => setGenerateForm({ ...generateForm, idkelas: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
-                >
-                  <option value="">-- Simpan ke Bank Soal (Belum Ditugaskan) --</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nama_kelas || c.name}</option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Jika dikosongkan, paket akan disimpan di Bank Soal dan bisa ditugaskan ke murid sewaktu-waktu.
-                </p>
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Mata Pelajaran */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Mata Pelajaran <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={generateForm.idmapel}
+                      onChange={(e) => setGenerateForm({ ...generateForm, idmapel: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
+                    >
+                      {subjects.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
+                  {/* Tahun Soal */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Tahun Soal
+                    </label>
+                    <select
+                      value={generateForm.tahun_soal_id}
+                      onChange={(e) => setGenerateForm({ ...generateForm, tahun_soal_id: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-medium"
+                    >
+                      <option value="">Semua Tahun Soal</option>
+                      {tahunSoalList.map((t) => (
+                        <option key={t.id} value={t.id}>{t.tahun} {t.keterangan ? `(${t.keterangan})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Jumlah Soal with Quick Buttons */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                    Jumlah Soal
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider">
+                      Jumlah Soal Acak <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      {[10, 20, 25, 40, 50].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setGenerateForm({ ...generateForm, total_soal: num })}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition ${
+                            generateForm.total_soal === num
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <input
                     type="number"
                     min="1"
-                    max="200"
+                    max="100"
                     value={generateForm.total_soal}
                     onChange={(e) => setGenerateForm({ ...generateForm, total_soal: parseInt(e.target.value) || 50 })}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
                   />
                 </div>
 
+                {/* Durasi & Kelas */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Durasi (Menit) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="300"
+                      required
+                      placeholder="Contoh: 90"
+                      value={generateForm.waktu_pengerjaan}
+                      onChange={(e) => setGenerateForm({ ...generateForm, waktu_pengerjaan: e.target.value === '' ? '' : parseInt(e.target.value) })}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Target Rombel (Opsional)
+                    </label>
+                    <select
+                      value={generateForm.idkelas}
+                      onChange={(e) => setGenerateForm({ ...generateForm, idkelas: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    >
+                      <option value="">Semua Murid / Tentukan Nanti</option>
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>{c.nama_kelas || c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Jadwal Pelaksanaan */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Waktu Mulai Ujian
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={generateForm.tanggal_mulai_assessment}
+                      onChange={(e) => setGenerateForm({ ...generateForm, tanggal_mulai_assessment: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Batas Waktu Selesai
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={generateForm.tanggal_batas_assessment}
+                      onChange={(e) => setGenerateForm({ ...generateForm, tanggal_batas_assessment: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Opsi Keamanan & Pengacakan */}
+                <div className="p-3 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-4 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={generateForm.acak_soal}
+                      onChange={(e) => setGenerateForm({ ...generateForm, acak_soal: e.target.checked })}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>Acak Urutan Soal</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={generateForm.acak_opsi}
+                      onChange={(e) => setGenerateForm({ ...generateForm, acak_opsi: e.target.checked })}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>Acak Opsi Pilihan (A-E)</span>
+                  </label>
+                </div>
+
+                <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl text-[11px] text-indigo-900 dark:text-indigo-200">
+                  ⚡ <strong>Arsitektur Sistem:</strong> Soal otomatis diambil secara acak dari <strong>Bank Soal Global</strong> lalu dibuatkan salinan khusus ke Paket Jadwal Ujian ini. Bank Soal Global tetap utuh.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setShowGenerateModal(false)}
+                    className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    <span>{loading ? 'Mengenerate Soal...' : `⚡ Generate & Buat Jadwal Ujian`}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB CONTENT 2: PILIH PAKET BANK SOAL */}
+            {creationMode === 'package' && (
+              <form onSubmit={handleCopyPackageSubmit} className="space-y-4">
+                
+                {/* Dropdown Paket Soal */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                    Durasi Pengerjaan (Menit) <span className="text-[10px] text-slate-400 font-normal lowercase">(opsional)</span>
+                    Pilih Paket Bank Soal Global <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={selectedPackageId}
+                    onChange={(e) => setSelectedPackageId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs sm:text-sm text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">-- Pilih Paket Bank Soal --</option>
+                    {packages.map((pkg) => (
+                      <option key={pkg.id} value={pkg.id}>
+                        {pkg.title || (pkg as any).nama_paket} ({pkg.subject?.name || (pkg as any).mata_pelajaran || 'Mapel'} - {pkg.total_questions || (pkg as any).total_soal || 0} Soal)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Judul Ujian */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                    Judul Ujian <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="number"
-                    min="1"
-                    max="300"
-                    placeholder="Kosongkan jika tanpa batas"
-                    value={generateForm.waktu_pengerjaan}
-                    onChange={(e) => setGenerateForm({ ...generateForm, waktu_pengerjaan: e.target.value === '' ? '' : parseInt(e.target.value) })}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
+                    type="text"
+                    required
+                    placeholder="Nama jadwal ujian untuk murid"
+                    value={packageExamTitle}
+                    onChange={(e) => setPackageExamTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
                   />
                 </div>
-              </div>
 
-              <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl text-[11px] text-indigo-900 dark:text-indigo-200 font-medium">
-                💡 <strong>Catatan Sistem:</strong> Seluruh murid di kelas ini akan mendapatkan <strong>{generateForm.total_soal || 50} butir soal yang sama</strong>, namun sistem secara otomatis akan <strong>mengacak urutan nomor soal dan urutan opsi jawaban (A, B, C, D, E)</strong> secara unik per siswa.
-              </div>
+                {/* Durasi & Target Kelas */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Durasi (Menit) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="300"
+                      required
+                      placeholder="Contoh: 90"
+                      value={packageDuration}
+                      onChange={(e) => setPackageDuration(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white font-bold"
+                    />
+                  </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-white/5">
-                <button
-                  type="button"
-                  onClick={() => setShowGenerateModal(false)}
-                  className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  <span>{loading ? 'Mengenerate...' : 'Generate 50 Soal Sekarang'}</span>
-                </button>
-              </div>
-            </form>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                      Target Rombel (Opsional)
+                    </label>
+                    <select
+                      value={packageClassId}
+                      onChange={(e) => setPackageClassId(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    >
+                      <option value="">Semua Murid / Tentukan Nanti</option>
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>{c.nama_kelas || c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Jadwal Pelaksanaan */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Waktu Mulai Ujian
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={packageStartTime}
+                      onChange={(e) => setPackageStartTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Batas Waktu Selesai
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={packageEndTime}
+                      onChange={(e) => setPackageEndTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Opsi Keamanan & Pengacakan */}
+                <div className="p-3 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-4 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={packageAcakSoal}
+                      onChange={(e) => setPackageAcakSoal(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>Acak Urutan Soal</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={packageAcakOpsi}
+                      onChange={(e) => setPackageAcakOpsi(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>Acak Opsi Pilihan (A-E)</span>
+                  </label>
+                </div>
+
+                <div className="p-3 bg-cyan-50/70 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-500/20 rounded-2xl text-[11px] text-cyan-900 dark:text-cyan-200">
+                  📋 <strong>Salinan Mandiri:</strong> Seluruh butir soal dalam paket yang Anda pilih akan disalin secara independen ke Jadwal Ujian ini. Perubahan butir soal ujian di kemudian hari tidak akan mempengaruhi paket asli di Bank Soal Global.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setShowGenerateModal(false)}
+                    className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || !selectedPackageId}
+                    className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    <span>{loading ? 'Menyalin Paket...' : `📋 Salin Paket & Buat Jadwal Ujian`}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
           </div>
         </div>
       )}
@@ -1882,9 +2294,36 @@ export const ExamsPage: React.FC = () => {
                           <span className="font-bold text-slate-900 dark:text-white mr-2">{g.name}</span>
                           <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 font-bold">Token: {g.token || 'AKTIF'}</span>
                         </div>
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(g.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} - {new Date(g.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(g.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} - {new Date(g.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailModalOpen(false);
+                              openEditGroupModal(selectedDetailExam, g);
+                            }}
+                            className="text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 p-1 rounded-lg cursor-pointer transition"
+                            title="Ubah Sesi"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await handleDeleteGroup(g.id);
+                              setSelectedDetailExam(prev => prev ? {
+                                ...prev,
+                                exam_groups: (prev.exam_groups || []).filter(item => item.id !== g.id)
+                              } : null);
+                            }}
+                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg cursor-pointer transition"
+                            title="Hapus Sesi"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

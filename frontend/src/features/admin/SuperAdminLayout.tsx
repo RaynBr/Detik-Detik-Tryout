@@ -22,7 +22,8 @@ import {
   CalendarDays,
   Calendar,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Megaphone
 } from 'lucide-react';
 
 interface SubMenuItem {
@@ -94,6 +95,7 @@ export const SuperAdminLayout: React.FC = () => {
       ]
     },
     { name: 'Audit Trail', path: '/super-admin/audit-logs', icon: History },
+    { name: 'Pengumuman Global', path: '/super-admin/announcements', icon: Megaphone },
     { name: 'Langganan Platform', path: '/super-admin/subscriptions', icon: CreditCard },
     { name: 'Pengaturan Platform', path: '/super-admin/settings', icon: Settings },
     { name: 'Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },

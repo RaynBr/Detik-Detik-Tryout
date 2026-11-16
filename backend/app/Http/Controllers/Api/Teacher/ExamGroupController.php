@@ -29,17 +29,20 @@ class ExamGroupController extends Controller
             return null;
         }
 
-        if ($user->role === 'admin') {
-            if (!empty($user->idkategori) && (string)$assessment->idkategori !== (string)$user->idkategori) {
+        if ($user->role === 'admin' || $user->role === 'admin_instansi') {
+            if (!empty($user->idkategori) && !empty($assessment->idkategori) 
+                && (string)$assessment->idkategori !== (string)$user->idkategori 
+                && (string)$assessment->idkategori !== '27830150842287772') {
                 return response()->json(['message' => 'Akses ditolak: Jadwal ujian bukan milik instansi Anda.'], 403);
             }
             return null;
         }
 
         if ($user->role === 'guru') {
-            $isOwner = (string)$assessment->iduser_bo === (string)$user->iduser_bo;
+            $isOwner = !empty($assessment->iduser_bo) && (string)$assessment->iduser_bo === (string)$user->iduser_bo;
             $sameSchool = !empty($user->idkategori) && (string)$assessment->idkategori === (string)$user->idkategori;
-            if (!$isOwner && !$sameSchool) {
+            $isGlobal = empty($assessment->idkategori) || (string)$assessment->idkategori === '27830150842287772';
+            if (!$isOwner && !$sameSchool && !$isGlobal) {
                 return response()->json(['message' => 'Akses ditolak: Anda tidak memiliki akses ke jadwal ujian ini.'], 403);
             }
             return null;
@@ -120,25 +123,33 @@ class ExamGroupController extends Controller
 
         $assessment = Assessment::findOrFail($request->exam_id);
 
-        // Requirement 5 & 6: Only published (AKTIF) or ongoing (TERKUNCI) packages can be scheduled
-        if ($assessment->status_paket === 'draft') {
-            return response()->json([
-                'message' => 'Paket soal masih berstatus DRAFT. Silakan publikasikan paket soal terlebih dahulu sebelum membuat Jadwal Ujian.',
-                'error_code' => 'EXAM_PACKAGE_STILL_DRAFT'
-            ], 422);
-        }
         $user = $request->user();
         if ($user && $user->role !== 'super_admin') {
-            if ($user->role === 'admin' && !empty($user->idkategori) && (string)$assessment->idkategori !== (string)$user->idkategori) {
-                return response()->json(['message' => 'Akses ditolak: Anda tidak dapat membuat jadwal ujian instansi lain.'], 403);
+            if (($user->role === 'admin' || $user->role === 'admin_instansi') && !empty($user->idkategori)) {
+                if (!empty($assessment->idkategori) && (string)$assessment->idkategori !== (string)$user->idkategori && (string)$assessment->idkategori !== '27830150842287772') {
+                    return response()->json(['message' => 'Akses ditolak: Anda tidak dapat membuat jadwal ujian instansi lain.'], 403);
+                }
             }
             if ($user->role === 'guru') {
-                $isOwner = (string)$assessment->iduser_bo === (string)$user->iduser_bo;
+                $isOwner = !empty($assessment->iduser_bo) && (string)$assessment->iduser_bo === (string)$user->iduser_bo;
                 $sameSchool = !empty($user->idkategori) && (string)$assessment->idkategori === (string)$user->idkategori;
-                if (!$isOwner && !$sameSchool) {
+                $isGlobal = empty($assessment->idkategori) || (string)$assessment->idkategori === '27830150842287772';
+                if (!$isOwner && !$sameSchool && !$isGlobal) {
                     return response()->json(['message' => 'Akses ditolak: Anda tidak dapat membuat jadwal ujian paket ini.'], 403);
                 }
             }
+        }
+
+        // If assessment was in draft, auto-activate upon scheduling a wave
+        if ($assessment->status_paket === 'draft') {
+            $assessment->update([
+                'status_paket' => 'aktif',
+                'status_aktif' => 'Y',
+            ]);
+        }
+        // Bind to user institution if unassigned or global
+        if ($user && !empty($user->idkategori) && (empty($assessment->idkategori) || (string)$assessment->idkategori === '27830150842287772')) {
+            $assessment->update(['idkategori' => $user->idkategori]);
         }
 
         $token = $request->token ?: strtoupper(Str::random(6));

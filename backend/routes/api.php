@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Admin\AcademicYearController;
 use App\Http\Controllers\Api\Admin\TestTaskController;
 use App\Http\Controllers\Api\Teacher\TeacherExamController;
 use App\Http\Controllers\Api\Teacher\TeacherQuestionBankController;
+use App\Http\Controllers\Api\Teacher\TeacherGlobalQuestionBankController;
 use App\Http\Controllers\Api\Student\ExamAttemptController;
 use App\Http\Controllers\Api\Student\AnswerController;
 use App\Http\Controllers\Api\Student\ResultController;
@@ -133,6 +134,12 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::apiResource('kurikulum', \App\Http\Controllers\Api\Admin\MasterKurikulumController::class);
         Route::apiResource('jenjang', MasterJenjangController::class);
         Route::apiResource('tingkat-kelas', \App\Http\Controllers\Api\Admin\MasterTingkatKelasController::class);
+
+        // Announcement Management (Super Admin Global)
+        Route::get('announcements/target-options', [\App\Http\Controllers\Api\AnnouncementController::class, 'targetOptions']);
+        Route::post('announcements/{id}/publish', [\App\Http\Controllers\Api\AnnouncementController::class, 'publish']);
+        Route::post('announcements/{id}/archive', [\App\Http\Controllers\Api\AnnouncementController::class, 'archive']);
+        Route::apiResource('announcements', \App\Http\Controllers\Api\AnnouncementController::class);
     });
 
     // ==========================================
@@ -224,15 +231,35 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::put('exams/{idassessment}', [TeacherExamController::class, 'update']);
         Route::delete('exams/{idassessment}', [TeacherExamController::class, 'destroy']);
         Route::post('exams/{idassessment}/toggle-status', [TeacherExamController::class, 'toggleStatus']);
+        Route::patch('exams/{idassessment}/toggle-status', [TeacherExamController::class, 'toggleStatus']);
+        Route::post('exams/{idassessment}/publish', [TeacherExamController::class, 'publish']);
+        Route::get('exams/{idassessment}/questions', [TeacherExamController::class, 'getQuestions']);
+        Route::post('exams/{idassessment}/questions/add-global', [TeacherExamController::class, 'addQuestionFromGlobal']);
+        Route::put('exams/{idassessment}/questions/{idsoal}/replace', [TeacherExamController::class, 'replaceQuestion']);
+        Route::delete('exams/{idassessment}/questions/{idsoal}', [TeacherExamController::class, 'removeQuestion']);
+        Route::post('exams/{idassessment}/questions/reorder', [TeacherExamController::class, 'reorderQuestions']);
+        Route::post('exams/{idassessment}/questions/{idsoal}/annul', [TeacherExamController::class, 'annulQuestion']);
+        Route::post('exams/{idassessment}/assign-class', [TeacherExamController::class, 'assignToClass']);
+        Route::post('exams/generate-random', [TeacherExamController::class, 'generateRandom50'])->middleware('throttle:10,1');
+        Route::post('exams/generate-from-global', [TeacherExamController::class, 'generateRandom50'])->middleware('throttle:10,1');
+        Route::post('exams/copy-from-global-package', [TeacherExamController::class, 'copyFromGlobalPackage'])->middleware('throttle:10,1');
+        Route::post('exams/copy-from-teacher-package', [TeacherExamController::class, 'copyFromTeacherPackage'])->middleware('throttle:10,1');
+        Route::apiResource('exam-groups', \App\Http\Controllers\Api\Teacher\ExamGroupController::class);
 
         // Profil & Keamanan Admin Sekolah
         Route::get('profile', [ProfileController::class, 'show']);
         Route::put('profile', [ProfileController::class, 'update']);
         Route::post('profile/change-password', [ProfileController::class, 'changePassword'])->middleware('throttle:5,1');
+
+        // Announcement Management (Admin Instansi)
+        Route::get('announcements/target-options', [\App\Http\Controllers\Api\AnnouncementController::class, 'targetOptions']);
+        Route::post('announcements/{id}/publish', [\App\Http\Controllers\Api\AnnouncementController::class, 'publish']);
+        Route::post('announcements/{id}/archive', [\App\Http\Controllers\Api\AnnouncementController::class, 'archive']);
+        Route::apiResource('announcements', \App\Http\Controllers\Api\AnnouncementController::class);
     });
 
     // Teacher Bank Soal & TryOut Exam management routes
-    Route::middleware(['role:guru|super_admin|admin'])->prefix('teacher')->group(function () {
+    Route::middleware(['role:guru|super_admin|admin|admin_instansi'])->prefix('teacher')->group(function () {
         Route::get('dashboard/stats', [DashboardController::class, 'stats']);
         Route::get('dashboard/teaching-classes', [DashboardController::class, 'teacherTeachingClasses']);
         Route::get('jenjang', [MasterJenjangController::class, 'index']);
@@ -247,6 +274,18 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::put('profile', [ProfileController::class, 'update']);
         Route::post('profile/change-password', [ProfileController::class, 'changePassword'])->middleware('throttle:5,1');
 
+        // Katalog Bank Soal Global (Read-Only Katalog untuk Guru)
+        Route::get('global-question-bank/cascading-params', [TeacherGlobalQuestionBankController::class, 'cascadingParams']);
+        Route::get('global-question-bank', [TeacherGlobalQuestionBankController::class, 'index']);
+        Route::get('global-question-bank/{id}', [TeacherGlobalQuestionBankController::class, 'show']);
+        Route::post('global-question-bank', [TeacherGlobalQuestionBankController::class, 'store']);
+        Route::put('global-question-bank/{id}', [TeacherGlobalQuestionBankController::class, 'update']);
+        Route::delete('global-question-bank/{id}', [TeacherGlobalQuestionBankController::class, 'destroy']);
+
+        // Bank Soal Packages (Katalog Global)
+        Route::get('packages', [TeacherGlobalQuestionBankController::class, 'index']);
+        Route::get('packages/{id}', [TeacherGlobalQuestionBankController::class, 'show']);
+
         // Bank Soal & Import Template (Requirement 7: Throttle import 5 req/min)
         Route::get('questions/template', [TeacherQuestionBankController::class, 'downloadTemplate']);
         Route::post('questions/import', [TeacherQuestionBankController::class, 'import'])->middleware('throttle:5,1');
@@ -255,6 +294,9 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
 
         // TryOut Exams & Packages (Requirement 7: Throttle generate 10 req/min, export 20 req/min)
         Route::post('exams/generate-random', [TeacherExamController::class, 'generateRandom50'])->middleware('throttle:10,1');
+        Route::post('exams/generate-from-global', [TeacherExamController::class, 'generateRandom50'])->middleware('throttle:10,1');
+        Route::post('exams/copy-from-global-package', [TeacherExamController::class, 'copyFromGlobalPackage'])->middleware('throttle:10,1');
+        Route::post('exams/copy-from-teacher-package', [TeacherExamController::class, 'copyFromTeacherPackage'])->middleware('throttle:10,1');
         Route::post('exams/{idassessment}/publish', [TeacherExamController::class, 'publish']);
         Route::get('exams/{idassessment}/questions', [TeacherExamController::class, 'getQuestions']);
         Route::post('exams/{idassessment}/questions/add-global', [TeacherExamController::class, 'addQuestionFromGlobal']);
@@ -271,12 +313,20 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         Route::get('exams/{idassessment}/attempts/{attemptId}', [TeacherExamController::class, 'attemptDetail']);
         Route::apiResource('exam-groups', \App\Http\Controllers\Api\Teacher\ExamGroupController::class);
         Route::apiResource('exams', TeacherExamController::class);
-        Route::apiResource('packages', TeacherExamController::class);
+        // Bank Soal Packages is READ-ONLY Katalog for teachers
+        Route::get('packages', [TeacherGlobalQuestionBankController::class, 'index']);
+        Route::get('packages/{id}', [TeacherGlobalQuestionBankController::class, 'show']);
+
+        // Teacher Announcements Management
+        Route::get('announcements/target-options', [\App\Http\Controllers\Api\AnnouncementController::class, 'targetOptions']);
+        Route::post('announcements/{id}/publish', [\App\Http\Controllers\Api\AnnouncementController::class, 'publish']);
+        Route::post('announcements/{id}/archive', [\App\Http\Controllers\Api\AnnouncementController::class, 'archive']);
+        Route::apiResource('announcements', \App\Http\Controllers\Api\AnnouncementController::class);
     });
 
     // Student Exam pengerjaan routes with High-Throughput Burst Rate Limiting
     Route::middleware(['role:siswa'])->prefix('student')->group(function () {
-        Route::get('announcements', [\App\Http\Controllers\Api\Student\AnnouncementController::class, 'index']);
+        Route::get('announcements', [\App\Http\Controllers\Api\AnnouncementController::class, 'studentIndex']);
         Route::get('exams', [ExamAttemptController::class, 'availableExams']);
         Route::post('attempts/start', [ExamAttemptController::class, 'start'])->middleware('throttle:30,1');
         Route::get('attempts/{attempt}', [ExamAttemptController::class, 'showAttempt']);

@@ -20,7 +20,8 @@ import {
   UserCheck,
   ChevronDown,
   ChevronRight,
-  History
+  History,
+  Megaphone
 } from 'lucide-react';
 
 interface SubMenuItem {
@@ -89,6 +90,7 @@ export const AdminLayout: React.FC = () => {
     { name: 'Jadwal Ujian', path: '/admin/exams', icon: CalendarDays },
     { name: 'Monitoring Ujian', path: '/admin/proctoring', icon: BarChart3 },
     { name: 'Aktivitas Guru & Siswa', path: '/admin/activities', icon: History },
+    { name: 'Pengumuman', path: '/admin/announcements', icon: Megaphone },
     { name: 'Laporan Rekap Nilai', path: '/admin/reports', icon: BarChart3 },
     { name: 'Profil & Keamanan', path: '/admin/profile', icon: UserCheck },
   ];

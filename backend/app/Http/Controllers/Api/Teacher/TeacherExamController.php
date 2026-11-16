@@ -12,6 +12,10 @@ use App\Models\MasterJenjang;
 use App\Models\MasterMataPelajaran;
 use App\Models\MasterKelas;
 use App\Models\AuditLog;
+use App\Models\BankSoalGlobal;
+use App\Models\BankSoalGlobalDetail;
+use App\Models\BankSoalGuru;
+use App\Models\BankSoalGuruDetail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -39,47 +43,32 @@ class TeacherExamController extends Controller
             return null;
         }
 
-        $isOwner = !empty($user->iduser_bo) && ((string)$assessment->iduser_bo === (string)$user->iduser_bo);
-        $isPublicMaster = !$isOwner && (
-            (string)$assessment->idkategori === '27830150842287772' ||
-            (empty($assessment->idkategori) && empty($assessment->iduser_bo))
-        );
-
-        // Security rule: Bank Soal Nasional milik Super Admin tidak dapat diubah oleh Guru / Admin Sekolah
-        if ($isPublicMaster && $isWriteOperation) {
-            return response()->json([
-                'message' => 'Akses ditolak: Bank Soal Nasional milik Super Admin tidak dapat diubah atau dihapus oleh Guru maupun Admin Sekolah.'
-            ], 403);
-        }
-
-        if ($user->role === 'admin') {
-            if (!$isPublicMaster && !empty($user->idkategori) && (string)$assessment->idkategori !== (string)$user->idkategori) {
+        // Admin Instansi check
+        if ($user->role === 'admin' || $user->role === 'admin_instansi') {
+            // Cannot modify exams that explicitly belong to a different institution
+            if (!empty($user->idkategori) && !empty($assessment->idkategori) 
+                && (string)$assessment->idkategori !== (string)$user->idkategori 
+                && (string)$assessment->idkategori !== '27830150842287772') {
                 return response()->json(['message' => 'Akses ditolak: Anda hanya dapat mengelola ujian di instansi Anda.'], 403);
             }
             return null;
         }
 
+        // Guru check
         if ($user->role === 'guru') {
             if ($strictOwnerOnly) {
-                if ((string)$assessment->iduser_bo !== (string)$user->iduser_bo) {
+                if (!empty($assessment->iduser_bo) && (string)$assessment->iduser_bo !== (string)$user->iduser_bo) {
                     return response()->json(['message' => 'Akses ditolak: Guru hanya dapat mengelola atau menghapus paket ujian yang dibuat sendiri.'], 403);
                 }
-                return null;
             }
 
-            $isOwner = (string)$assessment->iduser_bo === (string)$user->iduser_bo;
-            $sameSchool = !empty($user->idkategori) && (string)$assessment->idkategori === (string)$user->idkategori;
-
-            if ($isWriteOperation) {
-                if (!$isOwner && !$sameSchool) {
-                    return response()->json(['message' => 'Akses ditolak: Anda hanya dapat mengubah ujian milik Anda atau instansi Anda.'], 403);
-                }
-                return null;
+            // Cannot modify exams that explicitly belong to a different institution
+            if (!empty($user->idkategori) && !empty($assessment->idkategori) 
+                && (string)$assessment->idkategori !== (string)$user->idkategori 
+                && (string)$assessment->idkategori !== '27830150842287772') {
+                return response()->json(['message' => 'Akses ditolak: Anda hanya dapat mengakses ujian di instansi Anda.'], 403);
             }
 
-            if (!$isOwner && !$sameSchool && !$isPublicMaster) {
-                return response()->json(['message' => 'Akses ditolak: Anda hanya dapat mengakses ujian milik Anda atau instansi Anda.'], 403);
-            }
             return null;
         }
 
@@ -152,17 +141,19 @@ class TeacherExamController extends Controller
                 $start = $item->tanggal_mulai_assessment ? \Carbon\Carbon::parse($item->tanggal_mulai_assessment) : null;
                 $end = $item->tanggal_batas_assessment ? \Carbon\Carbon::parse($item->tanggal_batas_assessment) : null;
                 
-                $status = 'published';
-                if ($start && $now->lt($start)) {
-                    $status = 'scheduled';
-                } elseif ($end && $now->gt($end)) {
-                    $status = 'closed';
-                }
-
                 $isLocked = (bool) ($item->is_locked || ($item->attempts_count > 0));
                 $statusPaket = $item->status_paket;
                 if (!$statusPaket) {
                     $statusPaket = $isLocked ? 'terkunci' : ($item->status_aktif === 'Y' ? 'aktif' : 'draft');
+                }
+
+                $status = 'published';
+                if ($statusPaket === 'draft' || $item->status_aktif === 'N') {
+                    $status = 'draft';
+                } elseif ($start && $now->lt($start)) {
+                    $status = 'scheduled';
+                } elseif ($end && $now->gt($end)) {
+                    $status = 'closed';
                 }
 
                 return [
@@ -249,17 +240,19 @@ class TeacherExamController extends Controller
             $start = $item->tanggal_mulai_assessment ? \Carbon\Carbon::parse($item->tanggal_mulai_assessment) : null;
             $end = $item->tanggal_batas_assessment ? \Carbon\Carbon::parse($item->tanggal_batas_assessment) : null;
             
-            $status = 'published';
-            if ($start && $now->lt($start)) {
-                $status = 'scheduled';
-            } elseif ($end && $now->gt($end)) {
-                $status = 'closed';
-            }
-
             $isLocked = (bool) ($item->is_locked || ($item->attempts_count > 0));
             $statusPaket = $item->status_paket;
             if (!$statusPaket) {
                 $statusPaket = $isLocked ? 'terkunci' : ($item->status_aktif === 'Y' ? 'aktif' : 'draft');
+            }
+
+            $status = 'published';
+            if ($statusPaket === 'draft' || $item->status_aktif === 'N') {
+                $status = 'draft';
+            } elseif ($start && $now->lt($start)) {
+                $status = 'scheduled';
+            } elseif ($end && $now->gt($end)) {
+                $status = 'closed';
             }
 
             return [
@@ -593,9 +586,28 @@ class TeacherExamController extends Controller
             $val = $request->input('end_time') ?: $request->input('tanggal_batas_assessment');
             $updates['tanggal_batas_assessment'] = \Carbon\Carbon::parse($val)->toDateTimeString();
         }
-        if ($request->has('status_aktif')) {
+        if ($request->has('status')) {
+            $st = strtolower((string)$request->input('status'));
+            if ($st === 'published' || $st === 'aktif') {
+                $updates['status_paket'] = 'aktif';
+                $updates['status_aktif'] = 'Y';
+            } elseif ($st === 'draft') {
+                $updates['status_paket'] = 'draft';
+                $updates['status_aktif'] = 'N';
+            } elseif ($st === 'closed' || $st === 'selesai' || $st === 'terkunci') {
+                $updates['status_paket'] = 'selesai';
+                $updates['status_aktif'] = 'N';
+            }
+        } elseif ($request->has('status_aktif')) {
             $statusAktif = $request->input('status_aktif');
-            $updates['status_aktif'] = in_array(strtolower((string)$statusAktif), ['n', 'nonaktif', '0', 'false'], true) ? 'N' : 'Y';
+            $isAktif = !in_array(strtolower((string)$statusAktif), ['n', 'nonaktif', '0', 'false'], true);
+            $updates['status_aktif'] = $isAktif ? 'Y' : 'N';
+            $updates['status_paket'] = $isAktif ? 'aktif' : 'draft';
+        }
+
+        // Bind unassigned or global package to current user's school if edited by admin or teacher
+        if ($user && !empty($user->idkategori) && (empty($item->idkategori) || (string)$item->idkategori === '27830150842287772')) {
+            $updates['idkategori'] = $user->idkategori;
         }
 
         if (!empty($updates)) {
@@ -698,51 +710,91 @@ class TeacherExamController extends Controller
         $soalPool = collect();
 
         if ($sourceType === 'nasional') {
-            $nasionalQuery = AssessmentSoalPilgan::where('source_type', 'nasional');
+            $nasionalQuery = BankSoalGlobalDetail::where('status_aktif', 'Y');
             $applyFilters($nasionalQuery);
             $soalPool = $nasionalQuery->inRandomOrder()->limit($totalSoal)->get();
+
+            // Fallback to AssessmentSoalPilgan if BankSoalGlobalDetail has fewer results
+            if ($soalPool->isEmpty()) {
+                $fallbackQuery = AssessmentSoalPilgan::where('source_type', 'nasional');
+                $applyFilters($fallbackQuery);
+                $soalPool = $fallbackQuery->inRandomOrder()->limit($totalSoal)->get();
+            }
         } elseif ($sourceType === 'guru') {
-            $guruQuery = AssessmentSoalPilgan::where('source_type', 'guru')
+            $guruQuery = BankSoalGuruDetail::where('status_aktif', 'Y')
                 ->where(function ($q) use ($user) {
                     if ($user) {
-                        $q->where('iduser_bo', $user->iduser_bo);
+                        $q->where('id_guru', $user->iduser_bo);
                         if (!empty($user->idkategori)) {
-                            $q->orWhereHas('creator', fn($c) => $c->where('idkategori', $user->idkategori));
+                            $q->orWhere('id_instansi', $user->idkategori);
                         }
                     }
                 });
             $applyFilters($guruQuery);
             $soalPool = $guruQuery->inRandomOrder()->limit($totalSoal)->get();
+
+            // Fallback to AssessmentSoalPilgan
+            if ($soalPool->isEmpty()) {
+                $fallbackGuru = AssessmentSoalPilgan::where('source_type', 'guru')
+                    ->where(function ($q) use ($user) {
+                        if ($user) {
+                            $q->where('iduser_bo', $user->iduser_bo);
+                            if (!empty($user->idkategori)) {
+                                $q->orWhereHas('creator', fn($c) => $c->where('idkategori', $user->idkategori));
+                            }
+                        }
+                    });
+                $applyFilters($fallbackGuru);
+                $soalPool = $fallbackGuru->inRandomOrder()->limit($totalSoal)->get();
+            }
         } else {
             // Gabungan Keduanya
             $countNasional = $request->has('soal_nasional_count') ? (int) $request->soal_nasional_count : (int) ceil($totalSoal / 2);
             $countGuru = $request->has('soal_guru_count') ? (int) $request->soal_guru_count : (int) ($totalSoal - $countNasional);
 
             // Fetch from Bank Soal Global
-            $nasionalQuery = AssessmentSoalPilgan::where('source_type', 'nasional');
+            $nasionalQuery = BankSoalGlobalDetail::where('status_aktif', 'Y');
             $applyFilters($nasionalQuery);
             $nasionalSoal = $nasionalQuery->inRandomOrder()->limit($countNasional)->get();
+            if ($nasionalSoal->isEmpty()) {
+                $fallbackNas = AssessmentSoalPilgan::where('source_type', 'nasional');
+                $applyFilters($fallbackNas);
+                $nasionalSoal = $fallbackNas->inRandomOrder()->limit($countNasional)->get();
+            }
 
             // Fetch from Guru
-            $guruQuery = AssessmentSoalPilgan::where('source_type', 'guru')
+            $guruQuery = BankSoalGuruDetail::where('status_aktif', 'Y')
                 ->where(function ($q) use ($user) {
                     if ($user) {
-                        $q->where('iduser_bo', $user->iduser_bo);
+                        $q->where('id_guru', $user->iduser_bo);
                         if (!empty($user->idkategori)) {
-                            $q->orWhereHas('creator', fn($c) => $c->where('idkategori', $user->idkategori));
+                            $q->orWhere('id_instansi', $user->idkategori);
                         }
                     }
                 });
             $applyFilters($guruQuery);
             $guruSoal = $guruQuery->inRandomOrder()->limit($countGuru)->get();
+            if ($guruSoal->isEmpty()) {
+                $fallbackGuru = AssessmentSoalPilgan::where('source_type', 'guru')
+                    ->where(function ($q) use ($user) {
+                        if ($user) {
+                            $q->where('iduser_bo', $user->iduser_bo);
+                            if (!empty($user->idkategori)) {
+                                $q->orWhereHas('creator', fn($c) => $c->where('idkategori', $user->idkategori));
+                            }
+                        }
+                    });
+                $applyFilters($fallbackGuru);
+                $guruSoal = $fallbackGuru->inRandomOrder()->limit($countGuru)->get();
+            }
 
             $soalPool = $nasionalSoal->concat($guruSoal);
 
-            // If combined total is less than requested, fill remainder from any available source
+            // If combined total is less than requested, fill remainder from Bank Soal Global
             if ($soalPool->count() < $totalSoal) {
-                $existingIds = $soalPool->pluck('idassessment_soal_pilgan')->toArray();
+                $existingIds = $soalPool->pluck('id')->toArray();
                 $remainderCount = $totalSoal - $soalPool->count();
-                $extraQuery = AssessmentSoalPilgan::whereNotIn('idassessment_soal_pilgan', $existingIds);
+                $extraQuery = BankSoalGlobalDetail::where('status_aktif', 'Y')->whereNotIn('id', $existingIds);
                 $applyFilters($extraQuery);
                 $extraSoal = $extraQuery->inRandomOrder()->limit($remainderCount)->get();
                 $soalPool = $soalPool->concat($extraSoal);
@@ -857,9 +909,246 @@ class TeacherExamController extends Controller
     }
 
     /**
-     * Assign package to a class
+     * Pilihan 2: Buat Jadwal Ujian dengan Menyalin Paket Bank Soal Global
      */
-    public function assignToClass(Request $request, $idassessment)
+    public function copyFromGlobalPackage(Request $request)
+    {
+        $validated = $request->validate([
+            'package_id' => 'required',
+            'nama_assessment' => 'nullable|string|max:255',
+            'deskripsi_assessment' => 'nullable|string',
+            'idkelas' => 'nullable|integer',
+            'id_tahun_ajaran' => 'nullable|integer',
+            'waktu_pengerjaan' => 'nullable|integer|min:1|max:300',
+            'tanggal_mulai_assessment' => 'nullable|date',
+            'tanggal_batas_assessment' => 'nullable|date',
+            'acak_soal' => 'nullable|boolean',
+            'acak_opsi' => 'nullable|boolean',
+        ]);
+
+        $user = $this->resolveUser($request);
+        $packageId = (string) $validated['package_id'];
+
+        $globalPkg = BankSoalGlobal::with(['soal' => fn($q) => $q->where('status_aktif', 'Y')])->find($packageId);
+
+        // Fallback to Assessment if not in bank_soal_global
+        if (!$globalPkg) {
+            $fallbackAssessment = Assessment::with(['soal' => fn($q) => $q->where('status_aktif', 'Y')])->find($packageId);
+            if (!$fallbackAssessment) {
+                return response()->json(['message' => 'Paket Bank Soal Global tidak ditemukan.'], 404);
+            }
+            $namaUjian = $validated['nama_assessment'] ?: $fallbackAssessment->nama_assessment;
+            $idjenjang = $fallbackAssessment->idjenjang;
+            $idmapel = $fallbackAssessment->idmapel;
+            $idtingkat = $fallbackAssessment->idtingkat;
+            $sourceQuestions = $fallbackAssessment->soal;
+        } else {
+            $namaUjian = $validated['nama_assessment'] ?: $globalPkg->nama_paket;
+            $idjenjang = $globalPkg->idjenjang;
+            $idmapel = $globalPkg->idmapel;
+            $idtingkat = $globalPkg->idtingkat;
+            $sourceQuestions = $globalPkg->soal;
+        }
+
+        if ($sourceQuestions->isEmpty()) {
+            return response()->json(['message' => 'Paket yang dipilih belum memiliki butir soal.'], 422);
+        }
+
+        $newAssessmentId = (string) (time() . rand(1000000, 9999999));
+        $durasi = $request->filled('waktu_pengerjaan') ? (int) $validated['waktu_pengerjaan'] : 90;
+
+        $newExam = Assessment::create([
+            'idassessment' => $newAssessmentId,
+            'nama_assessment' => $namaUjian,
+            'deskripsi_assessment' => $validated['deskripsi_assessment'] ?? "Ujian CBT disalin dari Paket Bank Soal Global",
+            'idjenjang' => $idjenjang ?: 1,
+            'idmapel' => $idmapel ?: 1,
+            'idtingkat' => $idtingkat,
+            'idkelas' => $validated['idkelas'] ?? null,
+            'id_tahun_ajaran' => $validated['id_tahun_ajaran'] ?? null,
+            'source_type' => 'nasional',
+            'acak_soal' => $request->boolean('acak_soal', true),
+            'acak_opsi' => $request->boolean('acak_opsi', true),
+            'iduser_bo' => $user ? $user->iduser_bo : null,
+            'idkategori' => $user ? $user->idkategori : null,
+            'waktu_pengerjaan' => $durasi,
+            'tampil_assessment_pilgan' => $sourceQuestions->count(),
+            'tampil_assessment_essay' => 0,
+            'tanggal_mulai_assessment' => $validated['tanggal_mulai_assessment'] ?? now(),
+            'tanggal_batas_assessment' => $validated['tanggal_batas_assessment'] ?? now()->addDays(7),
+            'status_aktif' => 'Y',
+            'status_paket' => 'published',
+            'is_locked' => false,
+            'tanggal_input' => now(),
+        ]);
+
+        $orderNum = 1;
+        foreach ($sourceQuestions as $sq) {
+            $newSoalId = (string) (time() . rand(1000000, 9999999));
+            AssessmentSoalPilgan::create([
+                'idassessment_soal_pilgan' => $newSoalId,
+                'idassessment' => $newAssessmentId,
+                'idjenjang' => $sq->idjenjang ?: $idjenjang,
+                'idmapel' => $sq->idmapel ?: $idmapel,
+                'idkurikulum' => $sq->idkurikulum,
+                'idtingkat' => $sq->idtingkat ?: $idtingkat,
+                'bab' => $sq->bab,
+                'tingkat_kesulitan' => $sq->tingkat_kesulitan ?: 'Sedang',
+                'source_type' => 'nasional',
+                'tahun_soal_id' => $sq->tahun_soal_id,
+                'soal_text' => $sq->soal_text ?: 'Pertanyaan',
+                'soal_gambar' => $sq->soal_gambar,
+                'pilihan_a_text' => $sq->pilihan_a_text,
+                'pilihan_a_gambar' => $sq->pilihan_a_gambar,
+                'pilihan_b_text' => $sq->pilihan_b_text,
+                'pilihan_b_gambar' => $sq->pilihan_b_gambar,
+                'pilihan_c_text' => $sq->pilihan_c_text,
+                'pilihan_c_gambar' => $sq->pilihan_c_gambar,
+                'pilihan_d_text' => $sq->pilihan_d_text,
+                'pilihan_d_gambar' => $sq->pilihan_d_gambar,
+                'pilihan_e_text' => $sq->pilihan_e_text,
+                'pilihan_e_gambar' => $sq->pilihan_e_gambar,
+                'jawaban' => $sq->jawaban ?: 'A',
+                'penjelasan_jawaban' => $sq->penjelasan_jawaban,
+                'is_annulled' => false,
+                'urutan' => $orderNum++,
+                'tanggal_input' => now(),
+            ]);
+        }
+
+        AuditLog::record(
+            'COPY_PACKAGE_TO_EXAM',
+            'assessment',
+            $newAssessmentId,
+            "Guru membuat jadwal ujian dari salinan paket Bank Soal Global {$packageId} ({$sourceQuestions->count()} butir soal)",
+            ['package_id' => $packageId, 'idassessment' => $newAssessmentId]
+        );
+
+        return response()->json([
+            'message' => "Berhasil menyalin {$sourceQuestions->count()} butir soal dari Paket Bank Soal Global ke Jadwal Ujian baru!",
+            'data' => $newExam
+        ], 201);
+    }
+
+    /**
+     * Pilihan B: Buat Jadwal Ujian dengan Menyalin Paket Soal Buatan Guru
+     */
+    public function copyFromTeacherPackage(Request $request)
+    {
+        $validated = $request->validate([
+            'package_id' => 'required',
+            'nama_assessment' => 'nullable|string|max:255',
+            'deskripsi_assessment' => 'nullable|string',
+            'idkelas' => 'nullable|integer',
+            'id_tahun_ajaran' => 'nullable|integer',
+            'waktu_pengerjaan' => 'nullable|integer|min:1|max:300',
+            'tanggal_mulai_assessment' => 'nullable|date',
+            'tanggal_batas_assessment' => 'nullable|date',
+            'acak_soal' => 'nullable|boolean',
+            'acak_opsi' => 'nullable|boolean',
+        ]);
+
+        $user = $this->resolveUser($request);
+        $packageId = (string) $validated['package_id'];
+
+        $teacherPkg = BankSoalGuru::with(['soal' => fn($q) => $q->where('status_aktif', 'Y')])
+            ->where(function ($q) use ($user) {
+                if ($user) {
+                    $q->where('id_guru', $user->iduser_bo);
+                    if (!empty($user->idkategori)) {
+                        $q->orWhere('id_instansi', $user->idkategori);
+                    }
+                }
+            })
+            ->find($packageId);
+
+        if (!$teacherPkg) {
+            return response()->json(['message' => 'Paket Soal Guru tidak ditemukan atau bukan milik Anda.'], 404);
+        }
+
+        $sourceQuestions = $teacherPkg->soal;
+        if ($sourceQuestions->isEmpty()) {
+            return response()->json(['message' => 'Paket yang dipilih belum memiliki butir soal.'], 422);
+        }
+
+        $newAssessmentId = (string) (time() . rand(1000000, 9999999));
+        $durasi = $request->filled('waktu_pengerjaan') ? (int) $validated['waktu_pengerjaan'] : 90;
+
+        $newExam = Assessment::create([
+            'idassessment' => $newAssessmentId,
+            'nama_assessment' => $validated['nama_assessment'] ?: $teacherPkg->nama_paket,
+            'deskripsi_assessment' => $validated['deskripsi_assessment'] ?? "Ujian CBT disalin dari Soal Buatan Guru",
+            'idjenjang' => $teacherPkg->idjenjang ?: 1,
+            'idmapel' => $teacherPkg->idmapel ?: 1,
+            'idtingkat' => $teacherPkg->idtingkat,
+            'idkelas' => $validated['idkelas'] ?? null,
+            'id_tahun_ajaran' => $validated['id_tahun_ajaran'] ?? null,
+            'source_type' => 'guru',
+            'acak_soal' => $request->boolean('acak_soal', true),
+            'acak_opsi' => $request->boolean('acak_opsi', true),
+            'iduser_bo' => $user ? $user->iduser_bo : null,
+            'idkategori' => $user ? $user->idkategori : null,
+            'waktu_pengerjaan' => $durasi,
+            'tampil_assessment_pilgan' => $sourceQuestions->count(),
+            'tampil_assessment_essay' => 0,
+            'tanggal_mulai_assessment' => $validated['tanggal_mulai_assessment'] ?? now(),
+            'tanggal_batas_assessment' => $validated['tanggal_batas_assessment'] ?? now()->addDays(7),
+            'status_aktif' => 'Y',
+            'status_paket' => 'published',
+            'is_locked' => false,
+            'tanggal_input' => now(),
+        ]);
+
+        $orderNum = 1;
+        foreach ($sourceQuestions as $sq) {
+            $newSoalId = (string) (time() . rand(1000000, 9999999));
+            AssessmentSoalPilgan::create([
+                'idassessment_soal_pilgan' => $newSoalId,
+                'idassessment' => $newAssessmentId,
+                'idjenjang' => $sq->idjenjang ?: $teacherPkg->idjenjang,
+                'idmapel' => $sq->idmapel ?: $teacherPkg->idmapel,
+                'idkurikulum' => $sq->idkurikulum,
+                'idtingkat' => $sq->idtingkat ?: $teacherPkg->idtingkat,
+                'bab' => $sq->bab,
+                'tingkat_kesulitan' => $sq->tingkat_kesulitan ?: 'Sedang',
+                'source_type' => 'guru',
+                'tahun_soal_id' => $sq->tahun_soal_id,
+                'soal_text' => $sq->soal_text ?: 'Pertanyaan',
+                'soal_gambar' => $sq->soal_gambar,
+                'pilihan_a_text' => $sq->pilihan_a_text,
+                'pilihan_a_gambar' => $sq->pilihan_a_gambar,
+                'pilihan_b_text' => $sq->pilihan_b_text,
+                'pilihan_b_gambar' => $sq->pilihan_b_gambar,
+                'pilihan_c_text' => $sq->pilihan_c_text,
+                'pilihan_c_gambar' => $sq->pilihan_c_gambar,
+                'pilihan_d_text' => $sq->pilihan_d_text,
+                'pilihan_d_gambar' => $sq->pilihan_d_gambar,
+                'pilihan_e_text' => $sq->pilihan_e_text,
+                'pilihan_e_gambar' => $sq->pilihan_e_gambar,
+                'jawaban' => $sq->jawaban ?: 'A',
+                'penjelasan_jawaban' => $sq->penjelasan_jawaban,
+                'is_annulled' => false,
+                'urutan' => $orderNum++,
+                'tanggal_input' => now(),
+            ]);
+        }
+
+        AuditLog::record(
+            'COPY_TEACHER_PACKAGE_TO_EXAM',
+            'assessment',
+            $newAssessmentId,
+            "Guru membuat jadwal ujian dari salinan paket Soal Guru {$packageId} ({$sourceQuestions->count()} butir soal)",
+            ['package_id' => $packageId, 'idassessment' => $newAssessmentId]
+        );
+
+        return response()->json([
+            'message' => "Berhasil menyalin {$sourceQuestions->count()} butir soal dari Paket Guru ke Jadwal Ujian baru!",
+            'data' => $newExam
+        ], 201);
+    }
+
+    /**
+     * Assign package to a class(Request $request, $idassessment)
     {
         $request->validate([
             'idkelas' => 'required|exists:master_kelas,id'
@@ -915,10 +1204,20 @@ class TeacherExamController extends Controller
             ], 422);
         }
 
-        $assessment->update([
+        $updates = [
             'status_paket' => 'aktif',
             'status_aktif' => 'Y',
-        ]);
+        ];
+
+        // Bind to current institution if unassigned or global
+        if ($user && !empty($user->idkategori) && (empty($assessment->idkategori) || (string)$assessment->idkategori === '27830150842287772')) {
+            $updates['idkategori'] = $user->idkategori;
+        }
+        if ($user && !empty($user->iduser_bo) && empty($assessment->iduser_bo)) {
+            $updates['iduser_bo'] = $user->iduser_bo;
+        }
+
+        $assessment->update($updates);
 
         AuditLog::record(
             'PUBLIKASIKAN_PAKET_SOAL',
@@ -1465,12 +1764,23 @@ class TeacherExamController extends Controller
         $user = $this->resolveUser($request);
         $assessment = Assessment::findOrFail($idassessment);
 
-        if ($deny = $this->authorizeExamAccess($user, $assessment, true, true)) {
+        if ($deny = $this->authorizeExamAccess($user, $assessment, false, true)) {
             return $deny;
         }
 
-        $newStatus = ($assessment->status_aktif === 'Y') ? 'N' : 'Y';
-        $assessment->update(['status_aktif' => $newStatus]);
+        $newStatusAktif = ($assessment->status_aktif === 'Y') ? 'N' : 'Y';
+        $newStatusPaket = ($newStatusAktif === 'Y') ? 'aktif' : 'draft';
+
+        $updates = [
+            'status_aktif' => $newStatusAktif,
+            'status_paket' => $newStatusPaket,
+        ];
+
+        if ($user && !empty($user->idkategori) && (empty($assessment->idkategori) || (string)$assessment->idkategori === '27830150842287772')) {
+            $updates['idkategori'] = $user->idkategori;
+        }
+
+        $assessment->update($updates);
 
         AuditLog::record(
             'TOGGLE_STATUS_PAKET_TRYOUT',
@@ -1478,15 +1788,17 @@ class TeacherExamController extends Controller
             $idassessment,
             $assessment->nama_assessment,
             [
-                'status_aktif' => $newStatus,
+                'status_aktif' => $newStatusAktif,
+                'status_paket' => $newStatusPaket,
                 'updated_by' => $user?->name ?? 'Staff',
                 'role' => $user?->role ?? 'guru'
             ]
         );
 
         return response()->json([
-            'message' => 'Status paket TryOut berhasil diubah menjadi ' . ($newStatus === 'Y' ? 'Aktif' : 'Nonaktif'),
-            'status_aktif' => $newStatus,
+            'message' => 'Status jadwal ujian berhasil diubah (' . ($newStatusAktif === 'Y' ? 'Aktif' : 'Nonaktif/Draft') . ').',
+            'status_aktif' => $newStatusAktif,
+            'status_paket' => $newStatusPaket,
             'data' => $assessment
         ]);
     }

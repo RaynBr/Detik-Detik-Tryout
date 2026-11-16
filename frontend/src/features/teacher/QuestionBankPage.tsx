@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../shared/api/client';
-import { useAuth } from '../../shared/context/AuthContext';
-import { QuestionForm } from './components/QuestionForm';
-import { QuestionImportModal } from './components/QuestionImportModal';
 import { LaTeXRenderer } from '../../shared/components/LaTeXRenderer';
 import { CardGridSkeleton, QuestionListSkeleton } from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../shared/context/ToastContext';
 import { 
-  Plus, Edit2, Trash2, Search, Upload, Eye, 
-  X, Folder, FolderPlus, Copy, ArrowLeft, Layers, CheckCircle, FileText, ChevronRight,
-  ShieldAlert, ToggleLeft, ToggleRight
+  Search, Eye, X, Folder, ArrowLeft, Layers, CheckCircle, 
+  ChevronRight, Calendar, BookOpen, CheckCircle2,
+  HelpCircle, Lightbulb, ShieldCheck
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
@@ -21,81 +19,82 @@ interface Subject {
 }
 
 interface QuestionPackage {
-  id: number;
-  teacher_id: number;
-  subject_id: number;
-  code: string;
-  title: string;
-  description: string | null;
-  total_questions: number;
+  id: string | number;
+  code?: string;
+  kode_paket?: string;
+  title?: string;
+  nama_paket?: string;
+  description?: string | null;
+  deskripsi?: string | null;
+  total_soal: number;
   questions_count?: number;
-  created_at: string;
-  subject: Subject;
+  idjenjang?: number;
+  jenjang?: string;
+  tingkat?: number;
+  tingkat_label?: string;
+  idmapel?: number;
+  mata_pelajaran?: string;
+  subject?: Subject;
+  tahun_soal?: string;
+  created_at?: string;
 }
 
-interface Question {
-  id: number;
-  package_id: number | null;
-  subject_id: number;
-  topic: string;
-  difficulty: 'easy' | 'medium' | 'hard';
-  type: string;
+interface QuestionOption {
+  key: string;
   content: string;
-  media_url: string | null;
-  explanation: string | null;
-  subject: Subject;
-  options: Array<{ id: number; content: string; is_correct: boolean; media_url: string | null }>;
-  matching_pairs: Array<{ id: number; left_item: string; right_item: string }>;
-  status_aktif?: 'Y' | 'N';
-  tahun_soal_id?: number | null;
-  tahun_soal?: string | null;
-  creator_id?: string | null;
-  creator_name?: string | null;
+  media_url?: string | null;
+  is_correct: boolean;
+}
+
+interface QuestionItem {
+  id: string | number;
+  nomor_soal: number;
+  urutan: number;
+  soal_text: string;
+  soal_gambar?: string | null;
+  options: QuestionOption[];
+  jawaban: string;
+  jawaban_benar: string;
+  penjelasan_jawaban?: string | null;
+  pembahasan?: string | null;
+  tingkat_kesulitan: string;
+  difficulty?: string;
+  bab?: string;
+  mata_pelajaran?: string;
+  jenjang?: string;
+  tingkat?: string;
+  tahun_soal?: string;
 }
 
 export const QuestionBankPage: React.FC = () => {
-  const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
-  // Mode Read-Only for Admin Instansi per diagram rule
-  const isReadOnly = user?.role === 'admin';
-
-  // Navigation level: 'packages' (Folder list) or 'package_detail' (Questions inside selected package)
+  // Navigation level: 'packages' (Katalog Paket) or 'package_detail' (Daftar Soal & Pembahasan)
   const [currentView, setCurrentView] = useState<'packages' | 'package_detail'>('packages');
   const [selectedPackage, setSelectedPackage] = useState<QuestionPackage | null>(null);
 
   // Data states
   const [packages, setPackages] = useState<QuestionPackage[]>([]);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [jenjangList, setJenjangList] = useState<any[]>([]);
-  const [kelasList, setKelasList] = useState<any[]>([]);
-  const [tahunSoalList, setTahunSoalList] = useState<any[]>([]);
+  const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [loadingPackages, setLoadingPackages] = useState(true);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
 
-  // 4-Dimensional Filters: Jenjang, Kelas, Mapel, Tahun Soal
+  // Filter options from Cascading Params
+  const [jenjangList, setJenjangList] = useState<any[]>([]);
+  const [tingkatList, setTingkatList] = useState<any[]>([]);
+  const [subjectList, setSubjectList] = useState<any[]>([]);
+  const [tahunSoalList, setTahunSoalList] = useState<any[]>([]);
+
+  // Filter states
   const [search, setSearch] = useState('');
   const [jenjangFilter, setJenjangFilter] = useState('');
-  const [kelasFilter, setKelasFilter] = useState('');
+  const [tingkatFilter, setTingkatFilter] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('');
   const [tahunSoalFilter, setTahunSoalFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [difficultyFilter, setDifficultyFilter] = useState('');
 
-  // Modals
-  const [packageModalOpen, setPackageModalOpen] = useState(false);
-  const [editingPackage, setEditingPackage] = useState<QuestionPackage | null>(null);
-  const [packageTitle, setPackageTitle] = useState('');
-  const [packageCode, setPackageCode] = useState('');
-  const [packageSubjectName, setPackageSubjectName] = useState('');
-  const [packageDescription, setPackageDescription] = useState('');
-
-  const [formActive, setFormActive] = useState(false);
-  const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [targetImportPackageId, setTargetImportPackageId] = useState<number | null>(null);
-  const [previewingQuestion, setPreviewingQuestion] = useState<Question | null>(null);
+  // Preview Modal
+  const [previewingQuestion, setPreviewingQuestion] = useState<QuestionItem | null>(null);
 
   const {
     currentPage,
@@ -103,276 +102,139 @@ export const QuestionBankPage: React.FC = () => {
     resetPage,
     paginationMeta,
     setPaginationFromResponse
-  } = usePaginationUrl(15);
+  } = usePaginationUrl(12);
 
-  // Fetch Packages, Subjects, Jenjang, Classes, and Tahun Soal
+  // 1. Fetch Cascading Filter Parameters
+  const fetchFilterParams = async () => {
+    try {
+      const res = await apiClient.get('/teacher/global-question-bank/cascading-params', {
+        params: { idjenjang: jenjangFilter || undefined }
+      }).catch(() => null);
+
+      if (res?.data) {
+        setJenjangList(res.data.jenjang || []);
+        setTingkatList(res.data.tingkat || []);
+        setSubjectList(res.data.mata_pelajaran || []);
+        setTahunSoalList(res.data.tahun_soal || []);
+      }
+    } catch (err) {
+      console.warn('Failed to load filter params:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchFilterParams();
+  }, [jenjangFilter]);
+
+  // 2. Fetch Global Question Bank Packages
   const fetchPackages = async (page = currentPage) => {
     setLoadingPackages(true);
     try {
-      const [packagesRes, subjectsRes, jenjangRes, kelasRes, tahunRes] = await Promise.all([
-        apiClient.get('/teacher/packages', { params: { search: search || undefined, page } }).catch(() => ({ data: [] })),
-        apiClient.get('/teacher/subjects', { params: { all: true } }).catch(() => ({ data: [] })),
-        apiClient.get('/teacher/jenjang', { params: { all: true } }).catch(() => ({ data: [] })),
-        apiClient.get('/teacher/classes', { params: { all: true } }).catch(() => ({ data: [] })),
-        apiClient.get('/admin/tahun-soal', { params: { all: true } }).catch(() => ({ data: [] }))
-      ]);
-      setPaginationFromResponse(packagesRes.data);
-      const pList = packagesRes.data?.data || (Array.isArray(packagesRes.data) ? packagesRes.data : []);
-      const sList = subjectsRes.data?.data || (Array.isArray(subjectsRes.data) ? subjectsRes.data : []);
-      const jList = jenjangRes.data?.data || (Array.isArray(jenjangRes.data) ? jenjangRes.data : []);
-      const kList = kelasRes.data?.data || (Array.isArray(kelasRes.data) ? kelasRes.data : []);
-      const tList = tahunRes.data?.data || (Array.isArray(tahunRes.data) ? tahunRes.data : []);
-      setPackages(pList);
-      setSubjects(sList);
-      setJenjangList(jList);
-      setKelasList(kList);
-      setTahunSoalList(tList);
+      const res = await apiClient.get('/teacher/global-question-bank', {
+        params: {
+          search: search || undefined,
+          idjenjang: jenjangFilter || undefined,
+          tingkat: tingkatFilter || undefined,
+          idmapel: subjectFilter || undefined,
+          tahun_soal_id: tahunSoalFilter || undefined,
+          page
+        }
+      });
+      setPaginationFromResponse(res.data);
+      const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      setPackages(list);
     } catch (err) {
-      console.error('Failed to load packages & master data:', err);
+      console.error('Failed to load global question bank packages:', err);
+      toast.error('Gagal memuat katalog bank soal global.');
     } finally {
       setLoadingPackages(false);
     }
   };
 
-  // Fetch questions for selected package with 4D filters
-  const fetchPackageQuestions = async (packageId: number, page = currentPage) => {
+  useEffect(() => {
+    if (currentView === 'packages') {
+      fetchPackages(currentPage);
+    }
+  }, [currentPage, search, jenjangFilter, tingkatFilter, subjectFilter, tahunSoalFilter, currentView]);
+
+  // 3. Open Package and Fetch All its Questions
+  const handleOpenPackage = async (pkg: QuestionPackage) => {
+    setSelectedPackage(pkg);
+    setCurrentView('package_detail');
     setLoadingQuestions(true);
     try {
-      const res = await apiClient.get('/teacher/questions', {
-        params: {
-          package_id: packageId,
-          idjenjang: jenjangFilter || undefined,
-          idkelas: kelasFilter || undefined,
-          idmapel: subjectFilter || undefined,
-          tahun_soal_id: tahunSoalFilter || undefined,
-          status_aktif: statusFilter || undefined,
-          search: search || undefined,
-          page,
-        }
-      });
-      setPaginationFromResponse(res.data);
-      const qList = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      const res = await apiClient.get(`/teacher/global-question-bank/${pkg.id}`);
+      const qList = res.data?.questions || res.data?.package?.questions || res.data?.soal || [];
       setQuestions(qList);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load package questions:', err);
+      toast.error(err.response?.data?.message || 'Gagal memuat butir soal.');
     } finally {
       setLoadingQuestions(false);
     }
   };
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('action') === 'upload') {
-      setImportOpen(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (currentView === 'packages') {
-      fetchPackages(currentPage);
-    } else if (selectedPackage) {
-      fetchPackageQuestions(selectedPackage.id, currentPage);
-    }
-  }, [currentView, selectedPackage, currentPage, search, subjectFilter, jenjangFilter, kelasFilter, tahunSoalFilter, statusFilter]);
-
-  // Open a specific package
-  const handleOpenPackage = (pkg: QuestionPackage) => {
-    setSelectedPackage(pkg);
-    setCurrentView('package_detail');
-    setSearch('');
-    resetPage();
-    fetchPackageQuestions(pkg.id, 1);
-  };
-
-  // Back to packages list
-  const handleBackToPackages = () => {
+  const handleBackToCatalog = () => {
     setCurrentView('packages');
     setSelectedPackage(null);
-    setFormActive(false);
-    setActiveQuestionId(null);
-    setPreviewingQuestion(null);
-    setSearch('');
-    resetPage();
-    fetchPackages(1);
+    setQuestions([]);
   };
 
-  // CRUD Package handlers
-  const handleOpenCreatePackage = () => {
-    setEditingPackage(null);
-    setPackageTitle('');
-    setPackageCode('');
-    setPackageSubjectName('');
-    setPackageDescription('');
-    setPackageModalOpen(true);
-  };
-
-  const handleOpenEditPackage = (pkg: QuestionPackage) => {
-    setEditingPackage(pkg);
-    setPackageTitle(pkg.title);
-    setPackageCode(pkg.code);
-    setPackageSubjectName(pkg.subject?.name || '');
-    setPackageDescription(pkg.description || '');
-    setPackageModalOpen(true);
-  };
-
-  const handleSavePackage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editingPackage) {
-        await apiClient.put(`/teacher/packages/${editingPackage.id}`, {
-          title: packageTitle,
-          code: packageCode,
-          subject_name: packageSubjectName,
-          description: packageDescription,
-        });
-        toast.success('Berkas paket soal berhasil diperbarui!');
-      } else {
-        await apiClient.post('/teacher/packages', {
-          title: packageTitle,
-          code: packageCode,
-          subject_name: packageSubjectName,
-          description: packageDescription,
-        });
-        toast.success('Berkas paket soal baru berhasil dibuat!');
-      }
-      setPackageModalOpen(false);
-      fetchPackages();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Gagal menyimpan berkas paket.');
-    }
-  };
-
-  const handleDeletePackage = async (id: number) => {
-    if (!confirm('Peringatan: Menghapus berkas paket ini akan menghapus seluruh butir soal di dalamnya! Apakah Anda yakin?')) return;
-    try {
-      await apiClient.delete(`/teacher/packages/${id}`);
-      toast.success('Berkas paket soal berhasil dihapus!');
-      fetchPackages();
-      if (currentView === 'package_detail' && selectedPackage?.id === id) {
-        handleBackToPackages();
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Gagal menghapus paket.');
-    }
-  };
-
-  const handleDuplicatePackage = async (id: number) => {
-    try {
-      const res = await apiClient.post(`/teacher/packages/${id}/duplicate`);
-      toast.success(`Berhasil menduplikasi paket: ${res.data.data.title}`);
-      fetchPackages();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Gagal menduplikasi paket.');
-    }
-  };
-
-  // CRUD Question inside Package handlers
-  const handleCreateQuestionSuccess = () => {
-    setFormActive(false);
-    setActiveQuestionId(null);
-    if (selectedPackage) {
-      fetchPackageQuestions(selectedPackage.id);
-      fetchPackages();
-    }
-  };
-
-  const handleEditQuestion = (id: number) => {
-    setActiveQuestionId(id);
-    setFormActive(true);
-  };
-
-  const handleDeleteQuestion = async (id: number) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus butir soal ini dari paket?')) return;
-    try {
-      await apiClient.delete(`/teacher/questions/${id}`);
-      toast.success('Butir soal berhasil dihapus dari paket!');
-      if (selectedPackage) {
-        fetchPackageQuestions(selectedPackage.id);
-        fetchPackages();
-      }
-      if (previewingQuestion?.id === id) {
-        setPreviewingQuestion(null);
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Gagal menghapus soal.');
-    }
-  };
-
-  const handleToggleStatus = async (qId: number) => {
-    try {
-      const res = await apiClient.patch(`/teacher/questions/${qId}/status`);
-      toast.success(res.data?.message || 'Status soal berhasil diubah!');
-      if (selectedPackage) fetchPackageQuestions(selectedPackage.id);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Gagal mengubah status soal.');
-    }
+  const handleScheduleExam = (pkgId: string | number) => {
+    navigate(`/teacher/exams?action=from_package&package_id=${pkgId}`);
   };
 
   const getDifficultyBadge = (difficulty: string) => {
-    switch (difficulty) {
-      case 'easy':
-        return <span className="px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 text-xs font-semibold rounded-lg">Mudah</span>;
-      case 'medium':
-        return <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-xs font-semibold rounded-lg">Sedang</span>;
-      case 'hard':
-        return <span className="px-2 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-semibold rounded-lg">Sulit</span>;
-      default:
-        return null;
+    const diff = (difficulty || '').toLowerCase();
+    if (diff === 'mudah' || diff === 'easy') {
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/20">
+          Mudah
+        </span>
+      );
     }
-  };
-
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'multiple_choice_single':
-        return 'Pilihan Ganda (Single)';
-      case 'multiple_choice_multi':
-        return 'Pilihan Ganda (Kompleks)';
-      case 'essay':
-        return 'Essay / Uraian';
-      case 'true_false':
-        return 'Benar / Salah';
-      case 'matching':
-        return 'Menjodohkan';
-      default:
-        return type;
+    if (diff === 'sulit' || diff === 'hard') {
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-300 border border-rose-200 dark:border-rose-500/20">
+          Sulit
+        </span>
+      );
     }
+    return (
+      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 border border-amber-200 dark:border-amber-500/20">
+        Sedang
+      </span>
+    );
   };
-
-  // Filtered packages (handled server-side via pagination)
-  const filteredPackages = Array.isArray(packages) ? packages : [];
-
-  // Filtered questions inside selected package (handled server-side via pagination)
-  const filteredQuestions = Array.isArray(questions) ? questions : [];
-
-  const totalAllQuestions = (Array.isArray(packages) ? packages : []).reduce((acc, p) => acc + (p.questions_count ?? p.total_questions ?? 0), 0);
 
   return (
-    <div className="space-y-6">
-      {/* Header Bar */}
+    <div className="space-y-6 pb-12 animate-fade-in font-sans">
+      
+      {/* 1. Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           {currentView === 'package_detail' && selectedPackage ? (
             <div className="flex items-center gap-3">
               <button 
-                onClick={handleBackToPackages}
-                className="p-2.5 glass-panel hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white rounded-2xl transition shadow-xs"
-                title="Kembali ke Daftar Berkas"
+                onClick={handleBackToCatalog}
+                className="p-2.5 glass-panel hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:text-white rounded-2xl transition shadow-xs cursor-pointer"
+                title="Kembali ke Katalog"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
               <div>
-                <div className="flex items-center gap-2 text-xs text-cyan-600 dark:text-cyan-400 font-bold mb-1">
-                  <span>Bank Soal</span>
+                <div className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400 font-bold mb-1">
+                  <span>Katalog Bank Soal Global</span>
                   <ChevronRight className="h-3.5 w-3.5" />
-                  <span className="text-slate-800 dark:text-white">{selectedPackage.subject?.name}</span>
+                  <span className="text-slate-800 dark:text-white">{selectedPackage.mata_pelajaran || selectedPackage.subject?.name || 'Mata Pelajaran'}</span>
                 </div>
                 <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
-                  <div className="p-2 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-200 dark:border-cyan-500/30">
+                  <div className="p-2 bg-indigo-100 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-500/30">
                     <Folder className="h-6 w-6" />
                   </div>
-                  <span>{selectedPackage.title}</span>
-                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-lg bg-cyan-100 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/20 dark:text-cyan-300 dark:border-cyan-500/30">
-                    {selectedPackage.code}
+                  <span>{selectedPackage.nama_paket || selectedPackage.title}</span>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:border-indigo-500/30">
+                    {selectedPackage.kode_paket || selectedPackage.code || `PKG-${selectedPackage.id}`}
                   </span>
                 </h1>
               </div>
@@ -380,822 +242,501 @@ export const QuestionBankPage: React.FC = () => {
           ) : (
             <div>
               <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
-                <div className="p-2 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-200 dark:border-cyan-500/30">
-                  <Layers className="h-6 w-6" />
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-500/30">
+                  <BookOpen className="h-6 w-6" />
                 </div>
-                <span>Bank Soal (Berkas & Paket)</span>
+                <span>Katalog Bank Soal Global</span>
               </h1>
               <p className="text-xs md:text-sm text-slate-500 dark:text-gray-400 mt-1 font-medium">
-                Kelola butir soal dalam berkas paket terpisah agar tidak bercampur dan siap digunakan pada ujian.
+                Jelajahi dan telaah seluruh paket bank soal resmi dari Super Admin (Read-Only). Untuk membuat atau mengenerate ujian dari bank soal ini, gunakan menu Jadwal Ujian.
               </p>
             </div>
           )}
         </div>
 
-        {/* Top Action Buttons */}
-        <div className="flex items-center gap-2.5">
-          {isReadOnly ? (
-            <span className="px-3.5 py-2 bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 rounded-xl text-xs font-bold border border-amber-300 dark:border-amber-600/30 flex items-center gap-1.5">
-              <ShieldAlert className="h-4 w-4" />
-              Mode Baca Saja (Admin Instansi)
-            </span>
-          ) : currentView === 'packages' ? (
-            <>
-              <button
-                onClick={() => {
-                  setTargetImportPackageId(null);
-                  setImportOpen(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-800 dark:text-gray-300 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold transition shadow-xs"
-              >
-                <Upload className="h-4 w-4" />
-                <span>Import CSV</span>
-              </button>
-              <button
-                onClick={handleOpenCreatePackage}
-                className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30"
-              >
-                <FolderPlus className="h-4 w-4" />
-                <span>Buat Berkas Baru</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  setTargetImportPackageId(selectedPackage?.id || null);
-                  setImportOpen(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-800 dark:text-gray-300 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold transition shadow-xs"
-              >
-                <Upload className="h-4 w-4" />
-                <span>Import CSV ke Berkas Ini</span>
-              </button>
-              <button
-                onClick={() => {
-                  setActiveQuestionId(null);
-                  setFormActive(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Tambah Butir Soal</span>
-              </button>
-            </>
+        {/* Top Badges & Actions */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="px-3 py-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-500/30 flex items-center gap-1.5 shadow-xs">
+            <ShieldCheck className="h-4 w-4 text-indigo-500" />
+            <span>Katalog Resmi Super Admin (Read-Only)</span>
+          </span>
+
+          {currentView === 'package_detail' && selectedPackage && (
+            <button
+              onClick={() => handleScheduleExam(selectedPackage.id)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/20 cursor-pointer"
+            >
+              <Calendar className="h-4 w-4" />
+              <span>Jadwalkan Ujian dari Paket Ini</span>
+            </button>
           )}
         </div>
       </div>
 
-      {isReadOnly && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/30 flex items-center gap-3 text-amber-800 dark:text-amber-300 text-xs font-semibold">
-          <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600" />
-          <div>
-            <p className="font-bold">Mode Akses Read-Only (Admin Instansi)</p>
-            <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
-              Sesuai aturan hak akses, Admin Instansi hanya memiliki hak pantau. Penambahan, pengeditan, atau penghapusan butir soal hanya dapat dilakukan oleh Guru pembuat atau Super Administrator.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* VIEW 1: DAFTAR BERKAS / PAKET SOAL (FOLDER VIEW)                          */}
-      {/* ========================================================================= */}
+      {/* 2. VIEW 1: KATALOG PAKET BANK SOAL GLOBAL */}
       {currentView === 'packages' && (
         <div className="space-y-6">
-          {/* Quick Stats & Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="glass-panel p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
-              <div className="p-3 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-200 dark:border-cyan-500/20">
-                <Folder className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Total Berkas</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">{packages.length} Paket</p>
-              </div>
-            </div>
-
-            <div className="glass-panel p-4 rounded-3xl shadow-sm flex items-center gap-3.5">
-              <div className="p-3 bg-emerald-100 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-500/20">
-                <FileText className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Total Butir Soal</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">{totalAllQuestions} Butir</p>
-              </div>
-            </div>
-
-            {/* Filter Search */}
-            <div className="md:col-span-2 glass-panel p-2.5 rounded-3xl shadow-sm flex items-center gap-3">
-              <div className="relative flex-1">
-                <Search className="h-4 w-4 text-slate-400 dark:text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          
+          {/* Search & Cascading Filter Bar */}
+          <div className="glass-panel p-4 md:p-5 rounded-3xl border border-slate-200/80 dark:border-white/5 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              
+              {/* Search */}
+              <div className="relative sm:col-span-2 lg:col-span-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Cari nama berkas, kode, atau catatan..."
+                  placeholder="Cari paket soal..."
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
                     resetPage();
                   }}
-                  className="w-full pl-10 pr-3 py-2 glass-input rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white"
                 />
               </div>
-              <select
-                value={subjectFilter}
-                onChange={(e) => {
-                  setSubjectFilter(e.target.value);
-                  resetPage();
-                }}
-                className="px-3.5 py-2 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
+
+              {/* Filter Jenjang */}
+              <div>
+                <select
+                  value={jenjangFilter}
+                  onChange={(e) => {
+                    setJenjangFilter(e.target.value);
+                    setTingkatFilter('');
+                    resetPage();
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white font-medium"
+                >
+                  <option value="">Semua Jenjang</option>
+                  {jenjangList.map((j) => (
+                    <option key={j.id} value={j.id}>{j.nama_jenjang}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Tingkat */}
+              <div>
+                <select
+                  value={tingkatFilter}
+                  onChange={(e) => {
+                    setTingkatFilter(e.target.value);
+                    resetPage();
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white font-medium"
+                >
+                  <option value="">Semua Tingkat</option>
+                  {tingkatList.map((t) => (
+                    <option key={t.id || t.tingkat} value={t.tingkat}>
+                      {t.nama_tingkat || `Tingkat ${t.tingkat}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Mapel */}
+              <div>
+                <select
+                  value={subjectFilter}
+                  onChange={(e) => {
+                    setSubjectFilter(e.target.value);
+                    resetPage();
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white font-medium"
+                >
+                  <option value="">Semua Mata Pelajaran</option>
+                  {subjectList.map((s) => (
+                    <option key={s.id} value={s.id}>{s.nama_mapel}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Tahun Soal */}
+              <div>
+                <select
+                  value={tahunSoalFilter}
+                  onChange={(e) => {
+                    setTahunSoalFilter(e.target.value);
+                    resetPage();
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white font-medium"
+                >
+                  <option value="">Semua Tahun Soal</option>
+                  {tahunSoalList.map((t) => (
+                    <option key={t.id} value={t.id}>{t.tahun} {t.keterangan ? `(${t.keterangan})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+            </div>
+
+            {/* Clear Filter Shortcut */}
+            {(search || jenjangFilter || tingkatFilter || subjectFilter || tahunSoalFilter) && (
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-white/5">
+                <span className="text-slate-500 dark:text-gray-400">
+                  Menampilkan hasil filter katalog
+                </span>
+                <button
+                  onClick={() => {
+                    setSearch('');
+                    setJenjangFilter('');
+                    setTingkatFilter('');
+                    setSubjectFilter('');
+                    setTahunSoalFilter('');
+                    resetPage();
+                  }}
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold"
+                >
+                  Reset Semua Filter
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Package Cards Grid */}
+          {loadingPackages ? (
+            <CardGridSkeleton count={6} cols="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" />
+          ) : packages.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {packages.map((pkg) => (
+                <div
+                  key={pkg.id}
+                  className="glass-panel rounded-3xl p-5 md:p-6 border border-slate-200/80 dark:border-white/5 hover:border-indigo-500/30 dark:hover:border-indigo-500/30 transition-all duration-200 flex flex-col justify-between shadow-xs hover:shadow-md group"
+                >
+                  <div>
+                    {/* Header tags */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/20 truncate">
+                        {pkg.mata_pelajaran || pkg.subject?.name || 'Mata Pelajaran'}
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-slate-400 dark:text-gray-400">
+                        {pkg.kode_paket || pkg.code || `PKG-${pkg.id}`}
+                      </span>
+                    </div>
+
+                    <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-2 mb-2">
+                      {pkg.nama_paket || pkg.title}
+                    </h3>
+
+                    {pkg.deskripsi || pkg.description ? (
+                      <p className="text-xs text-slate-500 dark:text-gray-400 line-clamp-2 mb-4">
+                        {pkg.deskripsi || pkg.description}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic mb-4">
+                        Paket bank soal platform resmi dari Super Admin.
+                      </p>
+                    )}
+
+                    {/* Metadata Badges */}
+                    <div className="flex flex-wrap gap-1.5 mb-5 text-[11px]">
+                      {pkg.jenjang && (
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-white/5 dark:text-gray-300 font-semibold">
+                          {pkg.jenjang}
+                        </span>
+                      )}
+                      {(pkg.tingkat_label || pkg.tingkat) && (
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-white/5 dark:text-gray-300 font-semibold">
+                          {pkg.tingkat_label || `Tingkat ${pkg.tingkat}`}
+                        </span>
+                      )}
+                      {pkg.tahun_soal && pkg.tahun_soal !== '-' && (
+                        <span className="px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/20 font-bold">
+                          Thn {pkg.tahun_soal}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Footer & Action Buttons */}
+                  <div className="pt-4 border-t border-slate-100 dark:border-white/5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800 dark:text-white">
+                      <Layers className="h-4 w-4 text-indigo-500" />
+                      <span>{pkg.total_soal || pkg.questions_count || 0} Butir Soal</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleScheduleExam(pkg.id)}
+                        className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300 rounded-xl text-xs font-bold transition cursor-pointer"
+                        title="Jadwalkan Ujian dari Paket Ini"
+                      >
+                        <Calendar className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenPackage(pkg)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>Buka Paket</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="glass-panel rounded-3xl p-12 text-center border border-dashed border-slate-300 dark:border-white/10">
+              <div className="h-16 w-16 mx-auto rounded-2xl bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-4">
+                <BookOpen className="h-8 w-8" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1">
+                Tidak ada paket soal yang cocok
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-gray-400 max-w-sm mx-auto">
+                Coba sesuaikan kata kunci pencarian atau ubah kombinasi filter jenjang, tingkat, dan mata pelajaran.
+              </p>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {packages.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              lastPage={paginationMeta.lastPage}
+              onPageChange={setPage}
+              total={paginationMeta.total}
+              perPage={paginationMeta.perPage}
+            />
+          )}
+        </div>
+      )}
+
+      {/* 3. VIEW 2: ISI PAKET BANK SOAL (READ ONLY - TELAAT SOAL & PEMBAHASAN) */}
+      {currentView === 'package_detail' && selectedPackage && (
+        <div className="space-y-6">
+          
+          {/* Detail Metadata Card */}
+          <div className="glass-panel p-5 rounded-3xl border border-slate-200/80 dark:border-white/5 bg-gradient-to-r from-indigo-500/5 via-cyan-500/5 to-transparent">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Informasi Paket</span>
+                <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-700 dark:text-gray-300">
+                  <span>Mata Pelajaran: <strong className="text-indigo-600 dark:text-indigo-400">{selectedPackage.mata_pelajaran || selectedPackage.subject?.name}</strong></span>
+                  <span>â€¢</span>
+                  <span>Jenjang: <strong className="text-slate-900 dark:text-white">{selectedPackage.jenjang || 'Semua'}</strong></span>
+                  <span>â€¢</span>
+                  <span>Tingkat: <strong className="text-slate-900 dark:text-white">{selectedPackage.tingkat_label || selectedPackage.tingkat || '-'}</strong></span>
+                  <span>â€¢</span>
+                  <span>Tahun Soal: <strong className="text-cyan-600 dark:text-cyan-400">{selectedPackage.tahun_soal || '-'}</strong></span>
+                  <span>â€¢</span>
+                  <span>Total: <strong className="text-emerald-600 dark:text-emerald-400">{questions.length} Butir Soal</strong></span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleBackToCatalog}
+                className="self-start sm:self-auto px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
               >
-                <option value="">Semua Mata Pelajaran</option>
-                {subjects.map(s => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                ))}
-              </select>
+                <ArrowLeft className="h-4 w-4" />
+                <span>Kembali ke Katalog</span>
+              </button>
             </div>
           </div>
 
-          {/* Package Grid or Loading Skeleton */}
-          {loadingPackages ? (
-            <CardGridSkeleton count={6} cols="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" />
-          ) : filteredPackages.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-fade-in">
-              {filteredPackages.map((pkg) => {
-                const questionCount = pkg.questions_count ?? pkg.total_questions ?? 0;
-                return (
-                  <div
-                    key={pkg.id}
-                    className="glass-panel rounded-3xl p-5 border border-slate-200 dark:border-white/10 hover:border-cyan-500/40 flex flex-col justify-between group card-interactive"
-                  >
-                    <div>
-                      {/* Badge Top */}
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="px-2.5 py-1 bg-cyan-100 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20 text-xs font-bold rounded-lg">
-                          {pkg.subject?.name || 'Umum'}
+          {/* List of Questions with full question text, options, answers, and explanations */}
+          {loadingQuestions ? (
+            <QuestionListSkeleton count={5} />
+          ) : questions.length > 0 ? (
+            <div className="space-y-5">
+              {questions.map((q, idx) => (
+                <div
+                  key={q.id || idx}
+                  className="glass-panel rounded-3xl p-5 md:p-6 border border-slate-200/80 dark:border-white/5 shadow-xs space-y-4"
+                >
+                  {/* Question Header */}
+                  <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-white/5">
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-indigo-600 text-white font-black text-xs">
+                        {q.nomor_soal || idx + 1}
+                      </span>
+                      {getDifficultyBadge(q.tingkat_kesulitan || q.difficulty || 'Sedang')}
+                      {q.bab && q.bab !== '-' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-white/5 dark:text-gray-300">
+                          Bab: {q.bab}
                         </span>
-                        <span className="text-[11px] font-mono font-bold text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-md border border-slate-200 dark:border-white/5">
-                          {pkg.code}
-                        </span>
-                      </div>
-
-                      {/* Title & Desc */}
-                      <h3 
-                        onClick={() => handleOpenPackage(pkg)}
-                        className="text-base font-black text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition cursor-pointer mb-2 line-clamp-1"
-                      >
-                        {pkg.title}
-                      </h3>
-                      <p className="text-xs text-slate-500 dark:text-gray-400 line-clamp-2 min-h-[32px] mb-4 font-medium">
-                        {pkg.description || 'Tidak ada deskripsi berkas.'}
-                      </p>
-
-                      {/* Question Count Pill */}
-                      <div className="flex items-center gap-2 mb-4 p-2.5 bg-slate-100 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-white/5">
-                        <FileText className="h-4 w-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                        <span className="text-xs font-medium text-slate-700 dark:text-gray-300">
-                          <strong className="text-slate-900 dark:text-white font-bold">{questionCount}</strong> Butir Soal Terkunci
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => handleOpenPackage(pkg)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-md shadow-cyan-600/20 btn-press"
-                      >
-                        <Folder className="h-3.5 w-3.5" />
-                        <span>Buka Berkas</span>
-                      </button>
-
-                      {!isReadOnly && (
-                        <>
-                          <button
-                            onClick={() => handleDuplicatePackage(pkg.id)}
-                            className="p-2.5 bg-slate-100 hover:bg-cyan-100 dark:bg-white/5 dark:hover:bg-cyan-600/20 text-slate-600 hover:text-cyan-700 dark:text-gray-400 dark:hover:text-cyan-400 border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
-                            title="Duplikasi Berkas Paket"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenEditPackage(pkg)}
-                            className="p-2.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
-                            title="Edit Berkas"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeletePackage(pkg.id)}
-                            className="p-2.5 bg-slate-100 hover:bg-rose-100 dark:bg-white/5 dark:hover:bg-rose-600/20 text-slate-600 hover:text-rose-700 dark:text-gray-400 dark:hover:text-rose-400 border border-slate-200 dark:border-white/10 rounded-xl transition shadow-xs btn-press"
-                            title="Hapus Berkas"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </>
                       )}
                     </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPreviewingQuestion(q)}
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300 rounded-lg text-xs font-bold transition cursor-pointer"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>Preview Soal</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Question Content */}
+                  <div className="text-sm text-slate-800 dark:text-gray-200 leading-relaxed space-y-3 font-medium">
+                    <LaTeXRenderer text={q.soal_text} />
+                    {q.soal_gambar && (
+                      <div className="my-2">
+                        <img 
+                          src={q.soal_gambar} 
+                          alt="Ilustrasi Soal" 
+                          className="max-h-64 rounded-xl border border-slate-200 dark:border-white/10 object-contain"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Options List */}
+                  <div className="space-y-2 pt-2">
+                    {q.options && q.options.map((opt) => {
+                      const isCorrect = opt.is_correct || opt.key === q.jawaban_benar || opt.key === q.jawaban;
+                      return (
+                        <div
+                          key={opt.key}
+                          className={`flex items-start gap-3 p-3.5 rounded-2xl border text-xs transition ${
+                            isCorrect 
+                              ? 'bg-emerald-50/80 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-600/40 text-emerald-950 dark:text-emerald-200 font-semibold'
+                              : 'bg-slate-50/60 dark:bg-white/[0.02] border-slate-200/80 dark:border-white/5 text-slate-700 dark:text-gray-300'
+                          }`}
+                        >
+                          <span className={`h-6 w-6 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                            isCorrect 
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300'
+                          }`}>
+                            {opt.key}
+                          </span>
+                          <div className="flex-1 min-w-0 pt-0.5">
+                            <LaTeXRenderer text={opt.content} />
+                            {opt.media_url && (
+                              <img src={opt.media_url} alt={`Opsi ${opt.key}`} className="max-h-32 mt-2 rounded-lg border border-slate-200 dark:border-white/10" />
+                            )}
+                          </div>
+                          {isCorrect && (
+                            <span className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                              <CheckCircle2 className="h-4 w-4" />
+                              <span>Kunci Jawaban</span>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Pembahasan Box */}
+                  <div className="mt-4 p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/15 border border-amber-200 dark:border-amber-800/30 text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-300 mb-1.5">
+                      <Lightbulb className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <span>Pembahasan & Kunci Jawaban (Kunci: {q.jawaban_benar || q.jawaban})</span>
+                    </div>
+                    <div className="text-slate-700 dark:text-gray-300 leading-relaxed pl-5 font-normal">
+                      <LaTeXRenderer text={q.penjelasan_jawaban || q.pembahasan || 'Belum ada pembahasan khusus untuk butir ini.'} />
+                    </div>
+                  </div>
+
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="glass-panel rounded-3xl p-12 text-center border border-dashed border-slate-300 dark:border-white/10">
+              <HelpCircle className="h-10 w-10 text-slate-400 mx-auto mb-2" />
+              <p className="text-xs text-slate-500 dark:text-gray-400 font-medium">
+                Paket ini belum memiliki butir soal aktif.
+              </p>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* 4. MODAL PREVIEW SOAL DETAIL */}
+      {previewingQuestion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-[#0c101d] rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-white/10 animate-scale-up space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center justify-center h-8 w-8 rounded-xl bg-indigo-600 text-white font-black text-sm">
+                  {previewingQuestion.nomor_soal}
+                </span>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Telaah Butir Soal</h3>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <span>{previewingQuestion.mata_pelajaran || selectedPackage?.mata_pelajaran}</span>
+                    <span>â€¢</span>
+                    <span>{getDifficultyBadge(previewingQuestion.tingkat_kesulitan)}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewingQuestion(null)}
+                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Question Text */}
+            <div className="text-sm text-slate-800 dark:text-gray-200 leading-relaxed">
+              <LaTeXRenderer text={previewingQuestion.soal_text} />
+              {previewingQuestion.soal_gambar && (
+                <img src={previewingQuestion.soal_gambar} alt="Ilustrasi" className="max-h-64 mt-3 rounded-xl border border-slate-200 dark:border-white/10" />
+              )}
+            </div>
+
+            {/* Options */}
+            <div className="space-y-2">
+              {previewingQuestion.options && previewingQuestion.options.map((opt) => {
+                const isCorrect = opt.is_correct || opt.key === previewingQuestion.jawaban_benar || opt.key === previewingQuestion.jawaban;
+                return (
+                  <div
+                    key={opt.key}
+                    className={`flex items-start gap-3 p-3 rounded-xl border text-xs ${
+                      isCorrect 
+                        ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-600/40 text-emerald-900 dark:text-emerald-300 font-semibold'
+                        : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-700 dark:text-gray-300'
+                    }`}
+                  >
+                    <span className={`h-6 w-6 rounded-md flex items-center justify-center font-bold shrink-0 ${
+                      isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300'
+                    }`}>
+                      {opt.key}
+                    </span>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <LaTeXRenderer text={opt.content} />
+                      {opt.media_url && <img src={opt.media_url} alt="" className="max-h-24 mt-1 rounded" />}
+                    </div>
+                    {isCorrect && (
+                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <CheckCircle className="h-3.5 w-3.5" /> Kunci
+                      </span>
+                    )}
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <div className="glass-panel text-center py-16 text-slate-500 dark:text-gray-500 rounded-3xl shadow-sm">
-              <FolderPlus className="h-12 w-12 text-slate-400 dark:text-gray-600 mx-auto mb-3" />
-              <h3 className="text-sm font-bold text-slate-800 dark:text-gray-300 mb-1">Belum Ada Berkas Paket Soal</h3>
-              <p className="text-xs text-slate-500 dark:text-gray-500 max-w-md mx-auto mb-4 font-medium">
-                Buat berkas paket soal baru atau import file CSV agar butir-butir soal tersimpan rapi dan terisolasi.
-              </p>
+
+            {/* Pembahasan */}
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/30 text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-300 mb-1">
+                <Lightbulb className="h-4 w-4 text-amber-600" />
+                <span>Pembahasan & Solusi Soal</span>
+              </div>
+              <div className="text-slate-700 dark:text-gray-300 leading-relaxed font-normal">
+                <LaTeXRenderer text={previewingQuestion.penjelasan_jawaban || previewingQuestion.pembahasan || 'Tidak ada pembahasan khusus untuk butir ini.'} />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-white/5">
               <button
-                onClick={handleOpenCreatePackage}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30"
-              >
-                <FolderPlus className="h-4 w-4" />
-                <span>Buat Berkas Sekarang</span>
-              </button>
-            </div>
-          )}
-
-          <Pagination
-            currentPage={paginationMeta.currentPage}
-            lastPage={paginationMeta.lastPage}
-            total={paginationMeta.total}
-            perPage={paginationMeta.perPage}
-            from={paginationMeta.from}
-            to={paginationMeta.to}
-            onPageChange={setPage}
-          />
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* VIEW 2: BUTIR SOAL DI DALAM PAKET TERPILIH (PACKAGE DETAIL VIEW)          */}
-      {/* ========================================================================= */}
-      {currentView === 'package_detail' && selectedPackage && (
-        <div className="space-y-6">
-          {/* Question Form View */}
-          {formActive ? (
-            <div className="glass-panel p-6 md:p-8 rounded-3xl shadow-xl">
-              <QuestionForm
-                questionId={activeQuestionId}
-                packageId={selectedPackage.id}
-                defaultSubjectId={selectedPackage.subject_id}
-                onSuccess={handleCreateQuestionSuccess}
-                onCancel={() => {
-                  setFormActive(false);
-                  setActiveQuestionId(null);
-                }}
-              />
-            </div>
-          ) : (
-            <>
-              {/* Package Summary & Search */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-panel p-4 rounded-3xl shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-200 dark:border-cyan-500/20">
-                    <FileText className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white">Daftar Butir Soal ({filteredQuestions.length} Butir)</h3>
-                    <p className="text-xs text-slate-500 dark:text-gray-400 font-medium">Seluruh soal di bawah ini terikat eksklusif pada berkas: <strong className="text-slate-800 dark:text-gray-200">{selectedPackage.title}</strong></p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative w-44">
-                    <Search className="h-4 w-4 text-slate-400 dark:text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Cari konten/topik..."
-                      value={search}
-                      onChange={(e) => {
-                        setSearch(e.target.value);
-                        resetPage();
-                      }}
-                      className="w-full pl-9 pr-3 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 font-medium"
-                    />
-                  </div>
-
-                  {/* 4D Filter: Jenjang */}
-                  <select
-                    value={jenjangFilter}
-                    onChange={(e) => {
-                      setJenjangFilter(e.target.value);
-                      resetPage();
-                    }}
-                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
-                  >
-                    <option value="">Semua Jenjang</option>
-                    {jenjangList.map(j => (
-                      <option key={j.id} value={j.id}>{j.nama_jenjang}</option>
-                    ))}
-                  </select>
-
-                  {/* 4D Filter: Kelas */}
-                  <select
-                    value={kelasFilter}
-                    onChange={(e) => {
-                      setKelasFilter(e.target.value);
-                      resetPage();
-                    }}
-                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
-                  >
-                    <option value="">Semua Kelas</option>
-                    {kelasList.map(k => (
-                      <option key={k.id} value={k.id}>{k.nama_kelas}</option>
-                    ))}
-                  </select>
-
-                  {/* 4D Filter: Mapel */}
-                  <select
-                    value={subjectFilter}
-                    onChange={(e) => {
-                      setSubjectFilter(e.target.value);
-                      resetPage();
-                    }}
-                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
-                  >
-                    <option value="">Semua Mapel</option>
-                    {subjects.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-
-                  {/* 4D Filter: Tahun Soal */}
-                  <select
-                    value={tahunSoalFilter}
-                    onChange={(e) => {
-                      setTahunSoalFilter(e.target.value);
-                      resetPage();
-                    }}
-                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
-                  >
-                    <option value="">Semua Tahun Soal</option>
-                    {tahunSoalList.map(t => (
-                      <option key={t.id} value={t.id}>{t.tahun}</option>
-                    ))}
-                  </select>
-
-                  {/* Status Soal */}
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => {
-                      setStatusFilter(e.target.value);
-                      resetPage();
-                    }}
-                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
-                  >
-                    <option value="">Semua Status</option>
-                    <option value="Y">Aktif</option>
-                    <option value="N">Hidden</option>
-                  </select>
-
-                  <select
-                    value={difficultyFilter}
-                    onChange={(e) => {
-                      setDifficultyFilter(e.target.value);
-                      resetPage();
-                    }}
-                    className="px-2.5 py-1.5 glass-input rounded-xl text-xs text-slate-900 dark:text-white bg-white dark:bg-[#0f172a] font-medium"
-                  >
-                    <option value="">Semua Tingkat</option>
-                    <option value="easy">Mudah</option>
-                    <option value="medium">Sedang</option>
-                    <option value="hard">Sulit</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Questions List or Skeleton */}
-              {loadingQuestions ? (
-                <QuestionListSkeleton count={4} />
-              ) : filteredQuestions.length > 0 ? (
-                <div className="space-y-4">
-                  {filteredQuestions.map((q, idx) => (
-                    <div
-                      key={q.id}
-                      className="glass-panel p-5 md:p-6 rounded-3xl border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-all flex flex-col md:flex-row md:items-start justify-between gap-4 shadow-sm"
-                    >
-                      <div className="flex-1 min-w-0">
-                        {/* Tags */}
-                        <div className="flex flex-wrap items-center gap-2 mb-2.5">
-                          <span className="px-2.5 py-0.5 bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-gray-300 font-bold rounded-lg text-xs">
-                            No. {idx + 1}
-                          </span>
-                          <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20 text-xs font-bold rounded-lg">
-                            {getTypeLabel(q.type)}
-                          </span>
-                          {getDifficultyBadge(q.difficulty)}
-                          <span className={`px-2 py-0.5 text-xs font-bold rounded-lg border ${
-                            q.status_aktif === 'N'
-                              ? 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
-                              : 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
-                          }`}>
-                            {q.status_aktif === 'N' ? 'Hidden' : 'Aktif'}
-                          </span>
-                          {q.tahun_soal && (
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20 text-xs font-bold rounded-lg">
-                              Tahun: {q.tahun_soal}
-                            </span>
-                          )}
-                          <span className="text-xs text-slate-500 dark:text-gray-400 font-medium">
-                            Topik: <strong className="text-slate-800 dark:text-gray-200 font-bold">{q.topic}</strong>
-                          </span>
-                        </div>
-
-                        {/* Content (LaTeX rendered) */}
-                        <div className="text-slate-900 dark:text-white text-sm font-medium leading-relaxed mb-3">
-                          <LaTeXRenderer text={q.content} />
-                        </div>
-
-                        {/* Media Attachment if available */}
-                        {q.media_url && (
-                          <div className="mb-3">
-                            <img
-                              src={q.media_url}
-                              alt="Media Soal"
-                              className="max-h-40 rounded-2xl border border-slate-200 dark:border-white/10 object-contain shadow-xs"
-                            />
-                          </div>
-                        )}
-
-                        {/* Options preview for MCQ */}
-                        {q.options && q.options.length > 0 && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-200/80 dark:border-white/5">
-                            {q.options.map((opt, oIdx) => (
-                              <div
-                                key={opt.id || oIdx}
-                                className={`text-xs p-2.5 rounded-xl flex items-center gap-2 border ${
-                                  opt.is_correct
-                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300'
-                                    : 'bg-slate-50 border-slate-200 text-slate-700 dark:bg-white/[0.02] dark:border-white/5 dark:text-gray-400'
-                                }`}
-                              >
-                                <span className="font-mono text-[10px] font-bold uppercase px-1.5 py-0.5 bg-white dark:bg-white/5 rounded-md border border-slate-200 dark:border-transparent">
-                                  {String.fromCharCode(65 + oIdx)}
-                                </span>
-                                <div className="truncate">
-                                  <LaTeXRenderer text={opt.content} />
-                                </div>
-                                {opt.is_correct && (
-                                  <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 ml-auto shrink-0" />
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Matching pairs preview */}
-                        {q.matching_pairs && q.matching_pairs.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-slate-200/80 dark:border-white/5 grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {q.matching_pairs.map((mp, mIdx) => (
-                              <div key={mp.id || mIdx} className="text-xs p-2.5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-slate-800 dark:text-gray-300 flex items-center justify-between font-medium">
-                                <span>{mp.left_item}</span>
-                                <span className="text-slate-400 dark:text-gray-500 mx-2 font-bold">➔</span>
-                                <span className="text-cyan-700 dark:text-cyan-400 font-bold">{mp.right_item}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-1.5 shrink-0 self-end md:self-start">
-                        <button
-                          onClick={() => setPreviewingQuestion(q)}
-                          className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white rounded-xl transition"
-                          title="Preview Soal"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        {!isReadOnly && (
-                          <>
-                            <button
-                              onClick={() => handleToggleStatus(q.id)}
-                              className={`p-2 rounded-xl transition ${
-                                q.status_aktif === 'N'
-                                  ? 'hover:bg-amber-50 dark:hover:bg-amber-600/20 text-amber-600 dark:text-amber-400'
-                                  : 'hover:bg-emerald-50 dark:hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400'
-                              }`}
-                              title={q.status_aktif === 'N' ? 'Aktifkan Soal (Saat ini Hidden)' : 'Sembunyikan Soal (Saat ini Aktif)'}
-                            >
-                              {q.status_aktif === 'N' ? <ToggleLeft className="h-4 w-4" /> : <ToggleRight className="h-4 w-4" />}
-                            </button>
-                            <button
-                              onClick={() => handleEditQuestion(q.id)}
-                              className="p-2 hover:bg-cyan-50 dark:hover:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-xl transition"
-                              title="Edit Soal"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteQuestion(q.id)}
-                              className="p-2 hover:bg-rose-50 dark:hover:bg-rose-600/20 text-rose-600 dark:text-rose-400 rounded-xl transition"
-                              title="Hapus Soal"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="glass-panel text-center py-16 text-slate-500 dark:text-gray-500 rounded-3xl shadow-sm">
-                  <FileText className="h-10 w-10 text-slate-400 dark:text-gray-600 mx-auto mb-3" />
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-gray-300 mb-1">Berkas Paket Ini Masih Kosong</h3>
-                  <p className="text-xs text-slate-500 dark:text-gray-500 max-w-md mx-auto mb-4 font-medium">
-                    Tambahkan butir soal atau import file CSV langsung ke dalam berkas ini.
-                  </p>
-                  <div className="flex justify-center gap-3">
-                    <button
-                      onClick={() => setFormActive(true)}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/30"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Tambah Butir Soal</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setTargetImportPackageId(selectedPackage.id);
-                        setImportOpen(true);
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold transition shadow-xs"
-                    >
-                      <Upload className="h-4 w-4" />
-                      <span>Import File CSV</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <Pagination
-                currentPage={paginationMeta.currentPage}
-                lastPage={paginationMeta.lastPage}
-                total={paginationMeta.total}
-                perPage={paginationMeta.perPage}
-                from={paginationMeta.from}
-                to={paginationMeta.to}
-                onPageChange={setPage}
-              />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL: BUAT / EDIT BERKAS PAKET SOAL                                      */}
-      {/* ========================================================================= */}
-      {packageModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-[#070a13]/80 backdrop-blur-md">
-          <div className="w-full max-w-lg glass-panel rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] flex flex-col">
-            <button
-              onClick={() => setPackageModalOpen(false)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-xl"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-5">
-              <div className="p-3 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-400 rounded-2xl border border-cyan-200 dark:border-cyan-500/20">
-                <FolderPlus className="h-6 w-6" />
-              </div>
-              <div>
-                <h2 className="text-lg font-black text-slate-900 dark:text-white">
-                  {editingPackage ? 'Edit Berkas Paket Soal' : 'Buat Berkas Paket Soal Baru'}
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-gray-400 font-medium">Berkas ini akan menampung butir-butir soal secara terisolasi.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleSavePackage} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                  Nama / Judul Berkas Paket *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Paket UTS Matematika Wajib Kelas X"
-                  value={packageTitle}
-                  onChange={(e) => setPackageTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                    Mata Pelajaran *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ketik mata pelajaran (cth: Matematika Wajib)"
-                    value={packageSubjectName}
-                    onChange={(e) => setPackageSubjectName(e.target.value)}
-                    list="subject-suggestions"
-                    className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
-                  />
-                  <datalist id="subject-suggestions">
-                    {subjects.map((sub) => (
-                      <option key={sub.id} value={sub.name} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                    Kode Berkas (Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: PKT-MTK-10"
-                    value={packageCode}
-                    onChange={(e) => setPackageCode(e.target.value)}
-                    className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-                  Catatan / Deskripsi Berkas
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Catatan tambahan untuk berkas paket ini..."
-                  value={packageDescription}
-                  onChange={(e) => setPackageDescription(e.target.value)}
-                  className="w-full px-4 py-2.5 glass-input rounded-xl text-slate-900 dark:text-white text-sm font-medium"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-3 border-t border-slate-200 dark:border-white/5">
-                <button
-                  type="button"
-                  onClick={() => setPackageModalOpen(false)}
-                  className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-3 px-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-cyan-600/30"
-                >
-                  Simpan Berkas
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL: IMPORT CSV                                                         */}
-      {/* ========================================================================= */}
-      {importOpen && (
-        <QuestionImportModal
-          packageId={targetImportPackageId}
-          onSuccess={() => {
-            fetchPackages();
-            if (selectedPackage) {
-              fetchPackageQuestions(selectedPackage.id);
-            }
-          }}
-          onClose={() => setImportOpen(false)}
-        />
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL: PREVIEW SOAL                                                       */}
-      {/* ========================================================================= */}
-      {previewingQuestion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-[#070a13]/80 backdrop-blur-md">
-          <div className="w-full max-w-2xl glass-panel rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={() => setPreviewingQuestion(null)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-xl"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex items-center gap-2 mb-4">
-              <span className="px-2.5 py-1 bg-cyan-100 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20 text-xs font-bold rounded-lg">
-                {getTypeLabel(previewingQuestion.type)}
-              </span>
-              {getDifficultyBadge(previewingQuestion.difficulty)}
-              <span className="text-xs text-slate-500 dark:text-gray-400 font-medium">
-                Topik: <strong className="text-slate-900 dark:text-gray-200 font-bold">{previewingQuestion.topic}</strong>
-              </span>
-            </div>
-
-            <div className="p-4 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-white/5 mb-4 text-slate-900 dark:text-white text-base leading-relaxed font-medium">
-              <LaTeXRenderer text={previewingQuestion.content} />
-            </div>
-
-            {previewingQuestion.media_url && (
-              <div className="mb-4">
-                <img
-                  src={previewingQuestion.media_url}
-                  alt="Media Soal"
-                  className="max-h-60 rounded-2xl border border-slate-200 dark:border-white/10 object-contain mx-auto shadow-xs"
-                />
-              </div>
-            )}
-
-            {previewingQuestion.options && previewingQuestion.options.length > 0 && (
-              <div className="space-y-2 mb-4">
-                <p className="text-xs font-bold text-slate-700 dark:text-gray-400 uppercase tracking-wider">Opsi Pilihan Jawaban:</p>
-                {previewingQuestion.options.map((opt, idx) => (
-                  <div
-                    key={opt.id || idx}
-                    className={`p-3 rounded-2xl flex items-center justify-between border text-sm ${
-                      opt.is_correct
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-bold dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300'
-                        : 'bg-slate-50 border-slate-200 text-slate-800 dark:bg-white/[0.02] dark:border-white/5 dark:text-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-xs font-bold uppercase px-2 py-0.5 bg-white dark:bg-white/5 rounded-md border border-slate-200 dark:border-transparent">
-                        {String.fromCharCode(65 + idx)}
-                      </span>
-                      <LaTeXRenderer text={opt.content} />
-                    </div>
-                    {opt.is_correct && <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {previewingQuestion.explanation && (
-              <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl text-xs text-indigo-900 dark:text-indigo-300 mb-4">
-                <p className="font-bold text-indigo-700 dark:text-indigo-200 mb-1">Pembahasan Soal:</p>
-                <LaTeXRenderer text={previewingQuestion.explanation} />
-              </div>
-            )}
-
-            {/* Academic Relations & Metadata (Requirement 2 & 8) */}
-            <div className="p-3.5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-2xl text-xs space-y-2 mb-4">
-              <span className="font-bold text-slate-700 dark:text-gray-300 block">Metadata & Relasi Akademik:</span>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-gray-400">
-                <div>Mapel: <strong className="text-slate-900 dark:text-white">{previewingQuestion.subject?.name || '-'}</strong></div>
-                <div>Tahun Soal: <strong className="text-slate-900 dark:text-white">{previewingQuestion.tahun_soal || '-'}</strong></div>
-                <div>Status: <span className={`font-bold ${previewingQuestion.status_aktif === 'N' ? 'text-amber-600' : 'text-emerald-600'}`}>{previewingQuestion.status_aktif === 'N' ? 'Hidden (Arsip)' : 'Aktif (Tampil)'}</span></div>
-                <div>Pembuat: <strong className="text-slate-900 dark:text-white">{previewingQuestion.creator_name || 'Guru Pengajar'}</strong></div>
-                <div>ID Referensi: <span className="font-mono">{previewingQuestion.id}</span></div>
-              </div>
-            </div>
-
-            {/* Modal Footer Actions (Requirement 2) */}
-            <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex items-center justify-between gap-2">
-              {!isReadOnly && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await handleToggleStatus(previewingQuestion.id);
-                      setPreviewingQuestion(prev => prev ? { ...prev, status_aktif: prev.status_aktif === 'N' ? 'Y' : 'N' } : null);
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                      previewingQuestion.status_aktif === 'N'
-                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/20'
-                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-500/20'
-                    }`}
-                  >
-                    {previewingQuestion.status_aktif === 'N' ? <ToggleLeft className="h-4 w-4" /> : <ToggleRight className="h-4 w-4" />}
-                    <span>{previewingQuestion.status_aktif === 'N' ? 'Aktifkan Soal' : 'Sembunyikan Soal'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const qId = previewingQuestion.id;
-                      setPreviewingQuestion(null);
-                      handleEditQuestion(qId);
-                    }}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-                  >
-                    <Edit2 className="h-3.5 w-3.5" />
-                    <span>Edit Soal</span>
-                  </button>
-                </div>
-              )}
-
-              <button
-                type="button"
                 onClick={() => setPreviewingQuestion(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition ml-auto"
+                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-700 dark:text-white rounded-xl text-xs font-bold transition cursor-pointer"
               >
-                Tutup
+                Tutup Telaah
               </button>
             </div>
+
           </div>
         </div>
       )}
+
     </div>
   );
 };

@@ -20,11 +20,14 @@ const QuestionBankPage = lazy(() => import('./features/teacher/QuestionBankPage'
 const ExamsPage = lazy(() => import('./features/teacher/ExamsPage').then(m => ({ default: m.ExamsPage })));
 const GradingPage = lazy(() => import('./features/teacher/GradingPage').then(m => ({ default: m.GradingPage })));
 const ExamReportPage = lazy(() => import('./features/teacher/ExamReportPage').then(m => ({ default: m.ExamReportPage })));
+const TeacherAnnouncementsPage = lazy(() => import('./features/teacher/TeacherAnnouncementsPage').then(m => ({ default: m.TeacherAnnouncementsPage })));
 const SuperAdminLayout = lazy(() => import('./features/admin/SuperAdminLayout').then(m => ({ default: m.SuperAdminLayout })));
 const SuperAdminDashboard = lazy(() => import('./features/admin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
+const SuperAdminAnnouncementsPage = lazy(() => import('./features/admin/SuperAdminAnnouncementsPage').then(m => ({ default: m.SuperAdminAnnouncementsPage })));
 const SchoolUsersPage = lazy(() => import('./features/admin/SchoolUsersPage').then(m => ({ default: m.SchoolUsersPage })));
 const AdminLayout = lazy(() => import('./features/admin/AdminLayout').then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import('./features/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const AdminAnnouncementsPage = lazy(() => import('./features/admin/AdminAnnouncementsPage').then(m => ({ default: m.AdminAnnouncementsPage })));
 const LiveMonitoringPage = lazy(() => import('./features/admin/LiveMonitoringPage').then(m => ({ default: m.LiveMonitoringPage })));
 const MajorsPage = lazy(() => import('./features/admin/MajorsPage').then(m => ({ default: m.MajorsPage })));
 const ClassesPage = lazy(() => import('./features/admin/ClassesPage').then(m => ({ default: m.ClassesPage })));
@@ -106,6 +109,7 @@ export const App: React.FC = () => {
                   <Route path="/teacher/exams" element={<ExamsPage />} />
                   <Route path="/teacher/grading" element={<GradingPage />} />
                   <Route path="/teacher/reports" element={<ExamReportPage />} />
+                  <Route path="/teacher/announcements" element={<TeacherAnnouncementsPage />} />
                   <Route path="/teacher/profile" element={<AdminProfilePage />} />
                 </Route>
               </Route>
@@ -150,6 +154,7 @@ export const App: React.FC = () => {
                   <Route path="/super-admin/subscriptions" element={<PlatformSubscriptionsPage />} />
                   <Route path="/super-admin/monitoring" element={<AuditTrailPage />} />
                   <Route path="/super-admin/audit-logs" element={<AuditTrailPage />} />
+                  <Route path="/super-admin/announcements" element={<SuperAdminAnnouncementsPage />} />
                   <Route path="/super-admin/settings" element={<PlatformSettingsPage />} />
                   <Route path="/super-admin/profile" element={<AdminProfilePage />} />
                 </Route>
@@ -184,6 +189,7 @@ export const App: React.FC = () => {
                   <Route path="/admin/exams" element={<ExamsPage />} />
                   <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
                   <Route path="/admin/activities" element={<TeacherStudentActivityPage />} />
+                  <Route path="/admin/announcements" element={<AdminAnnouncementsPage />} />
                   <Route path="/admin/reports" element={<ExamReportPage />} />
                   <Route path="/admin/profile" element={<AdminProfilePage />} />
                 </Route>
