@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
+import { Can } from '../../shared/components/Can';
 
 interface MasterJenjang {
   id: number;
@@ -305,14 +306,16 @@ export const SubjectsPage: React.FC = () => {
           </div>
         </div>
 
-        <button
-          id="btn-add-subject"
-          onClick={openAddModal}
-          className="flex items-center justify-center gap-2 px-5 py-3 bg-cyan-600 hover:bg-cyan-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-cyan-600/30 transition duration-150 shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Tambah Mata Pelajaran</span>
-        </button>
+        <Can perm="mapel.manage">
+          <button
+            id="btn-add-subject"
+            onClick={openAddModal}
+            className="flex items-center justify-center gap-2 px-5 py-3 bg-cyan-600 hover:bg-cyan-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-cyan-600/30 transition duration-150 shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Tambah Mata Pelajaran</span>
+          </button>
+        </Can>
       </div>
 
       {/* Filter and Search Bar */}
@@ -493,27 +496,31 @@ export const SubjectsPage: React.FC = () => {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => openTeachersModal(s)}
-                          title="Kelola Guru Pengampu"
-                          className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-xl transition"
-                        >
-                          <Users className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => openEditModal(s)}
-                          title="Edit Mata Pelajaran"
-                          className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl transition"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(s)}
-                          title="Hapus Mata Pelajaran"
-                          className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <Can perm="guru_pengampu.manage">
+                          <button
+                            onClick={() => openTeachersModal(s)}
+                            title="Kelola Guru Pengampu"
+                            className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-xl transition"
+                          >
+                            <Users className="h-4 w-4" />
+                          </button>
+                        </Can>
+                        <Can perm="mapel.manage">
+                          <button
+                            onClick={() => openEditModal(s)}
+                            title="Edit Mata Pelajaran"
+                            className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl transition"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(s)}
+                            title="Hapus Mata Pelajaran"
+                            className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </Can>
                       </div>
                     </td>
                   </tr>

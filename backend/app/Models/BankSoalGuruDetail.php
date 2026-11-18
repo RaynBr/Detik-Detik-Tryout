@@ -5,10 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\BelongsToInstansi;
 
 class BankSoalGuruDetail extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToInstansi;
+
+    protected $instansiColumn = 'id_instansi';
 
     protected $table = 'bank_soal_guru_detail';
     protected $primaryKey = 'id';

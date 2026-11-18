@@ -77,8 +77,8 @@ export const QuestionForm: React.FC<QuestionFormProps> = ({ questionId, packageI
         const [subRes, tahunRes, yearsRes, semRes, jenjangRes, kelasRes] = await Promise.all([
           apiClient.get('/teacher/subjects').catch(() => ({ data: [] })),
           apiClient.get('/admin/tahun-soal', { params: { all: true } }).catch(() => ({ data: [] })),
-          apiClient.get('/admin/academic-years', { params: { all: true } }).catch(() => ({ data: [] })),
-          apiClient.get('/admin/semesters', { params: { all: true } }).catch(() => ({ data: [] })),
+          apiClient.get('/teacher/academic-years', { params: { all: true } }).catch(() => ({ data: [] })),
+          apiClient.get('/teacher/semesters', { params: { all: true } }).catch(() => ({ data: [] })),
           apiClient.get('/teacher/jenjang', { params: { all: true } }).catch(() => ({ data: [] })),
           apiClient.get('/teacher/classes', { params: { all: true } }).catch(() => ({ data: [] })),
         ]);

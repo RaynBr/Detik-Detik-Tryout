@@ -22,6 +22,7 @@ import {
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 import { StudentImportModal } from './components/StudentImportModal';
+import { Can } from '../../shared/components/Can';
 
 interface AcademicYear {
   id: number;
@@ -622,27 +623,31 @@ export const ClassesPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            id="btn-upload-students-class"
-            onClick={() => {
-              setTargetClassForImport(undefined);
-              setTargetAcademicYearForImport(undefined);
-              setStudentImportModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-95 text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 font-bold text-xs sm:text-sm rounded-2xl shadow-sm transition duration-150 shrink-0"
-          >
-            <Upload className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            <span>Upload Siswa ke Rombel</span>
-          </button>
+          <Can perm="siswa.import|kelas.manage">
+            <button
+              id="btn-upload-students-class"
+              onClick={() => {
+                setTargetClassForImport(undefined);
+                setTargetAcademicYearForImport(undefined);
+                setStudentImportModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-95 text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 font-bold text-xs sm:text-sm rounded-2xl shadow-sm transition duration-150 shrink-0"
+            >
+              <Upload className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              <span>Upload Siswa ke Rombel</span>
+            </button>
+          </Can>
 
-          <button
-            id="btn-add-class"
-            onClick={openAddModal}
-            className="flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/30 transition duration-150 shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Tambah Kelas & Rombel</span>
-          </button>
+          <Can perm="kelas.manage">
+            <button
+              id="btn-add-class"
+              onClick={openAddModal}
+              className="flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/30 transition duration-150 shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Tambah Kelas & Rombel</span>
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -962,31 +967,33 @@ export const ClassesPage: React.FC = () => {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => handleToggleClassStatus(c)}
-                          title={c.status_aktif === 'Y' ? 'Nonaktifkan Kelas' : 'Aktifkan Kelas'}
-                          className={`p-2 rounded-xl transition ${
-                            c.status_aktif === 'Y' 
-                              ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40' 
-                              : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
-                          }`}
-                        >
-                          <Power className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => openEditModal(c)}
-                          title="Edit Kelas"
-                          className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl transition"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(c)}
-                          title="Hapus Kelas"
-                          className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <Can perm="kelas.manage">
+                          <button
+                            onClick={() => handleToggleClassStatus(c)}
+                            title={c.status_aktif === 'Y' ? 'Nonaktifkan Kelas' : 'Aktifkan Kelas'}
+                            className={`p-2 rounded-xl transition ${
+                              c.status_aktif === 'Y' 
+                                ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40' 
+                                : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                            }`}
+                          >
+                            <Power className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => openEditModal(c)}
+                            title="Edit Kelas"
+                            className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl transition"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(c)}
+                            title="Hapus Kelas"
+                            className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </Can>
                       </div>
                     </td>
                   </tr>

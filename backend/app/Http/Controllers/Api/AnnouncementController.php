@@ -518,6 +518,48 @@ class AnnouncementController extends Controller
     }
 
     /**
+     * Authorize whether caller can mutate (update, delete, publish, archive) the given announcement.
+     * Rule: National announcements (idkategori IS NULL) can ONLY be mutated by Super Admin.
+     * Instansi announcements can ONLY be mutated by their respective instansi.
+     */
+    protected function authorizeAnnouncementMutation(Announcement $announcement, array $ctx): ?\Illuminate\Http\JsonResponse
+    {
+        $role = $ctx['role'];
+        if ($role === 'super_admin') {
+            return null;
+        }
+
+        // National announcement (idkategori IS NULL) can ONLY be mutated by Super Admin
+        if (empty($announcement->idkategori)) {
+            return response()->json([
+                'message' => 'Pengumuman nasional skala platform hanya dapat diubah atau dihapus oleh Super Administrator.',
+                'code' => 'TENANT_FORBIDDEN',
+            ], 403);
+        }
+
+        // Non-superadmin can only mutate announcements matching their own instansi
+        if ((string)$announcement->idkategori !== (string)$ctx['idkategori']) {
+            return response()->json([
+                'message' => 'Akses ditolak: Anda tidak memiliki wewenang untuk mengubah atau menghapus pengumuman instansi lain.',
+                'code' => 'TENANT_FORBIDDEN',
+            ], 403);
+        }
+
+        if ($role === 'guru') {
+            $isOwner = ($announcement->id_guru && $announcement->id_guru == $ctx['id_guru'])
+                || ($announcement->created_by_user_id == $ctx['user_id']);
+            if (!$isOwner) {
+                return response()->json([
+                    'message' => 'Guru hanya dapat mengelola pengumuman buatannya sendiri.',
+                    'code' => 'FORBIDDEN',
+                ], 403);
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Update announcement with ownership checks and audit trail.
      */
     public function update($id, Request $request)
@@ -526,20 +568,8 @@ class AnnouncementController extends Controller
         $ctx = $this->resolveUserContext($request);
         $role = $ctx['role'];
 
-        // Ownership & permission guard
-        if ($role === 'guru') {
-            $isOwner = ($announcement->id_guru && $announcement->id_guru == $ctx['id_guru'])
-                || ($announcement->created_by_user_id == $ctx['user_id']);
-            if (!$isOwner) {
-                return response()->json(['message' => 'Guru hanya dapat mengedit pengumuman miliknya sendiri.'], 403);
-            }
-        } elseif ($role === 'admin') {
-            if ($announcement->idkategori && $announcement->idkategori != $ctx['idkategori']) {
-                return response()->json(['message' => 'Admin hanya dapat mengedit pengumuman sekolahnya.'], 403);
-            }
-            if ($announcement->role === 'super_admin') {
-                return response()->json(['message' => 'Admin tidak dapat mengubah pengumuman Super Admin.'], 403);
-            }
+        if ($authError = $this->authorizeAnnouncementMutation($announcement, $ctx)) {
+            return $authError;
         }
 
         $validator = Validator::make($request->all(), [
@@ -648,19 +678,8 @@ class AnnouncementController extends Controller
         $ctx = $this->resolveUserContext($request);
         $role = $ctx['role'];
 
-        if ($role === 'guru') {
-            $isOwner = ($announcement->id_guru && $announcement->id_guru == $ctx['id_guru'])
-                || ($announcement->created_by_user_id == $ctx['user_id']);
-            if (!$isOwner) {
-                return response()->json(['message' => 'Guru hanya dapat menghapus pengumuman miliknya.'], 403);
-            }
-        } elseif ($role === 'admin') {
-            if ($announcement->idkategori && $announcement->idkategori != $ctx['idkategori']) {
-                return response()->json(['message' => 'Admin tidak dapat menghapus pengumuman instansi lain.'], 403);
-            }
-            if ($announcement->role === 'super_admin') {
-                return response()->json(['message' => 'Admin tidak dapat menghapus pengumuman Super Admin.'], 403);
-            }
+        if ($authError = $this->authorizeAnnouncementMutation($announcement, $ctx)) {
+            return $authError;
         }
 
         $title = $announcement->title;
@@ -692,6 +711,10 @@ class AnnouncementController extends Controller
     {
         $announcement = Announcement::findOrFail($id);
         $ctx = $this->resolveUserContext($request);
+
+        if ($authError = $this->authorizeAnnouncementMutation($announcement, $ctx)) {
+            return $authError;
+        }
 
         $announcement->update([
             'status' => 'Aktif',
@@ -726,6 +749,10 @@ class AnnouncementController extends Controller
     {
         $announcement = Announcement::findOrFail($id);
         $ctx = $this->resolveUserContext($request);
+
+        if ($authError = $this->authorizeAnnouncementMutation($announcement, $ctx)) {
+            return $authError;
+        }
 
         $announcement->update([
             'status' => 'Arsip',

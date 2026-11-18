@@ -1,6 +1,8 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../shared/context/AuthContext';
+import { usePermission, PermissionInput } from '../shared/hooks/usePermission';
+import { getDefaultRouteForUser } from '../shared/utils/rbacNavigation';
 import { GraduationCap } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -41,9 +43,10 @@ const SessionLoader: React.FC = () => (
 );
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, menus, permissions, permissionsLoaded, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
 
-  if (isLoading) {
+  if (isLoading || (isAuthenticated && !permissionsLoaded)) {
     return <SessionLoader />;
   }
 
@@ -52,48 +55,57 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // Smart redirect based on actual user role to their authorized dashboard
-    if (user.role === 'super_admin') {
-      return <Navigate to="/super-admin/dashboard" replace />;
+    const target = getDefaultRouteForUser(user, menus, permissions);
+    // Prevent redirect loop if target equals current location
+    if (target === location.pathname) {
+      return <Navigate to="/unauthorized" replace />;
     }
-    if (user.role === 'admin') {
-      return <Navigate to="/admin/dashboard" replace />;
-    }
-    if (user.role === 'guru') {
-      return <Navigate to="/teacher/dashboard" replace />;
-    }
-    if (user.role === 'siswa') {
-      return <Navigate to="/student/dashboard" replace />;
-    }
-    return <Navigate to="/unauthorized" replace />;
+    return <Navigate to={target} replace />;
   }
 
   return <Outlet />;
 };
 
-export const GuestRoute: React.FC = () => {
-  const { user, isAuthenticated, isLoading } = useAuth();
+interface PermissionRouteProps {
+  perm: PermissionInput;
+  children?: React.ReactNode;
+}
 
-  if (isLoading) {
+/**
+ * Route guard based on dynamic RBAC permissions (OR logic).
+ * - Waits until permissionsLoaded === true before making any redirect decision.
+ * - Super Admin passes automatically.
+ * - If user lacks the required permission, redirects cleanly to /unauthorized (403) without looping.
+ */
+export const PermissionRoute: React.FC<PermissionRouteProps> = ({ perm, children }) => {
+  const { isLoading, isAuthenticated, permissionsLoaded } = useAuth();
+  const { hasPermission } = usePermission();
+
+  if (isLoading || (isAuthenticated && !permissionsLoaded)) {
+    return <SessionLoader />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!hasPermission(perm)) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  return children ? <>{children}</> : <Outlet />;
+};
+
+export const GuestRoute: React.FC = () => {
+  const { user, menus, permissions, permissionsLoaded, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading || (isAuthenticated && !permissionsLoaded)) {
     return <SessionLoader />;
   }
 
   if (isAuthenticated && user) {
-    // Redirect to respective dashboard if already logged in
-    switch (user.role) {
-      case 'siswa':
-        return <Navigate to="/student/dashboard" replace />;
-      case 'guru':
-        return <Navigate to="/teacher/dashboard" replace />;
-      case 'super_admin':
-        return <Navigate to="/super-admin/dashboard" replace />;
-      case 'admin':
-        return <Navigate to="/admin/dashboard" replace />;
-      case 'pengawas':
-        return <Navigate to="/admin/proctoring" replace />;
-      default:
-        return <Navigate to="/login" replace />;
-    }
+    const target = getDefaultRouteForUser(user, menus, permissions);
+    return <Navigate to={target} replace />;
   }
 
   return <Outlet />;

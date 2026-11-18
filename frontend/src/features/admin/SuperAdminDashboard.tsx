@@ -322,43 +322,49 @@ export const SuperAdminDashboard: React.FC = () => {
       </div>
 
       {/* 10 Real Metric Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 items-start">
         {statCards.map((card, idx) => {
           const Icon = card.icon;
           return (
             <div
               key={idx}
               onClick={card.onClick}
-              className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-4 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[5px_5px_0px_0px_#171717] dark:hover:shadow-[5px_5px_0px_0px_#000000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex flex-col justify-between group"
+              className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl p-4 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[5px_5px_0px_0px_#171717] dark:hover:shadow-[5px_5px_0px_0px_#000000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex flex-col gap-2.5 group"
             >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider truncate">
+              {/* Header: Label left, Icon right */}
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className="text-[11px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider truncate leading-tight"
+                  title={card.title}
+                >
                   {card.title}
                 </span>
-                <div className={`p-2 rounded-xl ${card.bgColor} ${card.borderColor} border`}>
+                <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${card.bgColor} ${card.borderColor} border`}>
                   <Icon className={`h-4 w-4 ${card.textColor}`} />
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-[#161C2D] dark:text-white tracking-tight">
+              {/* Value + Unit + Inline Badge (aligned on a single row) */}
+              <div className="flex items-baseline justify-between gap-1.5 min-h-[30px]">
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="text-[28px] leading-none font-black text-[#161C2D] dark:text-white tracking-tight">
                     {loading ? '...' : card.value.toLocaleString()}
                   </span>
-                  <span className="text-[11px] font-bold text-slate-400 dark:text-gray-500">
+                  <span className="text-[11px] font-bold text-slate-400 dark:text-gray-500 truncate">
                     {card.unit}
                   </span>
                 </div>
 
                 {card.badge && (
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${card.badgeColor || 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'}`}>
+                  <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full border shrink-0 whitespace-nowrap leading-none self-center ${card.badgeColor || 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'}`}>
                     {card.badge === 'Live' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
                     {card.badge}
                   </span>
                 )}
               </div>
 
-              <div className="pt-3 mt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11px] font-bold text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+              {/* Footer: Divider + Lihat Detail */}
+              <div className="pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11px] font-bold text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                 <span>Lihat Detail</span>
                 <ArrowRight className="h-3.5 w-3.5 transform group-hover:translate-x-1 transition-transform" />
               </div>
@@ -368,69 +374,69 @@ export const SuperAdminDashboard: React.FC = () => {
       </div>
 
       {/* Quick Action Navigation Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 items-start">
         <div 
           onClick={() => navigate('/super-admin/instansi')}
-          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-4 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between group"
+          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-3.5 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between gap-2 group"
         >
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 border border-indigo-200 dark:border-indigo-800">
-              <Building2 className="h-5 w-5" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 shrink-0 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center">
+              <Building2 className="h-4 w-4" />
             </div>
-            <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Kelola Instansi</h4>
-              <p className="text-[10px] text-slate-400">Pusat Manajemen Sekolah & Data</p>
+            <div className="min-w-0">
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white truncate">Kelola Instansi</h4>
+              <p className="text-[10px] text-slate-400 truncate">Pusat Manajemen Sekolah & Data</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-indigo-600 transition" />
+          <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-indigo-600 transition" />
         </div>
 
         <div 
           onClick={() => navigate('/super-admin/users')}
-          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-4 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between group"
+          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-3.5 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between gap-2 group"
         >
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 border border-purple-200 dark:border-purple-800">
-              <ShieldCheck className="h-5 w-5" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 shrink-0 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 border border-purple-200 dark:border-purple-800 flex items-center justify-center">
+              <ShieldCheck className="h-4 w-4" />
             </div>
-            <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Kelola Pengguna</h4>
-              <p className="text-[10px] text-slate-400">Akun Super Administrator</p>
+            <div className="min-w-0">
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white truncate">Kelola Pengguna</h4>
+              <p className="text-[10px] text-slate-400 truncate">Akun Super Administrator</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-purple-600 transition" />
+          <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-purple-600 transition" />
         </div>
 
         <div 
           onClick={() => navigate('/super-admin/subscriptions')}
-          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-4 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between group"
+          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-3.5 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between gap-2 group"
         >
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 border border-emerald-200 dark:border-emerald-800">
-              <CreditCard className="h-5 w-5" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 shrink-0 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
+              <CreditCard className="h-4 w-4" />
             </div>
-            <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Langganan Platform</h4>
-              <p className="text-[10px] text-slate-400">Hak Akses & Kuota</p>
+            <div className="min-w-0">
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white truncate">Langganan Platform</h4>
+              <p className="text-[10px] text-slate-400 truncate">Hak Akses & Kuota</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-emerald-600 transition" />
+          <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-emerald-600 transition" />
         </div>
 
         <div 
           onClick={() => navigate('/super-admin/monitoring')}
-          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-4 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between group"
+          className="bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl p-3.5 shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer flex items-center justify-between gap-2 group"
         >
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 border border-amber-200 dark:border-amber-800">
-              <History className="h-5 w-5" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 shrink-0 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 border border-amber-200 dark:border-amber-800 flex items-center justify-center">
+              <History className="h-4 w-4" />
             </div>
-            <div>
-              <h4 className="text-xs font-black text-[#161C2D] dark:text-white">Audit Trail</h4>
-              <p className="text-[10px] text-slate-400">Aktivitas & Log Sistem</p>
+            <div className="min-w-0">
+              <h4 className="text-xs font-black text-[#161C2D] dark:text-white truncate">Audit Trail</h4>
+              <p className="text-[10px] text-slate-400 truncate">Aktivitas & Log Sistem</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-amber-600 transition" />
+          <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-amber-600 transition" />
         </div>
       </div>
 

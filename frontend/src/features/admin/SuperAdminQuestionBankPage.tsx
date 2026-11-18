@@ -23,6 +23,7 @@ import {
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
 import { BankSoalImportModal } from './components/BankSoalImportModal';
+import { Can } from '../../shared/components/Can';
 
 interface CascadingOptions {
   jenjang: Array<{ id: number; nama_jenjang: string; kode_jenjang: string }>;
@@ -528,14 +529,16 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
               <Download className="h-4 w-4" />
               <span>{downloadingTemplate ? 'Mengunduh...' : 'Download Template Excel'}</span>
             </button>
-            <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer"
-              title="Upload & Import Bank Soal Massal"
-            >
-              <Upload className="h-4 w-4" />
-              <span>Upload Bank Soal</span>
-            </button>
+            <Can perm="banksoal.manage">
+              <button
+                onClick={() => setIsUploadModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer"
+                title="Upload & Import Bank Soal Massal"
+              >
+                <Upload className="h-4 w-4" />
+                <span>Upload Bank Soal</span>
+              </button>
+            </Can>
             <button
               onClick={() => fetchPackages(currentPage)}
               className="p-2.5 rounded-xl bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-gray-300 border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] transition cursor-pointer"
@@ -543,13 +546,15 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
             >
               <RefreshCw className={`h-4 w-4 ${loadingPackages ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={handleOpenCreate}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Tambah Paket Soal</span>
-            </button>
+            <Can perm="banksoal.manage">
+              <button
+                onClick={handleOpenCreate}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Tambah Paket Soal</span>
+              </button>
+            </Can>
           </div>
         </div>
       </div>
@@ -894,20 +899,22 @@ export const SuperAdminQuestionBankPage: React.FC = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button
-                            onClick={() => handleOpenEdit(item)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
-                            title="Edit Soal"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenDelete(item)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                            title="Hapus Soal"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <Can perm="banksoal.manage">
+                            <button
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                              title="Edit Soal"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleOpenDelete(item)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                              title="Hapus Soal"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </Can>
                         </div>
                       </td>
                     </tr>

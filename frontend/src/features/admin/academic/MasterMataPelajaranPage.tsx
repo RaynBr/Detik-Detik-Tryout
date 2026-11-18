@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Pagination } from '../../../shared/components/Pagination';
 import { usePaginationUrl } from '../../../shared/utils/usePaginationUrl';
+import { Can } from '../../../shared/components/Can';
 
 interface KurikulumOption {
   id: number;
@@ -366,13 +367,15 @@ export const MasterMataPelajaranPage: React.FC = () => {
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
             </button>
-            <button
-              onClick={handleOpenAdd}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] transition cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Tambah Mata Pelajaran</span>
-            </button>
+            <Can perm="mapel.manage|master.manage">
+              <button
+                onClick={handleOpenAdd}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] transition cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Tambah Mata Pelajaran</span>
+              </button>
+            </Can>
           </div>
         </div>
       </div>
@@ -567,20 +570,22 @@ export const MasterMataPelajaranPage: React.FC = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button
-                            onClick={() => handleOpenEdit(item)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
-                            title="Edit Mata Pelajaran"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => { setItemToDelete(item); setDeleteModalOpen(true); }}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                            title="Hapus Mata Pelajaran"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <Can perm="mapel.manage|master.manage">
+                            <button
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                              title="Edit Mata Pelajaran"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => { setItemToDelete(item); setDeleteModalOpen(true); }}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              title="Hapus Mata Pelajaran"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </Can>
                         </div>
                       </td>
                     </tr>

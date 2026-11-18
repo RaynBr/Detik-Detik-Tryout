@@ -7,10 +7,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Traits\BelongsToInstansi;
 
 class BankSoalGuru extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToInstansi;
+
+    protected $instansiColumn = 'id_instansi';
 
     protected $table = 'bank_soal_guru';
     protected $primaryKey = 'id';

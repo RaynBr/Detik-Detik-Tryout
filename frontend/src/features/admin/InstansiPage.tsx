@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
+import { Can } from '../../shared/components/Can';
 
 export interface InstansiItem {
   idkategori: string;
@@ -550,13 +551,15 @@ export const InstansiPage: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleOpenAdd}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Tambah Instansi Baru</span>
-          </button>
+          <Can perm="instansi.create">
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Tambah Instansi Baru</span>
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -744,20 +747,24 @@ export const InstansiPage: React.FC = () => {
                             <Settings className="h-3.5 w-3.5" />
                             <span>Kelola Sekolah</span>
                           </button>
-                          <button
-                            onClick={() => handleOpenEdit(instansi)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
-                            title="Edit Instansi & Konfigurasi Akademik"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => setInstansiToToggle(instansi)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                            title="Nonaktifkan Instansi"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <Can perm="instansi.edit">
+                            <button
+                              onClick={() => handleOpenEdit(instansi)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                              title="Edit Instansi & Konfigurasi Akademik"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                          </Can>
+                          <Can perm="instansi.delete">
+                            <button
+                              onClick={() => setInstansiToToggle(instansi)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                              title="Nonaktifkan Instansi"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </Can>
                         </div>
                       </td>
                     </tr>

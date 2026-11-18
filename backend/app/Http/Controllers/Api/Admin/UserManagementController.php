@@ -7,7 +7,9 @@ use App\Models\UserBo;
 use App\Models\UserSiswa;
 use App\Models\KategoriUserBo;
 use App\Models\AuditLog;
+use App\Services\RbacAssignmentService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
@@ -80,7 +82,7 @@ class UserManagementController extends Controller
         }
 
         // Query user_bo for super_admin, admin, guru (and all)
-        $queryBo = UserBo::with('kategori')->where('status_remove', '!=', 'Y');
+        $queryBo = UserBo::with(['kategori', 'roles'])->where('status_remove', '!=', 'Y');
 
         if ($roleFilter === 'super_admin') {
             $queryBo->where(function ($q) {
@@ -134,6 +136,7 @@ class UserManagementController extends Controller
                 'telp' => $u->telp,
                 'role' => $u->role,
                 'role_label' => $roleLabel,
+                'rbac_roles' => $u->roles->map(fn($r) => ['id' => $r->id, 'name' => $r->name, 'label' => $r->label])->values()->all(),
                 'idkategori' => $u->idkategori,
                 'instansi_name' => $u->kategori?->nama_kategori ?? ($u->role === 'super_admin' ? 'Pusat Platform' : '-'),
                 'status_aktif' => $u->status_aktif ?? 'Y',
@@ -271,53 +274,61 @@ class UserManagementController extends Controller
                 return response()->json(['message' => 'NISN / Username siswa sudah digunakan.'], 422);
             }
 
-            $iduser = 'US' . date('Ymd') . rand(10000000, 99999999);
-            $user = UserSiswa::create([
-                'iduser' => $iduser,
-                'nama' => trim($request->nama),
-                'nisn' => trim($request->username),
-                'login_email' => $request->email,
-                'login_password' => Hash::make($request->password),
-                'telp' => $request->telp,
-                'alamat' => $request->alamat,
-                'idkategori' => $request->idkategori,
-                'idkelas' => $request->idkelas,
-                'status_aktif' => 'Y',
-                'tanggal_input' => now(),
-            ]);
+            $user = DB::transaction(function () use ($request) {
+                $iduser = 'US' . date('Ymd') . rand(10000000, 99999999);
+                $created = UserSiswa::create([
+                    'iduser' => $iduser,
+                    'nama' => trim($request->nama),
+                    'nisn' => trim($request->username),
+                    'login_email' => $request->email,
+                    'login_password' => Hash::make($request->password),
+                    'telp' => $request->telp,
+                    'alamat' => $request->alamat,
+                    'idkategori' => $request->idkategori,
+                    'idkelas' => $request->idkelas,
+                    'status_aktif' => 'Y',
+                    'tanggal_input' => now(),
+                ]);
+                app(RbacAssignmentService::class)->assignDefaultRole($created);
+                return $created;
+            });
         } else {
             if (UserBo::where('login_username', $request->username)->exists()) {
                 return response()->json(['message' => 'Username ini sudah digunakan.'], 422);
             }
 
-            $iduser_bo = (string) (time() . rand(1000000, 9999999));
-            $roleType = match ($role) {
-                'super_admin' => 'super_admin',
-                'admin' => 'admin_sekolah',
-                'guru' => 'guru',
-                default => 'guru'
-            };
-            $statusAdmin = match ($role) {
-                'super_admin' => '1',
-                'admin' => '2',
-                default => '0'
-            };
+            $user = DB::transaction(function () use ($request, $role) {
+                $iduser_bo = (string) (time() . rand(1000000, 9999999));
+                $roleType = match ($role) {
+                    'super_admin' => 'super_admin',
+                    'admin' => 'admin_sekolah',
+                    'guru' => 'guru',
+                    default => 'guru'
+                };
+                $statusAdmin = match ($role) {
+                    'super_admin' => '1',
+                    'admin' => '2',
+                    default => '0'
+                };
 
-            $user = UserBo::create([
-                'iduser_bo' => $iduser_bo,
-                'idkategori' => ($role === 'super_admin') ? null : $request->idkategori,
-                'nama' => trim($request->nama),
-                'login_username' => trim($request->username),
-                'login_email' => $request->email,
-                'login_password' => $this->encodePasswordBo($request->password),
-                'telp' => $request->telp,
-                'alamat' => $request->alamat,
-                'status_admin' => $statusAdmin,
-                'role_type' => $roleType,
-                'status_aktif' => 'Y',
-                'status_remove' => 'N',
-                'tanggal_input' => now(),
-            ]);
+                $created = UserBo::create([
+                    'iduser_bo' => $iduser_bo,
+                    'idkategori' => ($role === 'super_admin') ? null : $request->idkategori,
+                    'nama' => trim($request->nama),
+                    'login_username' => trim($request->username),
+                    'login_email' => $request->email,
+                    'login_password' => $this->encodePasswordBo($request->password),
+                    'telp' => $request->telp,
+                    'alamat' => $request->alamat,
+                    'status_admin' => $statusAdmin,
+                    'role_type' => $roleType,
+                    'status_aktif' => 'Y',
+                    'status_remove' => 'N',
+                    'tanggal_input' => now(),
+                ]);
+                app(RbacAssignmentService::class)->assignDefaultRole($created);
+                return $created;
+            });
         }
 
         $instansi = $request->idkategori ? KategoriUserBo::find($request->idkategori) : null;

@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\BelongsToInstansi;
 
 class Assessment extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToInstansi;
 
     protected $table = 'assessment';
     protected $primaryKey = 'idassessment';

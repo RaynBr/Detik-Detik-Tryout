@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Traits\BelongsToInstansi;
 
 class MasterKelas extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToInstansi;
 
     protected $table = 'master_kelas';
 

@@ -51,10 +51,11 @@ apiClient.interceptors.response.use(
         toast.error(data.message || 'Sesi Anda telah aktif di perangkat lain. Anda telah dikeluarkan otomatis.', 'Sesi Terputus');
       }
       
-      // Clear auth tokens and reload
+      // Clear auth tokens and RBAC cache before reload
       localStorage.removeItem('cbt_token');
       localStorage.removeItem('cbt_session_token');
       localStorage.removeItem('cbt_user');
+      localStorage.removeItem('cbt_rbac_meta');
       localStorage.removeItem('cbt_login_time');
       
       // Redirect to login page

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\GuruMataPelajaran;
 use App\Models\UserBo;
+use App\Services\RbacAssignmentService;
 use App\Services\SimpleSpreadsheetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -175,31 +176,37 @@ class TeacherController extends Controller
         $tahunAjaranName = $request->input('tahun_ajaran') ?: ($activeYear?->name ?? '2026/2027');
         $idTahunAjaran = $request->input('id_tahun_ajaran') ?: ($activeYear?->id ?? null);
 
-        $userBo = UserBo::create([
-            'iduser_bo' => $id,
-            'idkategori' => $idkategori,
-            'id_tahun_ajaran' => $idTahunAjaran,
-            'nama' => $request->name,
-            'login_email' => $request->email,
-            'login_username' => $username,
-            'login_password' => $pwd,
-            'telp' => $request->phone ?? null,
-            'status_admin' => '2',
-            'role_type' => $request->role_type ?? 'guru',
-            'status_aktif' => 'Y',
-            'status_remove' => 'N',
-            'tanggal_input' => now(),
-        ]);
+        $userBo = DB::transaction(function () use ($id, $idkategori, $idTahunAjaran, $request, $username, $pwd, $tahunAjaranName) {
+            $created = UserBo::create([
+                'iduser_bo' => $id,
+                'idkategori' => $idkategori,
+                'id_tahun_ajaran' => $idTahunAjaran,
+                'nama' => $request->name,
+                'login_email' => $request->email,
+                'login_username' => $username,
+                'login_password' => $pwd,
+                'telp' => $request->phone ?? null,
+                'status_admin' => '2',
+                'role_type' => $request->role_type ?? 'guru',
+                'status_aktif' => 'Y',
+                'status_remove' => 'N',
+                'tanggal_input' => now(),
+            ]);
 
-        if ($request->filled('subject_ids')) {
-            foreach ($request->subject_ids as $mapelId) {
-                GuruMataPelajaran::create([
-                    'iduser_bo' => $userBo->iduser_bo,
-                    'idmapel' => $mapelId,
-                    'tahun_ajaran' => $tahunAjaranName,
-                ]);
+            app(RbacAssignmentService::class)->assignDefaultRole($created);
+
+            if ($request->filled('subject_ids')) {
+                foreach ($request->subject_ids as $mapelId) {
+                    GuruMataPelajaran::create([
+                        'iduser_bo' => $created->iduser_bo,
+                        'idmapel' => $mapelId,
+                        'tahun_ajaran' => $tahunAjaranName,
+                    ]);
+                }
             }
-        }
+
+            return $created;
+        });
 
         return response()->json([
             'message' => 'Guru berhasil ditambahkan.',
@@ -333,69 +340,85 @@ class TeacherController extends Controller
             $rowsToSave = $request->input('rows');
             $savedCount = 0;
             $failedRows = [];
+            $createdTeachers = [];
 
             DB::beginTransaction();
             try {
-                foreach ($rowsToSave as $item) {
-                    $rowNum = $item['row_number'] ?? 0;
-                    $data = $item['data'] ?? $item;
+                RbacAssignmentService::withoutAutoAssign(function () use (
+                    $rowsToSave,
+                    $isAdminInstansi,
+                    $authUser,
+                    $defaultIdKategori,
+                    &$savedCount,
+                    &$failedRows,
+                    &$createdTeachers
+                ) {
+                    foreach ($rowsToSave as $item) {
+                        $rowNum = $item['row_number'] ?? 0;
+                        $data = $item['data'] ?? $item;
 
-                    $name = trim($data['nama'] ?? $data['name'] ?? '');
-                    $email = trim($data['email'] ?? '');
-                    $username = trim($data['username'] ?? '');
-                    $password = trim($data['password'] ?? 'Guru1234!');
-                    $nip = trim($data['nip'] ?? '');
-                    $nuptk = trim($data['nuptk'] ?? '');
-                    $phone = trim($data['phone'] ?? $data['telp'] ?? '');
-                    $alamat = trim($data['alamat'] ?? '');
-                    $jk = strtoupper(trim($data['jenis_kelamin'] ?? 'L'));
-                    $status = (strtolower(trim($data['status'] ?? 'aktif')) === 'nonaktif' || strtolower(trim($data['status'] ?? '')) === 'n') ? 'N' : 'Y';
-                    $roleType = trim($data['role'] ?? 'guru') ?: 'guru';
-                    $targetKategori = $isAdminInstansi ? $authUser->idkategori : ($data['idkategori'] ?? $defaultIdKategori);
-                    $targetJenjang = $data['idjenjang'] ?? null;
-                    $targetMapelId = $data['idmapel'] ?? null;
+                        $name = trim($data['nama'] ?? $data['name'] ?? '');
+                        $email = trim($data['email'] ?? '');
+                        $username = trim($data['username'] ?? '');
+                        $password = trim($data['password'] ?? 'Guru1234!');
+                        $nip = trim($data['nip'] ?? '');
+                        $nuptk = trim($data['nuptk'] ?? '');
+                        $phone = trim($data['phone'] ?? $data['telp'] ?? '');
+                        $alamat = trim($data['alamat'] ?? '');
+                        $jk = strtoupper(trim($data['jenis_kelamin'] ?? 'L'));
+                        $status = (strtolower(trim($data['status'] ?? 'aktif')) === 'nonaktif' || strtolower(trim($data['status'] ?? '')) === 'n') ? 'N' : 'Y';
+                        $roleType = trim($data['role'] ?? 'guru') ?: 'guru';
+                        $targetKategori = $isAdminInstansi ? $authUser->idkategori : ($data['idkategori'] ?? $defaultIdKategori);
+                        $targetJenjang = $data['idjenjang'] ?? null;
+                        $targetMapelId = $data['idmapel'] ?? null;
 
-                    if (empty($name) || empty($email)) {
-                        $failedRows[] = ['row_number' => $rowNum, 'name' => $name, 'message' => 'Nama atau Email tidak boleh kosong'];
-                        continue;
-                    }
+                        if (empty($name) || empty($email)) {
+                            $failedRows[] = ['row_number' => $rowNum, 'name' => $name, 'message' => 'Nama atau Email tidak boleh kosong'];
+                            continue;
+                        }
 
-                    $pwd = Hash::make($password);
+                        $pwd = Hash::make($password);
 
-                    $newId = (string) (time() . rand(1000, 9999) . rand(10, 99));
+                        $newId = (string) (time() . rand(1000, 9999) . rand(10, 99));
 
-                    $userBo = UserBo::create([
-                        'iduser_bo' => $newId,
-                        'idkategori' => $targetKategori,
-                        'idjenjang' => $targetJenjang,
-                        'nama' => $name,
-                        'nip' => $nip ?: null,
-                        'nuptk' => $nuptk ?: null,
-                        'login_email' => $email,
-                        'login_username' => $username,
-                        'login_password' => $pwd,
-                        'force_change_password' => true,
-                        'jenis_kelamin' => $jk === 'P' ? 'P' : 'L',
-                        'telp' => $phone ?: null,
-                        'alamat' => $alamat ?: null,
-                        'status_admin' => '2',
-                        'role_type' => $roleType,
-                        'status_aktif' => $status,
-                        'status_remove' => 'N',
-                        'tanggal_input' => now(),
-                    ]);
-
-                    if ($targetMapelId) {
-                        GuruMataPelajaran::create([
+                        $userBo = UserBo::create([
                             'iduser_bo' => $newId,
-                            'idmapel' => $targetMapelId,
-                            'tahun_ajaran' => '2026/2027',
-                            'status' => 'aktif',
+                            'idkategori' => $targetKategori,
+                            'idjenjang' => $targetJenjang,
+                            'nama' => $name,
+                            'nip' => $nip ?: null,
+                            'nuptk' => $nuptk ?: null,
+                            'login_email' => $email,
+                            'login_username' => $username,
+                            'login_password' => $pwd,
+                            'force_change_password' => true,
+                            'jenis_kelamin' => $jk === 'P' ? 'P' : 'L',
+                            'telp' => $phone ?: null,
+                            'alamat' => $alamat ?: null,
+                            'status_admin' => '2',
+                            'role_type' => $roleType,
+                            'status_aktif' => $status,
+                            'status_remove' => 'N',
+                            'tanggal_input' => now(),
                         ]);
-                    }
 
-                    $savedCount++;
-                }
+                        $createdTeachers[] = $userBo;
+
+                        if ($targetMapelId) {
+                            GuruMataPelajaran::create([
+                                'iduser_bo' => $newId,
+                                'idmapel' => $targetMapelId,
+                                'tahun_ajaran' => '2026/2027',
+                                'status' => 'aktif',
+                            ]);
+                        }
+
+                        $savedCount++;
+                    }
+                });
+
+                // Batch assign default RBAC roles for all created rows in one chunked query
+                app(RbacAssignmentService::class)->assignDefaultRoleBatch($createdTeachers);
 
                 DB::commit();
 

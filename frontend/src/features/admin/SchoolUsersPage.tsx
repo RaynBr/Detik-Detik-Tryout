@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
+import { Can } from '../../shared/components/Can';
+import { AssignRoleModal } from './rbac/AssignRoleModal';
 
 interface SchoolUserItem {
   id: string;
@@ -21,6 +23,7 @@ interface SchoolUserItem {
   alamat?: string;
   status_aktif: string;
   role: string;
+  rbac_roles?: Array<{ id: number; name: string; label: string }>;
   class_name?: string;
   mapel?: string[];
   is_wali_kelas?: boolean;
@@ -56,6 +59,9 @@ export const SchoolUsersPage: React.FC = () => {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedDetailUser, setSelectedDetailUser] = useState<SchoolUserItem | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // Assign Role RBAC Modal state
+  const [roleModalUser, setRoleModalUser] = useState<SchoolUserItem | null>(null);
 
   const [form, setForm] = useState({
     id: '',
@@ -347,22 +353,26 @@ export const SchoolUsersPage: React.FC = () => {
 
         {/* Quick Action Buttons (Requirement 14, 15, 17) */}
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition active:scale-95 cursor-pointer disabled:opacity-50"
-          >
-            <Download className="h-4 w-4" />
-            <span>{exporting ? 'Mengekspor...' : 'Export Excel / CSV'}</span>
-          </button>
+          <Can perm="guru.view|siswa.view|laporan.export">
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition active:scale-95 cursor-pointer disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              <span>{exporting ? 'Mengekspor...' : 'Export Excel / CSV'}</span>
+            </button>
+          </Can>
 
-          <button
-            onClick={() => handleOpenAdd(roleFilter === 'all' ? 'guru' : roleFilter)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/20 transition active:scale-95 cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Tambah {roleFilter === 'siswa' ? 'Siswa' : roleFilter === 'admin' ? 'Admin' : 'Guru'}</span>
-          </button>
+          <Can perm="guru.create|siswa.create|admin_sekolah.manage">
+            <button
+              onClick={() => handleOpenAdd(roleFilter === 'all' ? 'guru' : roleFilter)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/20 transition active:scale-95 cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Tambah {roleFilter === 'siswa' ? 'Siswa' : roleFilter === 'admin' ? 'Admin' : 'Guru'}</span>
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -507,15 +517,29 @@ export const SchoolUsersPage: React.FC = () => {
                       )}
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
-                        item.user_type === 'guru'
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
-                          : item.user_type === 'siswa'
-                          ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-300'
-                          : 'bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-300'
-                      }`}>
-                        {item.user_type === 'guru' ? 'Guru' : item.user_type === 'siswa' ? 'Siswa' : 'Admin'}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                          item.user_type === 'guru'
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+                            : item.user_type === 'siswa'
+                            ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-300'
+                            : 'bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-300'
+                        }`}>
+                          {item.user_type === 'guru' ? 'Guru' : item.user_type === 'siswa' ? 'Siswa' : 'Admin'}
+                        </span>
+                        {item.rbac_roles &&
+                          item.rbac_roles
+                            .filter((r) => !['guru', 'siswa', 'admin_instansi'].includes(r.name))
+                            .map((r) => (
+                              <span
+                                key={r.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                              >
+                                <ShieldCheck className="h-2.5 w-2.5" />
+                                {r.label || r.name}
+                              </span>
+                            ))}
+                      </div>
                     </td>
                     <td className="py-3 px-4 font-mono text-slate-600 dark:text-gray-400">
                       {item.identifier || item.username || '-'}
@@ -557,6 +581,18 @@ export const SchoolUsersPage: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {item.user_type !== 'siswa' && (
+                          <Can perm="role_instansi.manage">
+                            <button
+                              onClick={() => setRoleModalUser(item)}
+                              title="Atur Role RBAC"
+                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <ShieldCheck className="h-3 w-3" />
+                              <span className="hidden sm:inline">Role</span>
+                            </button>
+                          </Can>
+                        )}
                         <button
                           onClick={() => {
                             setSelectedDetailUser(item);
@@ -567,39 +603,43 @@ export const SchoolUsersPage: React.FC = () => {
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleToggleUserStatus(item)}
-                          title={item.status_aktif === 'Y' ? 'Nonaktifkan Pengguna' : 'Aktifkan Pengguna'}
-                          className={`p-1.5 rounded-lg transition cursor-pointer ${
-                            item.status_aktif === 'Y'
-                              ? 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40'
-                              : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
-                          }`}
-                        >
-                          <Power className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleResetPassword(item)}
-                          title="Reset Password ke default 123456"
-                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
-                        >
-                          <KeyRound className="h-3 w-3" />
-                          <span className="hidden sm:inline">Reset</span>
-                        </button>
-                        <button
-                          onClick={() => handleOpenEdit(item)}
-                          title="Edit Pengguna"
-                          className="p-1.5 text-slate-600 hover:text-indigo-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg transition cursor-pointer"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(item)}
-                          title="Hapus Pengguna"
-                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <Can perm={item.user_type === 'siswa' ? 'siswa.edit' : item.user_type === 'guru' ? 'guru.edit' : 'admin_sekolah.manage'}>
+                          <button
+                            onClick={() => handleToggleUserStatus(item)}
+                            title={item.status_aktif === 'Y' ? 'Nonaktifkan Pengguna' : 'Aktifkan Pengguna'}
+                            className={`p-1.5 rounded-lg transition cursor-pointer ${
+                              item.status_aktif === 'Y'
+                                ? 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                                : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                            }`}
+                          >
+                            <Power className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleResetPassword(item)}
+                            title="Reset Password ke default 123456"
+                            className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <KeyRound className="h-3 w-3" />
+                            <span className="hidden sm:inline">Reset</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenEdit(item)}
+                            title="Edit Pengguna"
+                            className="p-1.5 text-slate-600 hover:text-indigo-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg transition cursor-pointer"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </button>
+                        </Can>
+                        <Can perm={item.user_type === 'siswa' ? 'siswa.delete' : item.user_type === 'guru' ? 'guru.delete' : 'admin_sekolah.manage'}>
+                          <button
+                            onClick={() => handleDeleteUser(item)}
+                            title="Hapus Pengguna"
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </Can>
                       </div>
                     </td>
                   </tr>
@@ -945,6 +985,24 @@ export const SchoolUsersPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Assign Role RBAC Modal (Non-Student Only) */}
+      <AssignRoleModal
+        isOpen={!!roleModalUser}
+        onClose={() => setRoleModalUser(null)}
+        userId={roleModalUser?.id || ''}
+        userName={roleModalUser?.nama || ''}
+        userType={roleModalUser?.user_type || 'guru'}
+        currentRoles={
+          roleModalUser?.rbac_roles && roleModalUser.rbac_roles.length > 0
+            ? roleModalUser.rbac_roles.map((r) => r.name)
+            : roleModalUser?.user_type === 'admin'
+            ? ['admin_instansi']
+            : roleModalUser?.user_type === 'guru'
+            ? ['guru']
+            : ['siswa']
+        }
+        onSaved={() => fetchUsers(currentPage)}
+      />
     </div>
   );
 };

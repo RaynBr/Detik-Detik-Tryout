@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
+import { Can } from '../../shared/components/Can';
+import { AssignRoleModal } from './rbac/AssignRoleModal';
 
 interface SuperAdminUser {
   id: string | number;
@@ -19,6 +21,7 @@ interface SuperAdminUser {
   alamat?: string;
   role: string;
   role_label?: string;
+  rbac_roles?: Array<{ id: number; name: string; label: string }>;
   status_aktif: string;
   created_at?: string;
   last_login_at?: string | null;
@@ -56,6 +59,9 @@ export const UsersManagementPage: React.FC = () => {
 
   // Status Toggle / Nonaktifkan Modal
   const [userToToggle, setUserToToggle] = useState<SuperAdminUser | null>(null);
+
+  // Assign Role Modal
+  const [roleModalUser, setRoleModalUser] = useState<SuperAdminUser | null>(null);
 
   const {
     currentPage,
@@ -236,13 +242,15 @@ export const UsersManagementPage: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleOpenAdd}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer shrink-0"
-          >
-            <UserPlus className="h-4 w-4" />
-            <span>Tambah Super Admin</span>
-          </button>
+          <Can perm="user_platform.create">
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] hover:translate-x-[-1px] hover:translate-y-[-1px] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition cursor-pointer shrink-0"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>Tambah Super Admin</span>
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -295,7 +303,7 @@ export const UsersManagementPage: React.FC = () => {
               <tr className="border-b-2 border-[#161C2D] dark:border-[#32363A] text-slate-600 dark:text-gray-400 uppercase font-black text-[10px] tracking-wider bg-slate-50 dark:bg-[#0B1014]/40">
                 <th className="py-3 px-3">Super Administrator</th>
                 <th className="py-3 px-3">Username & Kontak</th>
-                <th className="py-3 px-3">Hak Akses</th>
+                <th className="py-3 px-3">Role & Hak Akses</th>
                 <th className="py-3 px-3 text-center">Status</th>
                 <th className="py-3 px-3 text-center">Terakhir Login</th>
                 <th className="py-3 px-3 text-right">Aksi</th>
@@ -357,10 +365,24 @@ export const UsersManagementPage: React.FC = () => {
                       </td>
 
                       <td className="py-3.5 px-3">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                          <ShieldCheck className="h-3 w-3" />
-                          <span>Full Platform Access</span>
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {u.rbac_roles && u.rbac_roles.length > 0 ? (
+                            u.rbac_roles.map((r) => (
+                              <span
+                                key={r.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                              >
+                                <ShieldCheck className="h-3 w-3" />
+                                <span>{r.label || r.name}</span>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              <ShieldCheck className="h-3 w-3" />
+                              <span>Full Platform Access</span>
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-3 text-center">
@@ -383,27 +405,41 @@ export const UsersManagementPage: React.FC = () => {
 
                       <td className="py-3.5 px-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleOpenReset(u)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
-                            title="Reset Password"
-                          >
-                            <KeyRound className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenEdit(u)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition cursor-pointer"
-                            title="Edit Super Admin"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => setUserToToggle(u)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                            title="Nonaktifkan Super Admin"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <Can perm="role_platform.manage">
+                            <button
+                              onClick={() => setRoleModalUser(u)}
+                              className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold flex items-center gap-1 transition cursor-pointer"
+                              title="Atur Role RBAC"
+                            >
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">Role</span>
+                            </button>
+                          </Can>
+                          <Can perm="user_platform.edit">
+                            <button
+                              onClick={() => handleOpenReset(u)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                              title="Reset Password"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleOpenEdit(u)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition cursor-pointer"
+                              title="Edit Super Admin"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                          </Can>
+                          <Can perm="user_platform.delete">
+                            <button
+                              onClick={() => setUserToToggle(u)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                              title="Nonaktifkan Super Admin"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </Can>
                         </div>
                       </td>
                     </tr>
@@ -676,6 +712,21 @@ export const UsersManagementPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal Assign Role RBAC */}
+      <AssignRoleModal
+        isOpen={!!roleModalUser}
+        onClose={() => setRoleModalUser(null)}
+        userId={(roleModalUser?.id || roleModalUser?.iduser_bo || '').toString()}
+        userName={roleModalUser?.nama || ''}
+        userType="super_admin"
+        currentRoles={
+          roleModalUser?.rbac_roles && roleModalUser.rbac_roles.length > 0
+            ? roleModalUser.rbac_roles.map((r) => r.name)
+            : ['super_admin']
+        }
+        onSaved={() => fetchUsers(currentPage)}
+      />
 
     </div>
   );

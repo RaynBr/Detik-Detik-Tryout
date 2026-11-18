@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './shared/context/AuthContext';
 import { ThemeProvider } from './shared/context/ThemeContext';
-import { GuestRoute, ProtectedRoute } from './routes/guards';
+import { GuestRoute, ProtectedRoute, PermissionRoute } from './routes/guards';
 import { Unauthorized } from './shared/components/Unauthorized';
 import { RefreshCw } from 'lucide-react';
 import { ToastProvider } from './shared/context/ToastContext';
@@ -41,6 +41,7 @@ const MasterTahunSoalPage = lazy(() => import('./features/admin/MasterTahunSoalP
 const PlatformSubscriptionsPage = lazy(() => import('./features/admin/PlatformSubscriptionsPage').then(m => ({ default: m.PlatformSubscriptionsPage })));
 const PlatformSettingsPage = lazy(() => import('./features/admin/PlatformSettingsPage').then(m => ({ default: m.PlatformSettingsPage })));
 const SuperAdminQuestionBankPage = lazy(() => import('./features/admin/SuperAdminQuestionBankPage').then(m => ({ default: m.SuperAdminQuestionBankPage })));
+const RoleManagementPage = lazy(() => import('./features/admin/rbac/RoleManagementPage').then(m => ({ default: m.RoleManagementPage })));
 
 const AcademicMasterPage = lazy(() => import('./features/admin/AcademicMasterPage').then(m => ({ default: m.AcademicMasterPage })));
 const MasterTahunAjaranPage = lazy(() => import('./features/admin/academic/MasterTahunAjaranPage').then(m => ({ default: m.MasterTahunAjaranPage })));
@@ -117,45 +118,46 @@ export const App: React.FC = () => {
               {/* Super Admin Platform routes (/super-admin/*) */}
               <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
                 <Route element={<SuperAdminLayout />}>
-                  <Route path="/super-admin/dashboard" element={<SuperAdminDashboard />} />
-                  <Route path="/super-admin/instansi" element={<InstansiPage />} />
-                  <Route path="/super-admin/users" element={<UsersManagementPage />} />
+                  <Route path="/super-admin/dashboard" element={<PermissionRoute perm="dashboard_platform.view"><SuperAdminDashboard /></PermissionRoute>} />
+                  <Route path="/super-admin/instansi" element={<PermissionRoute perm="instansi.view"><InstansiPage /></PermissionRoute>} />
+                  <Route path="/super-admin/users" element={<PermissionRoute perm="user_platform.view"><UsersManagementPage /></PermissionRoute>} />
+                  <Route path="/super-admin/roles" element={<PermissionRoute perm="role_platform.view|role_platform.manage"><RoleManagementPage scope="platform" /></PermissionRoute>} />
                   
                   {/* Master Akademik - Rute Submenu Spesifik */}
                   <Route path="/super-admin/master-akademik" element={<Navigate to="/super-admin/master-akademik/tahun-ajaran" replace />} />
-                  <Route path="/super-admin/master-akademik/tahun-ajaran" element={<MasterTahunAjaranPage />} />
-                  <Route path="/super-admin/master-akademik/semester" element={<MasterSemesterPage />} />
-                  <Route path="/super-admin/master-akademik/jenjang" element={<MasterJenjangPage />} />
-                  <Route path="/super-admin/master-akademik/kurikulum" element={<MasterKurikulumPage />} />
-                  <Route path="/super-admin/master-akademik/mata-pelajaran" element={<MasterMataPelajaranPage />} />
-                  <Route path="/super-admin/master-akademik/kelas" element={<MasterKelasPage />} />
-                  <Route path="/super-admin/master-akademik/jurusan" element={<MasterJurusanPage />} />
-                  <Route path="/super-admin/master-akademik/tingkat-kelas" element={<MasterTingkatKelasPage />} />
+                  <Route path="/super-admin/master-akademik/tahun-ajaran" element={<PermissionRoute perm="master.view"><MasterTahunAjaranPage /></PermissionRoute>} />
+                  <Route path="/super-admin/master-akademik/semester" element={<PermissionRoute perm="master.view"><MasterSemesterPage /></PermissionRoute>} />
+                  <Route path="/super-admin/master-akademik/jenjang" element={<PermissionRoute perm="master.view"><MasterJenjangPage /></PermissionRoute>} />
+                  <Route path="/super-admin/master-akademik/kurikulum" element={<PermissionRoute perm="master.view"><MasterKurikulumPage /></PermissionRoute>} />
+                  <Route path="/super-admin/master-akademik/mata-pelajaran" element={<PermissionRoute perm="master.view"><MasterMataPelajaranPage /></PermissionRoute>} />
+                  <Route path="/super-admin/master-akademik/kelas" element={<PermissionRoute perm="master.view"><MasterKelasPage /></PermissionRoute>} />
+                  <Route path="/super-admin/master-akademik/jurusan" element={<PermissionRoute perm="master.view"><MasterJurusanPage /></PermissionRoute>} />
+                  <Route path="/super-admin/master-akademik/tingkat-kelas" element={<PermissionRoute perm="master.view"><MasterTingkatKelasPage /></PermissionRoute>} />
 
                   {/* Master Akademik - Backward-compatible routes */}
-                  <Route path="/super-admin/academic-master" element={<AcademicMasterPage />} />
-                  <Route path="/super-admin/academic-years" element={<MasterTahunAjaranPage />} />
-                  <Route path="/super-admin/semesters" element={<MasterSemesterPage />} />
-                  <Route path="/super-admin/jenjang" element={<MasterJenjangPage />} />
-                  <Route path="/super-admin/kurikulum" element={<MasterKurikulumPage />} />
-                  <Route path="/super-admin/subjects" element={<MasterMataPelajaranPage />} />
-                  <Route path="/super-admin/classes" element={<MasterKelasPage />} />
-                  <Route path="/super-admin/majors" element={<MasterJurusanPage />} />
-                  <Route path="/super-admin/tingkat-kelas" element={<MasterTingkatKelasPage />} />
-                  <Route path="/super-admin/tahun-soal" element={<MasterTahunSoalPage />} />
-                  <Route path="/super-admin/bank-soal/tahun-soal" element={<MasterTahunSoalPage />} />
+                  <Route path="/super-admin/academic-master" element={<PermissionRoute perm="master.view"><AcademicMasterPage /></PermissionRoute>} />
+                  <Route path="/super-admin/academic-years" element={<PermissionRoute perm="master.view"><MasterTahunAjaranPage /></PermissionRoute>} />
+                  <Route path="/super-admin/semesters" element={<PermissionRoute perm="master.view"><MasterSemesterPage /></PermissionRoute>} />
+                  <Route path="/super-admin/jenjang" element={<PermissionRoute perm="master.view"><MasterJenjangPage /></PermissionRoute>} />
+                  <Route path="/super-admin/kurikulum" element={<PermissionRoute perm="master.view"><MasterKurikulumPage /></PermissionRoute>} />
+                  <Route path="/super-admin/subjects" element={<PermissionRoute perm="master.view"><MasterMataPelajaranPage /></PermissionRoute>} />
+                  <Route path="/super-admin/classes" element={<PermissionRoute perm="master.view"><MasterKelasPage /></PermissionRoute>} />
+                  <Route path="/super-admin/majors" element={<PermissionRoute perm="master.view"><MasterJurusanPage /></PermissionRoute>} />
+                  <Route path="/super-admin/tingkat-kelas" element={<PermissionRoute perm="master.view"><MasterTingkatKelasPage /></PermissionRoute>} />
+                  <Route path="/super-admin/tahun-soal" element={<PermissionRoute perm="banksoal.view|master.view"><MasterTahunSoalPage /></PermissionRoute>} />
+                  <Route path="/super-admin/bank-soal/tahun-soal" element={<PermissionRoute perm="banksoal.view|master.view"><MasterTahunSoalPage /></PermissionRoute>} />
 
                   {/* Kelola Bank Soal */}
-                  <Route path="/super-admin/bank-soal" element={<SuperAdminQuestionBankPage />} />
-                  <Route path="/super-admin/question-bank" element={<SuperAdminQuestionBankPage />} />
-                  <Route path="/super-admin/questions" element={<SuperAdminQuestionBankPage />} />
+                  <Route path="/super-admin/bank-soal" element={<PermissionRoute perm="banksoal.view"><SuperAdminQuestionBankPage /></PermissionRoute>} />
+                  <Route path="/super-admin/question-bank" element={<PermissionRoute perm="banksoal.view"><SuperAdminQuestionBankPage /></PermissionRoute>} />
+                  <Route path="/super-admin/questions" element={<PermissionRoute perm="banksoal.view"><SuperAdminQuestionBankPage /></PermissionRoute>} />
 
                   {/* Subscription, Monitoring, Pengaturan, Profil */}
-                  <Route path="/super-admin/subscriptions" element={<PlatformSubscriptionsPage />} />
-                  <Route path="/super-admin/monitoring" element={<AuditTrailPage />} />
-                  <Route path="/super-admin/audit-logs" element={<AuditTrailPage />} />
-                  <Route path="/super-admin/announcements" element={<SuperAdminAnnouncementsPage />} />
-                  <Route path="/super-admin/settings" element={<PlatformSettingsPage />} />
+                  <Route path="/super-admin/subscriptions" element={<PermissionRoute perm="subscription.view"><PlatformSubscriptionsPage /></PermissionRoute>} />
+                  <Route path="/super-admin/monitoring" element={<PermissionRoute perm="audit.view"><AuditTrailPage /></PermissionRoute>} />
+                  <Route path="/super-admin/audit-logs" element={<PermissionRoute perm="audit.view"><AuditTrailPage /></PermissionRoute>} />
+                  <Route path="/super-admin/announcements" element={<PermissionRoute perm="announcement_global.view"><SuperAdminAnnouncementsPage /></PermissionRoute>} />
+                  <Route path="/super-admin/settings" element={<PermissionRoute perm="platform_setting.view"><PlatformSettingsPage /></PermissionRoute>} />
                   <Route path="/super-admin/profile" element={<AdminProfilePage />} />
                 </Route>
               </Route>
@@ -163,35 +165,37 @@ export const App: React.FC = () => {
               {/* Admin Instansi / Sekolah routes (/admin/*) - Strictly for role 'admin' */}
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route element={<AdminLayout />}>
-                  <Route path="/admin/dashboard" element={<AdminDashboard />} />
-                  <Route path="/admin/users" element={<SchoolUsersPage />} />
+                  <Route path="/admin/dashboard" element={<PermissionRoute perm="dashboard_sekolah.view"><AdminDashboard /></PermissionRoute>} />
+                  <Route path="/admin/users" element={<PermissionRoute perm="guru.view|siswa.view|admin_sekolah.manage"><SchoolUsersPage /></PermissionRoute>} />
+                  <Route path="/admin/roles" element={<PermissionRoute perm="role_instansi.view|role_instansi.manage"><RoleManagementPage scope="instansi" /></PermissionRoute>} />
                   <Route path="/admin/school-users" element={<Navigate to="/admin/users" replace />} />
                   <Route path="/admin/instansi" element={<Navigate to="/admin/users" replace />} />
                   <Route path="/admin/teachers" element={<Navigate to="/admin/users" replace />} />
                   <Route path="/admin/students" element={<Navigate to="/admin/users" replace />} />
-                  <Route path="/admin/classes" element={<ClassesPage />} />
-                  <Route path="/admin/academic-years" element={<AcademicYearsPage />} />
-                  <Route path="/admin/subjects" element={<SubjectsPage />} />
-                  <Route path="/admin/majors" element={<MajorsPage />} />
+                  <Route path="/admin/classes" element={<PermissionRoute perm="kelas.view"><ClassesPage /></PermissionRoute>} />
+                  <Route path="/admin/academic-years" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><AcademicYearsPage /></PermissionRoute>} />
+                  <Route path="/admin/subjects" element={<PermissionRoute perm="mapel.view"><SubjectsPage /></PermissionRoute>} />
+                  <Route path="/admin/majors" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><MajorsPage /></PermissionRoute>} />
                   
                   {/* Master Akademik untuk Admin Instansi */}
                   <Route path="/admin/master-akademik" element={<Navigate to="/admin/classes" replace />} />
-                  <Route path="/admin/master-akademik/tahun-ajaran" element={<MasterTahunAjaranPage />} />
-                  <Route path="/admin/master-akademik/semester" element={<MasterSemesterPage />} />
-                  <Route path="/admin/master-akademik/kurikulum" element={<MasterKurikulumPage />} />
-                  <Route path="/admin/master-akademik/jenjang" element={<MasterJenjangPage />} />
-                  <Route path="/admin/master-akademik/jurusan" element={<MasterJurusanPage />} />
-                  <Route path="/admin/master-akademik/tingkat-kelas" element={<MasterTingkatKelasPage />} />
-                  <Route path="/admin/master-akademik/mata-pelajaran" element={<MasterMataPelajaranPage />} />
-                  <Route path="/admin/master-akademik/kelas" element={<MasterKelasPage />} />
+                  <Route path="/admin/master-akademik/tahun-ajaran" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><MasterTahunAjaranPage /></PermissionRoute>} />
+                  <Route path="/admin/master-akademik/semester" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><MasterSemesterPage /></PermissionRoute>} />
+                  <Route path="/admin/master-akademik/kurikulum" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><MasterKurikulumPage /></PermissionRoute>} />
+                  <Route path="/admin/master-akademik/jenjang" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><MasterJenjangPage /></PermissionRoute>} />
+                  <Route path="/admin/master-akademik/jurusan" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><MasterJurusanPage /></PermissionRoute>} />
+                  <Route path="/admin/master-akademik/tingkat-kelas" element={<PermissionRoute perm="akademik_sekolah.view|kelas.view"><MasterTingkatKelasPage /></PermissionRoute>} />
+                  <Route path="/admin/master-akademik/mata-pelajaran" element={<PermissionRoute perm="mapel.view"><MasterMataPelajaranPage /></PermissionRoute>} />
+                  <Route path="/admin/master-akademik/kelas" element={<PermissionRoute perm="kelas.view"><MasterKelasPage /></PermissionRoute>} />
 
                   {/* Jadwal Ujian & Monitoring & Aktivitas */}
-                  <Route path="/admin/exams" element={<ExamsPage />} />
-                  <Route path="/admin/proctoring" element={<LiveMonitoringPage />} />
-                  <Route path="/admin/activities" element={<TeacherStudentActivityPage />} />
-                  <Route path="/admin/announcements" element={<AdminAnnouncementsPage />} />
-                  <Route path="/admin/reports" element={<ExamReportPage />} />
-                  <Route path="/admin/profile" element={<AdminProfilePage />} />
+                  <Route path="/admin/exams" element={<PermissionRoute perm="jadwal.view"><ExamsPage /></PermissionRoute>} />
+                  <Route path="/admin/proctoring" element={<PermissionRoute perm="monitoring.view|proctoring.view"><LiveMonitoringPage /></PermissionRoute>} />
+                  <Route path="/admin/activities" element={<PermissionRoute perm="aktivitas.view"><TeacherStudentActivityPage /></PermissionRoute>} />
+                  <Route path="/admin/announcements" element={<PermissionRoute perm="announcement.view"><AdminAnnouncementsPage /></PermissionRoute>} />
+                  <Route path="/admin/reports" element={<PermissionRoute perm="laporan.view"><ExamReportPage /></PermissionRoute>} />
+                  <Route path="/admin/profile" element={<PermissionRoute perm="profil.manage"><AdminProfilePage /></PermissionRoute>} />
+                  <Route path="/admin/school/profile" element={<PermissionRoute perm="instansi_sekolah.view|profil.manage"><AdminProfilePage /></PermissionRoute>} />
                 </Route>
               </Route>
 

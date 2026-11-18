@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\MasterKelas;
 use App\Models\SiswaKelas;
 use App\Models\UserSiswa;
+use App\Services\RbacAssignmentService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 
@@ -122,36 +124,42 @@ class StudentController extends Controller
             ? $authUser->idkategori
             : ($request->idkategori ?? $authUser?->idkategori);
 
-        $user = UserSiswa::create([
-            'iduser' => $id,
-            'nama' => $request->name,
-            'nisn' => $nisn,
-            'idkelas' => $request->class_id ?? null,
-            'idkategori' => $idkategori,
-            'login_email' => $request->email,
-            'login_password' => Hash::make($request->password),
-            'telp' => $request->phone ?? null,
-            'alamat' => $request->address ?? null,
-            'status_aktif' => 'Y',
-            'url_image' => 'default.png',
-            'tanggal_input' => now(),
-        ]);
-
-        if ($request->filled('class_id')) {
-            $classObj = MasterKelas::with('academicYear')->find($request->class_id);
-            $tahunAjaranName = $classObj?->academicYear?->name 
-                ?? $classObj?->tahun_ajaran 
-                ?? \App\Models\AcademicYear::where('is_active', 1)->value('name') 
-                ?? '2026/2027';
-
-            SiswaKelas::create([
-                'iduser' => $user->iduser,
-                'idkelas' => $request->class_id,
+        $user = DB::transaction(function () use ($id, $request, $nisn, $idkategori) {
+            $created = UserSiswa::create([
+                'iduser' => $id,
+                'nama' => $request->name,
                 'nisn' => $nisn,
-                'tahun_ajaran' => $tahunAjaranName,
-                'status' => 'aktif',
+                'idkelas' => $request->class_id ?? null,
+                'idkategori' => $idkategori,
+                'login_email' => $request->email,
+                'login_password' => Hash::make($request->password),
+                'telp' => $request->phone ?? null,
+                'alamat' => $request->address ?? null,
+                'status_aktif' => 'Y',
+                'url_image' => 'default.png',
+                'tanggal_input' => now(),
             ]);
-        }
+
+            app(RbacAssignmentService::class)->assignDefaultRole($created);
+
+            if ($request->filled('class_id')) {
+                $classObj = MasterKelas::with('academicYear')->find($request->class_id);
+                $tahunAjaranName = $classObj?->academicYear?->name
+                    ?? $classObj?->tahun_ajaran
+                    ?? \App\Models\AcademicYear::where('is_active', 1)->value('name')
+                    ?? '2026/2027';
+
+                SiswaKelas::create([
+                    'iduser' => $created->iduser,
+                    'idkelas' => $request->class_id,
+                    'nisn' => $nisn,
+                    'tahun_ajaran' => $tahunAjaranName,
+                    'status' => 'aktif',
+                ]);
+            }
+
+            return $created;
+        });
 
         return response()->json([
             'message' => 'Siswa berhasil ditambahkan.',
@@ -288,108 +296,124 @@ class StudentController extends Controller
             $rowsToSave = $request->input('rows');
             $savedCount = 0;
             $failedRows = [];
+            $importedStudents = [];
 
             \Illuminate\Support\Facades\DB::beginTransaction();
             try {
-                foreach ($rowsToSave as $item) {
-                    $rowNum = $item['row_number'] ?? 0;
-                    $data = $item['data'] ?? $item;
+                RbacAssignmentService::withoutAutoAssign(function () use (
+                    $rowsToSave,
+                    $request,
+                    $idkategori,
+                    &$savedCount,
+                    &$failedRows,
+                    &$importedStudents
+                ) {
+                    foreach ($rowsToSave as $item) {
+                        $rowNum = $item['row_number'] ?? 0;
+                        $data = $item['data'] ?? $item;
 
-                    $name = trim($data['nama'] ?? $data['name'] ?? '');
-                    $nis = trim($data['nis'] ?? '');
-                    $nisn = trim($data['nisn'] ?? '');
-                    $username = trim($data['username'] ?? '');
-                    $password = trim($data['password'] ?? 'Siswa1234!');
-                    $jk = strtoupper(trim($data['jenis_kelamin'] ?? 'L'));
-                    $nomorAbsen = !empty($data['nomor_absen']) ? (int)$data['nomor_absen'] : null;
-                    $idkelas = $data['idkelas'] ?? $request->input('idkelas') ?? null;
-                    $idTahunAjaran = $data['id_tahun_ajaran'] ?? $request->input('id_tahun_ajaran') ?? null;
-                    $idjenjang = $data['idjenjang'] ?? null;
-                    if (!$idjenjang && $idkelas) {
-                        $kelasObj = MasterKelas::find($idkelas);
-                        if ($kelasObj) {
-                            $idjenjang = $kelasObj->idjenjang;
-                            if (!$idTahunAjaran) $idTahunAjaran = $kelasObj->academic_year_id;
+                        $name = trim($data['nama'] ?? $data['name'] ?? '');
+                        $nis = trim($data['nis'] ?? '');
+                        $nisn = trim($data['nisn'] ?? '');
+                        $username = trim($data['username'] ?? '');
+                        $password = trim($data['password'] ?? 'Siswa1234!');
+                        $jk = strtoupper(trim($data['jenis_kelamin'] ?? 'L'));
+                        $nomorAbsen = !empty($data['nomor_absen']) ? (int)$data['nomor_absen'] : null;
+                        $idkelas = $data['idkelas'] ?? $request->input('idkelas') ?? null;
+                        $idTahunAjaran = $data['id_tahun_ajaran'] ?? $request->input('id_tahun_ajaran') ?? null;
+                        $idjenjang = $data['idjenjang'] ?? null;
+                        if (!$idjenjang && $idkelas) {
+                            $kelasObj = MasterKelas::find($idkelas);
+                            if ($kelasObj) {
+                                $idjenjang = $kelasObj->idjenjang;
+                                if (!$idTahunAjaran) $idTahunAjaran = $kelasObj->academic_year_id;
+                            }
                         }
-                    }
-                    $tempatLahir = trim($data['tempat_lahir'] ?? '');
-                    $tanggalLahir = !empty($data['tanggal_lahir']) ? date('Y-m-d', strtotime($data['tanggal_lahir'])) : null;
-                    $agama = trim($data['agama'] ?? '');
-                    $phone = trim($data['phone'] ?? $data['telp'] ?? '');
-                    $alamat = trim($data['alamat'] ?? '');
-                    $status = (strtolower(trim($data['status'] ?? 'aktif')) === 'nonaktif' || strtolower(trim($data['status'] ?? '')) === 'n') ? 'N' : 'Y';
+                        $tempatLahir = trim($data['tempat_lahir'] ?? '');
+                        $tanggalLahir = !empty($data['tanggal_lahir']) ? date('Y-m-d', strtotime($data['tanggal_lahir'])) : null;
+                        $agama = trim($data['agama'] ?? '');
+                        $phone = trim($data['phone'] ?? $data['telp'] ?? '');
+                        $alamat = trim($data['alamat'] ?? '');
+                        $status = (strtolower(trim($data['status'] ?? 'aktif')) === 'nonaktif' || strtolower(trim($data['status'] ?? '')) === 'n') ? 'N' : 'Y';
 
-                    if (empty($name) || empty($nisn)) {
-                        $failedRows[] = ['row_number' => $rowNum, 'name' => $name, 'message' => 'Nama atau NISN tidak boleh kosong'];
-                        continue;
-                    }
+                        if (empty($name) || empty($nisn)) {
+                            $failedRows[] = ['row_number' => $rowNum, 'name' => $name, 'message' => 'Nama atau NISN tidak boleh kosong'];
+                            continue;
+                        }
 
-                    // Requirement 18: Otomatis membuat akun siswa jika belum ada, atau update penempatan kelas jika sudah ada
-                    $existingStudent = UserSiswa::where('nisn', $nisn)->first();
-                    if ($existingStudent) {
-                        $updateData = [
+                        // Requirement 18: Otomatis membuat akun siswa jika belum ada, atau update penempatan kelas jika sudah ada
+                        $existingStudent = UserSiswa::where('nisn', $nisn)->first();
+                        if ($existingStudent) {
+                            $updateData = [
+                                'nama' => $name,
+                                'status_aktif' => $status,
+                            ];
+                            if ($idkelas) $updateData['idkelas'] = $idkelas;
+                            if ($idTahunAjaran) $updateData['id_tahun_ajaran'] = $idTahunAjaran;
+                            if ($idjenjang) $updateData['idjenjang'] = $idjenjang;
+                            if ($nis) $updateData['nis'] = $nis;
+                            if ($phone) $updateData['telp'] = $phone;
+                            if ($alamat) $updateData['alamat'] = $alamat;
+                            $existingStudent->update($updateData);
+                            $importedStudents[] = $existingStudent;
+
+                            if ($idkelas) {
+                                SiswaKelas::updateOrCreate(
+                                    ['iduser' => $existingStudent->iduser, 'idkelas' => $idkelas],
+                                    [
+                                        'nisn' => $nisn,
+                                        'tahun_ajaran' => '2026/2027',
+                                        'status' => 'aktif'
+                                    ]
+                                );
+                            }
+                            $savedCount++;
+                            continue;
+                        }
+
+                        $newId = 'US' . date('Ymd') . str_pad((string)rand(100000, 999999), 10, '0', STR_PAD_LEFT);
+
+                        $newStudent = UserSiswa::create([
+                            'iduser' => $newId,
                             'nama' => $name,
+                            'nis' => $nis ?: null,
+                            'nisn' => $nisn,
+                            'jenis_kelamin' => $jk === 'P' ? 'P' : 'L',
+                            'nomor_absen' => $nomorAbsen,
+                            'idkelas' => $idkelas,
+                            'id_tahun_ajaran' => $idTahunAjaran,
+                            'idjenjang' => $idjenjang,
+                            'idkategori' => $idkategori,
+                            'tempat_lahir' => $tempatLahir ?: null,
+                            'tanggal_lahir' => $tanggalLahir,
+                            'agama' => $agama ?: null,
+                            'login_email' => $username ?: $nisn,
+                            'login_password' => Hash::make($password),
+                            'force_change_password' => true,
+                            'telp' => $phone ?: null,
+                            'alamat' => $alamat ?: null,
                             'status_aktif' => $status,
-                        ];
-                        if ($idkelas) $updateData['idkelas'] = $idkelas;
-                        if ($idTahunAjaran) $updateData['id_tahun_ajaran'] = $idTahunAjaran;
-                        if ($idjenjang) $updateData['idjenjang'] = $idjenjang;
-                        if ($nis) $updateData['nis'] = $nis;
-                        if ($phone) $updateData['telp'] = $phone;
-                        if ($alamat) $updateData['alamat'] = $alamat;
-                        $existingStudent->update($updateData);
+                            'tanggal_input' => now(),
+                        ]);
+
+                        $importedStudents[] = $newStudent;
 
                         if ($idkelas) {
-                            SiswaKelas::updateOrCreate(
-                                ['iduser' => $existingStudent->iduser, 'idkelas' => $idkelas],
-                                [
-                                    'nisn' => $nisn,
-                                    'tahun_ajaran' => '2026/2027',
-                                    'status' => 'aktif'
-                                ]
-                            );
+                            SiswaKelas::create([
+                                'iduser' => $newId,
+                                'idkelas' => $idkelas,
+                                'nisn' => $nisn,
+                                'tahun_ajaran' => '2026/2027',
+                                'status' => 'aktif',
+                            ]);
                         }
+
                         $savedCount++;
-                        continue;
                     }
+                });
 
-                    $newId = 'US' . date('Ymd') . str_pad((string)rand(100000, 999999), 10, '0', STR_PAD_LEFT);
-
-                    $newStudent = UserSiswa::create([
-                        'iduser' => $newId,
-                        'nama' => $name,
-                        'nis' => $nis ?: null,
-                        'nisn' => $nisn,
-                        'jenis_kelamin' => $jk === 'P' ? 'P' : 'L',
-                        'nomor_absen' => $nomorAbsen,
-                        'idkelas' => $idkelas,
-                        'id_tahun_ajaran' => $idTahunAjaran,
-                        'idjenjang' => $idjenjang,
-                        'idkategori' => $idkategori,
-                        'tempat_lahir' => $tempatLahir ?: null,
-                        'tanggal_lahir' => $tanggalLahir,
-                        'agama' => $agama ?: null,
-                        'login_email' => $username ?: $nisn,
-                        'login_password' => Hash::make($password),
-                        'force_change_password' => true,
-                        'telp' => $phone ?: null,
-                        'alamat' => $alamat ?: null,
-                        'status_aktif' => $status,
-                        'tanggal_input' => now(),
-                    ]);
-
-                    if ($idkelas) {
-                        SiswaKelas::create([
-                            'iduser' => $newId,
-                            'idkelas' => $idkelas,
-                            'nisn' => $nisn,
-                            'tahun_ajaran' => '2026/2027',
-                            'status' => 'aktif',
-                        ]);
-                    }
-
-                    $savedCount++;
-                }
+                // Batch assign default 'siswa' role idempotently for all imported students
+                app(RbacAssignmentService::class)->assignDefaultRoleBatch($importedStudents);
 
                 \Illuminate\Support\Facades\DB::commit();
 

@@ -5,6 +5,7 @@ import { toast } from '../../shared/context/ToastContext';
 import { Calendar, Plus, Edit, Trash2, X, Check, ChevronRight, BookOpen } from 'lucide-react';
 import { Pagination } from '../../shared/components/Pagination';
 import { usePaginationUrl } from '../../shared/utils/usePaginationUrl';
+import { Can } from '../../shared/components/Can';
 
 interface TahunSoal {
   id: number;
@@ -124,10 +125,12 @@ export const MasterTahunSoalPage: React.FC = () => {
             <BookOpen className="h-4 w-4" />
             <span>Lihat Bank Soal</span>
           </Link>
-          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition">
-            <Plus className="h-4 w-4" />
-            <span>Tambah Tahun Soal</span>
-          </button>
+          <Can perm="master.manage|banksoal.manage">
+            <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition">
+              <Plus className="h-4 w-4" />
+              <span>Tambah Tahun Soal</span>
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -182,12 +185,14 @@ export const MasterTahunSoalPage: React.FC = () => {
                   </td>
                   <td className="py-4 px-5">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openEdit(item)} className="p-2 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg transition" title="Edit">
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 dark:text-red-400 rounded-lg transition" title="Hapus">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <Can perm="master.manage|banksoal.manage">
+                        <button onClick={() => openEdit(item)} className="p-2 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg transition" title="Edit">
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-600 dark:text-red-400 rounded-lg transition" title="Hapus">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </Can>
                     </div>
                   </td>
                 </tr>

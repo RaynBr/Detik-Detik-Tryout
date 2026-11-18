@@ -10,6 +10,7 @@ use App\Models\MasterKelas;
 use App\Models\Assessment;
 use App\Models\AssessmentSoalPilgan;
 use App\Models\AuditLog;
+use App\Services\RbacAssignmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -296,47 +297,52 @@ class InstansiController extends Controller
         $statusInput = $request->input('status_aktif') ?? $request->input('status') ?? 'aktif';
         $isNonaktif = in_array(strtolower($statusInput), ['nonaktif', 'n']);
 
-        $instansi = KategoriUserBo::create([
-            'idkategori' => $idkategori,
-            'nama_kategori' => trim($request->nama_kategori),
-            'jenis_instansi' => $request->jenis_instansi ?? 'SMA',
-            'npsn' => $request->npsn,
-            'email' => $request->email,
-            'telp' => $request->telp,
-            'alamat' => $request->alamat,
-            'kota' => $request->kota,
-            'provinsi' => $request->provinsi,
-            'status_aktif' => $isNonaktif ? 'N' : 'Y',
-            'status_remove' => $isNonaktif ? 'Y' : 'N',
-            'logo' => $request->logo,
-            'encrypt_id' => $encryptId,
-            'subscription_status' => $isNonaktif ? 'nonaktif' : 'aktif',
-            'tanggal_aktif' => now()->toDateString(),
-            'tanggal_berakhir' => now()->addYear()->toDateString(),
-            'tgl_input' => now(),
-            'academic_config' => $request->input('academic_config'),
-        ]);
-
-        // Optional first admin creation
+        $instansi = null;
         $createdAdmin = null;
-        if ($request->filled('admin_username') && $request->filled('admin_password')) {
-            $adminId = (string) (time() . rand(1000000, 9999999));
-            $createdAdmin = UserBo::create([
-                'iduser_bo' => $adminId,
+
+        DB::transaction(function () use ($request, $idkategori, $encryptId, $isNonaktif, &$instansi, &$createdAdmin) {
+            $instansi = KategoriUserBo::create([
                 'idkategori' => $idkategori,
-                'nama' => $request->input('admin_name') ?: ('Admin ' . $request->nama_kategori),
-                'login_username' => $request->admin_username,
-                'login_email' => $request->email ?? '',
-                'login_password' => $this->encodePasswordBo($request->admin_password),
-                'telp' => $request->telp ?? '',
-                'alamat' => $request->alamat ?? '',
-                'status_admin' => '2',
-                'role_type' => 'admin_sekolah',
-                'status_aktif' => 'Y',
-                'status_remove' => 'N',
-                'tanggal_input' => now(),
+                'nama_kategori' => trim($request->nama_kategori),
+                'jenis_instansi' => $request->jenis_instansi ?? 'SMA',
+                'npsn' => $request->npsn,
+                'email' => $request->email,
+                'telp' => $request->telp,
+                'alamat' => $request->alamat,
+                'kota' => $request->kota,
+                'provinsi' => $request->provinsi,
+                'status_aktif' => $isNonaktif ? 'N' : 'Y',
+                'status_remove' => $isNonaktif ? 'Y' : 'N',
+                'logo' => $request->logo,
+                'encrypt_id' => $encryptId,
+                'subscription_status' => $isNonaktif ? 'nonaktif' : 'aktif',
+                'tanggal_aktif' => now()->toDateString(),
+                'tanggal_berakhir' => now()->addYear()->toDateString(),
+                'tgl_input' => now(),
+                'academic_config' => $request->input('academic_config'),
             ]);
-        }
+
+            // Optional first admin creation
+            if ($request->filled('admin_username') && $request->filled('admin_password')) {
+                $adminId = (string) (time() . rand(1000000, 9999999));
+                $createdAdmin = UserBo::create([
+                    'iduser_bo' => $adminId,
+                    'idkategori' => $idkategori,
+                    'nama' => $request->input('admin_name') ?: ('Admin ' . $request->nama_kategori),
+                    'login_username' => $request->admin_username,
+                    'login_email' => $request->email ?? '',
+                    'login_password' => $this->encodePasswordBo($request->admin_password),
+                    'telp' => $request->telp ?? '',
+                    'alamat' => $request->alamat ?? '',
+                    'status_admin' => '2',
+                    'role_type' => 'admin_sekolah',
+                    'status_aktif' => 'Y',
+                    'status_remove' => 'N',
+                    'tanggal_input' => now(),
+                ]);
+                app(RbacAssignmentService::class)->assignDefaultRole($createdAdmin);
+            }
+        });
 
         AuditLog::record(
             'Tambah Data',
@@ -742,21 +748,25 @@ class InstansiController extends Controller
 
         $iduser_bo = (string) (time() . rand(1000000, 9999999));
 
-        $admin = UserBo::create([
-            'iduser_bo' => $iduser_bo,
-            'idkategori' => $idkategori,
-            'nama' => $request->nama,
-            'login_username' => $request->login_username,
-            'login_email' => $request->login_email,
-            'login_password' => $this->encodePasswordBo($request->password),
-            'telp' => $request->telp ?? '',
-            'alamat' => $request->alamat ?? '',
-            'status_admin' => '2',
-            'role_type' => 'admin_sekolah',
-            'status_aktif' => 'Y',
-            'status_remove' => 'N',
-            'tanggal_input' => now(),
-        ]);
+        $admin = DB::transaction(function () use ($request, $iduser_bo, $idkategori) {
+            $created = UserBo::create([
+                'iduser_bo' => $iduser_bo,
+                'idkategori' => $idkategori,
+                'nama' => $request->nama,
+                'login_username' => $request->login_username,
+                'login_email' => $request->login_email,
+                'login_password' => $this->encodePasswordBo($request->password),
+                'telp' => $request->telp ?? '',
+                'alamat' => $request->alamat ?? '',
+                'status_admin' => '2',
+                'role_type' => 'admin_sekolah',
+                'status_aktif' => 'Y',
+                'status_remove' => 'N',
+                'tanggal_input' => now(),
+            ]);
+            app(RbacAssignmentService::class)->assignDefaultRole($created);
+            return $created;
+        });
 
         AuditLog::record(
             'CREATE_ADMIN_INSTANSI',
@@ -872,21 +882,25 @@ class InstansiController extends Controller
 
         $iduser_bo = (string) (time() . rand(1000000, 9999999));
 
-        $guru = UserBo::create([
-            'iduser_bo' => $iduser_bo,
-            'idkategori' => $idkategori,
-            'nama' => $request->nama,
-            'login_username' => $request->login_username,
-            'login_email' => $request->login_email,
-            'login_password' => $this->encodePasswordBo($request->password),
-            'telp' => $request->telp ?? '',
-            'alamat' => $request->alamat ?? '',
-            'status_admin' => '2',
-            'role_type' => 'guru',
-            'status_aktif' => 'Y',
-            'status_remove' => 'N',
-            'tanggal_input' => now(),
-        ]);
+        $guru = DB::transaction(function () use ($request, $iduser_bo, $idkategori) {
+            $created = UserBo::create([
+                'iduser_bo' => $iduser_bo,
+                'idkategori' => $idkategori,
+                'nama' => $request->nama,
+                'login_username' => $request->login_username,
+                'login_email' => $request->login_email,
+                'login_password' => $this->encodePasswordBo($request->password),
+                'telp' => $request->telp ?? '',
+                'alamat' => $request->alamat ?? '',
+                'status_admin' => '2',
+                'role_type' => 'guru',
+                'status_aktif' => 'Y',
+                'status_remove' => 'N',
+                'tanggal_input' => now(),
+            ]);
+            app(RbacAssignmentService::class)->assignDefaultRole($created);
+            return $created;
+        });
 
         AuditLog::record(
             'CREATE_GURU',
@@ -1002,18 +1016,22 @@ class InstansiController extends Controller
 
         $iduser = 'US' . date('Ymd') . rand(1000000000, 9999999999);
 
-        $siswa = UserSiswa::create([
-            'iduser' => $iduser,
-            'nama' => $request->nama,
-            'nisn' => $request->nisn,
-            'login_email' => $request->login_email,
-            'login_password' => Hash::make($request->password),
-            'idkelas' => $request->idkelas,
-            'idkategori' => $idkategori,
-            'telp' => $request->telp ?? '',
-            'status_aktif' => 'Y',
-            'tanggal_input' => now(),
-        ]);
+        $siswa = DB::transaction(function () use ($request, $iduser, $idkategori) {
+            $created = UserSiswa::create([
+                'iduser' => $iduser,
+                'nama' => $request->nama,
+                'nisn' => $request->nisn,
+                'login_email' => $request->login_email,
+                'login_password' => Hash::make($request->password),
+                'idkelas' => $request->idkelas,
+                'idkategori' => $idkategori,
+                'telp' => $request->telp ?? '',
+                'status_aktif' => 'Y',
+                'tanggal_input' => now(),
+            ]);
+            app(RbacAssignmentService::class)->assignDefaultRole($created);
+            return $created;
+        });
 
         AuditLog::record(
             'CREATE_SISWA',
@@ -1138,7 +1156,7 @@ class InstansiController extends Controller
 
         // 1. If role is 'guru'
         if ($roleFilter === 'guru') {
-            $q = UserBo::with(['mapelAjar.mataPelajaran', 'kelasWali', 'academicYear'])
+            $q = UserBo::with(['mapelAjar.mataPelajaran', 'kelasWali', 'academicYear', 'roles'])
                 ->where('idkategori', $idkategori)
                 ->where('status_remove', '!=', 'Y')
                 ->where('role_type', 'guru');
@@ -1169,6 +1187,7 @@ class InstansiController extends Controller
                     'alamat' => $g->alamat,
                     'status_aktif' => $g->status_aktif,
                     'role' => 'guru',
+                    'rbac_roles' => $g->roles->map(fn($r) => ['id' => $r->id, 'name' => $r->name, 'label' => $r->label])->values()->all(),
                     'is_wali_kelas' => $g->kelasWali->isNotEmpty(),
                     'wali_kelas_names' => $g->kelasWali->pluck('nama_kelas')->join(', '),
                     'academic_year_name' => $g->academicYear?->name ?? '-',
@@ -1181,7 +1200,8 @@ class InstansiController extends Controller
 
         // 2. If role is 'admin'
         if ($roleFilter === 'admin') {
-            $q = UserBo::where('idkategori', $idkategori)
+            $q = UserBo::with('roles')
+                ->where('idkategori', $idkategori)
                 ->where('status_remove', '!=', 'Y')
                 ->where(function ($query) {
                     $query->where('role_type', 'admin_sekolah')
@@ -1212,6 +1232,7 @@ class InstansiController extends Controller
                     'alamat' => $a->alamat,
                     'status_aktif' => $a->status_aktif,
                     'role' => 'admin',
+                    'rbac_roles' => $a->roles->map(fn($r) => ['id' => $r->id, 'name' => $r->name, 'label' => $r->label])->values()->all(),
                     'mapel' => [],
                 ];
             });
@@ -1323,7 +1344,45 @@ class InstansiController extends Controller
             ->orderBy($sortBy === 'nama' ? 'nama' : 'id', $sortOrder)
             ->paginate($perPage);
 
-        $paginator->through(function ($item) {
+        // Batch fetch RBAC roles for current page items
+        $pageItems = collect($paginator->items());
+        $boIds = $pageItems->where('source_table', 'user_bo')->pluck('id')->all();
+        $siswaIds = $pageItems->where('source_table', 'user')->pluck('id')->all();
+
+        $rolesMap = [];
+        if (!empty($boIds) || !empty($siswaIds)) {
+            $roleRows = DB::table('user_roles')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->where(function ($q) use ($boIds, $siswaIds) {
+                    if (!empty($boIds)) {
+                        $q->orWhere(function ($q2) use ($boIds) {
+                            $q2->where('user_roles.user_type', UserBo::class)
+                               ->whereIn('user_roles.user_id', $boIds);
+                        });
+                    }
+                    if (!empty($siswaIds)) {
+                        $q->orWhere(function ($q2) use ($siswaIds) {
+                            $q2->where('user_roles.user_type', UserSiswa::class)
+                               ->whereIn('user_roles.user_id', $siswaIds);
+                        });
+                    }
+                })
+                ->select('user_roles.user_type', 'user_roles.user_id', 'roles.id', 'roles.name', 'roles.label')
+                ->get();
+
+            foreach ($roleRows as $rr) {
+                $key = $rr->user_type . ':' . $rr->user_id;
+                $rolesMap[$key][] = [
+                    'id' => $rr->id,
+                    'name' => $rr->name,
+                    'label' => $rr->label,
+                ];
+            }
+        }
+
+        $paginator->through(function ($item) use ($rolesMap) {
+            $modelClass = $item->source_table === 'user_bo' ? UserBo::class : UserSiswa::class;
+            $key = $modelClass . ':' . $item->id;
             return [
                 'id' => $item->id,
                 'user_type' => $item->role === 'guru' ? 'guru' : ($item->role === 'siswa' ? 'siswa' : 'admin'),
@@ -1335,6 +1394,7 @@ class InstansiController extends Controller
                 'alamat' => $item->alamat,
                 'status_aktif' => $item->status_aktif,
                 'role' => $item->role,
+                'rbac_roles' => $rolesMap[$key] ?? [],
                 'class_name' => $item->class_name ?? '-',
                 'mapel' => [],
             ];

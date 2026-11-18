@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { getDefaultRouteForUser } from '../../../shared/utils/rbacNavigation';
 import { ThemeToggle } from '../../../shared/components/ThemeToggle';
 import { BrandLogo } from '../../../shared/components/BrandLogo';
 import { 
@@ -69,19 +70,10 @@ export const LoginPage: React.FC = () => {
     try {
       // Pass roleParam as expected_role so backend verifies role matching
       const user = await login(loginInput.trim(), password, roleParam || undefined);
-      
-      // Auto-redirect to respective dashboard based on authenticated role
-      if (user.role === 'super_admin') {
-        navigate('/super-admin/dashboard', { replace: true });
-      } else if (user.role === 'admin') {
-        navigate('/admin/dashboard', { replace: true });
-      } else if (user.role === 'guru') {
-        navigate('/teacher/dashboard', { replace: true });
-      } else if (user.role === 'siswa') {
-        navigate('/student/dashboard', { replace: true });
-      } else {
-        navigate('/login', { replace: true });
-      }
+
+      // Auto-redirect to first authorized route (prevents 403 trap for custom roles without dashboard_sekolah.view)
+      const targetRoute = getDefaultRouteForUser(user, user.menus, user.permissions);
+      navigate(targetRoute, { replace: true });
     } catch (err: any) {
       console.error(err);
       const code = err.response?.data?.code;

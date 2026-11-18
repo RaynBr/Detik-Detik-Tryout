@@ -16,7 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'single_session' => \App\Http\Middleware\EnsureSingleSession::class,
             'role' => \App\Http\Middleware\CheckRole::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'permission' => \App\Http\Middleware\CheckPermission::class,
+            'tenant_ownership' => \App\Http\Middleware\EnsureTenantOwnership::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         ]);
     })

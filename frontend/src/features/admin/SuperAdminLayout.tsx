@@ -1,13 +1,14 @@
 import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../shared/context/AuthContext';
+import { useAuth, DynamicMenuNode } from '../../shared/context/AuthContext';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
 import { BrandLogo } from '../../shared/components/BrandLogo';
-import { 
-  LayoutDashboard, 
-  BookOpen, 
-  LogOut, 
-  Menu, 
+import { resolveMenuIcon } from '../../shared/utils/iconMapper';
+import {
+  LayoutDashboard,
+  BookOpen,
+  LogOut,
+  Menu,
   X,
   Building2,
   PanelLeftClose,
@@ -16,6 +17,7 @@ import {
   Users,
   UserCheck,
   ShieldAlert,
+  ShieldCheck,
   CreditCard,
   Settings,
   Layers,
@@ -23,7 +25,7 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
-  Megaphone
+  Megaphone,
 } from 'lucide-react';
 
 interface SubMenuItem {
@@ -39,8 +41,70 @@ interface MenuItem {
   subItems?: SubMenuItem[];
 }
 
+// Fallback hardcoded menu strictly for SUPER ADMIN PLATFORM OWNER
+const FALLBACK_SUPER_ADMIN_MENUS: MenuItem[] = [
+  { name: 'Dashboard', path: '/super-admin/dashboard', icon: LayoutDashboard },
+  { name: 'Kelola Instansi', path: '/super-admin/instansi', icon: Building2 },
+  { name: 'Kelola Pengguna', path: '/super-admin/users', icon: Users },
+  {
+    name: 'Master Akademik Global',
+    path: '/super-admin/master-akademik/tahun-ajaran',
+    icon: Layers,
+    subItems: [
+      { name: 'Tahun Ajaran', path: '/super-admin/master-akademik/tahun-ajaran', icon: CalendarDays },
+      { name: 'Semester', path: '/super-admin/master-akademik/semester', icon: History },
+      { name: 'Kurikulum', path: '/super-admin/master-akademik/kurikulum', icon: BookOpen },
+      { name: 'Jenjang', path: '/super-admin/master-akademik/jenjang', icon: Layers },
+      { name: 'Tingkat', path: '/super-admin/master-akademik/tingkat-kelas', icon: UserCheck },
+    ],
+  },
+  {
+    name: 'Kelola Bank Soal',
+    path: '/super-admin/bank-soal',
+    icon: BookOpen,
+    subItems: [
+      { name: 'Paket Bank Soal', path: '/super-admin/bank-soal', icon: BookOpen },
+      { name: 'Referensi Tahun Soal', path: '/super-admin/bank-soal/tahun-soal', icon: Calendar },
+    ],
+  },
+  { name: 'Audit Trail', path: '/super-admin/audit-logs', icon: History },
+  { name: 'Pengumuman Global', path: '/super-admin/announcements', icon: Megaphone },
+  { name: 'Langganan Platform', path: '/super-admin/subscriptions', icon: CreditCard },
+  { name: 'Pengaturan Platform', path: '/super-admin/settings', icon: Settings },
+  { name: 'Kelola Role & Hak Akses', path: '/super-admin/roles', icon: ShieldCheck },
+  { name: 'Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },
+];
+
+function mapDynamicMenus(nodes: DynamicMenuNode[]): MenuItem[] {
+  const mapped: MenuItem[] = nodes.map((node) => {
+    const label = node.label || node.name || 'Menu';
+    const children = Array.isArray(node.children) && node.children.length > 0
+      ? node.children.map((child) => ({
+          name: child.label || child.name || 'Submenu',
+          path: child.path || '/super-admin/dashboard',
+          icon: resolveMenuIcon(child.icon),
+        }))
+      : undefined;
+
+    return {
+      name: label,
+      path: node.path || (children?.[0]?.path ?? '/super-admin/dashboard'),
+      icon: resolveMenuIcon(node.icon),
+      subItems: children,
+    };
+  });
+
+  // Preserve existing Profil & Keamanan item if backend seeder does not include it
+  const hasProfile = mapped.some((m) => m.path === '/super-admin/profile');
+  if (!hasProfile) {
+    mapped.push({ name: 'Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck });
+  }
+
+  return mapped;
+}
+
 export const SuperAdminLayout: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, menus, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
@@ -58,48 +122,54 @@ export const SuperAdminLayout: React.FC = () => {
     });
   };
 
-  const isGlobalAcademicsActive = location.pathname.startsWith('/super-admin/master-akademik');
-  const isBankSoalActive = location.pathname.startsWith('/super-admin/bank-soal');
-  const [academicsOpen, setAcademicsOpen] = React.useState<boolean>(isGlobalAcademicsActive);
-  const [bankSoalOpen, setBankSoalOpen] = React.useState<boolean>(isBankSoalActive);
+  // Use dynamic backend menus when available; fallback safely to hardcoded menus
+  const superAdminMenus = React.useMemo<MenuItem[]>(() => {
+    if (Array.isArray(menus) && menus.length > 0) {
+      return mapDynamicMenus(menus);
+    }
+    return FALLBACK_SUPER_ADMIN_MENUS;
+  }, [menus]);
+
+  const isPathMatch = React.useCallback(
+    (targetPath: string) => {
+      if (!targetPath) return false;
+      if (targetPath.includes('?')) {
+        return `${location.pathname}${location.search}` === targetPath;
+      }
+      return location.pathname === targetPath;
+    },
+    [location.pathname, location.search]
+  );
+
+  const isGroupActive = React.useCallback(
+    (item: MenuItem) => {
+      if (!item.subItems || item.subItems.length === 0) return false;
+      return item.subItems.some((sub) => isPathMatch(sub.path)) ||
+        (item.path.includes('master-akademik') && location.pathname.startsWith('/super-admin/master-akademik')) ||
+        (item.path.includes('bank-soal') && location.pathname.startsWith('/super-admin/bank-soal'));
+    },
+    [isPathMatch, location.pathname]
+  );
+
+  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
-    if (isGlobalAcademicsActive) setAcademicsOpen(true);
-    if (isBankSoalActive) setBankSoalOpen(true);
-  }, [location.pathname, isGlobalAcademicsActive, isBankSoalActive]);
+    setOpenGroups((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const item of superAdminMenus) {
+        if (item.subItems && isGroupActive(item) && !next[item.name]) {
+          next[item.name] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [superAdminMenus, isGroupActive]);
 
-  // Menu items strictly for SUPER ADMIN PLATFORM OWNER (Without numbering)
-  const superAdminMenus: MenuItem[] = [
-    { name: 'Dashboard', path: '/super-admin/dashboard', icon: LayoutDashboard },
-    { name: 'Kelola Instansi', path: '/super-admin/instansi', icon: Building2 },
-    { name: 'Kelola Pengguna', path: '/super-admin/users', icon: Users },
-    {
-      name: 'Master Akademik Global',
-      path: '/super-admin/master-akademik/tahun-ajaran',
-      icon: Layers,
-      subItems: [
-        { name: 'Tahun Ajaran', path: '/super-admin/master-akademik/tahun-ajaran', icon: CalendarDays },
-        { name: 'Semester', path: '/super-admin/master-akademik/semester', icon: History },
-        { name: 'Kurikulum', path: '/super-admin/master-akademik/kurikulum', icon: BookOpen },
-        { name: 'Jenjang', path: '/super-admin/master-akademik/jenjang', icon: Layers },
-        { name: 'Tingkat', path: '/super-admin/master-akademik/tingkat-kelas', icon: UserCheck },
-      ]
-    },
-    {
-      name: 'Kelola Bank Soal',
-      path: '/super-admin/bank-soal',
-      icon: BookOpen,
-      subItems: [
-        { name: 'Paket Bank Soal', path: '/super-admin/bank-soal', icon: BookOpen },
-        { name: 'Referensi Tahun Soal', path: '/super-admin/bank-soal/tahun-soal', icon: Calendar },
-      ]
-    },
-    { name: 'Audit Trail', path: '/super-admin/audit-logs', icon: History },
-    { name: 'Pengumuman Global', path: '/super-admin/announcements', icon: Megaphone },
-    { name: 'Langganan Platform', path: '/super-admin/subscriptions', icon: CreditCard },
-    { name: 'Pengaturan Platform', path: '/super-admin/settings', icon: Settings },
-    { name: 'Profil & Keamanan', path: '/super-admin/profile', icon: UserCheck },
-  ];
+  const toggleGroup = (name: string) => {
+    setOpenGroups((prev) => ({ ...prev, [name]: !prev[name] }));
+  };
 
   return (
     <div className="h-screen overflow-hidden flex bg-[#F7F9FC] dark:bg-[#0B1014] text-[#161C2D] dark:text-[#F7FCFE] transition-colors duration-200 font-sans">
@@ -152,24 +222,21 @@ export const SuperAdminLayout: React.FC = () => {
           {superAdminMenus.map((item) => {
             const Icon = item.icon;
 
-            if (item.subItems) {
-              const isGlobalAcademics = item.name === 'Master Akademik Global';
-              const isParentActive = isGlobalAcademics ? isGlobalAcademicsActive : isBankSoalActive;
-              const isMenuOpen = isGlobalAcademics ? academicsOpen : bankSoalOpen;
-              const toggleMenu = () => {
+            if (item.subItems && item.subItems.length > 0) {
+              const isParentActive = isGroupActive(item);
+              const isMenuOpen = !!openGroups[item.name];
+              const handleToggleMenu = () => {
                 if (isCollapsed) {
                   navigate(item.path);
-                } else if (isGlobalAcademics) {
-                  setAcademicsOpen((prev) => !prev);
                 } else {
-                  setBankSoalOpen((prev) => !prev);
+                  toggleGroup(item.name);
                 }
               };
 
               return (
                 <div key={item.name} className="space-y-1">
                   <button
-                    onClick={toggleMenu}
+                    onClick={handleToggleMenu}
                     title={isCollapsed ? item.name : undefined}
                     className={`w-full flex items-center ${
                       isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'
@@ -196,10 +263,10 @@ export const SuperAdminLayout: React.FC = () => {
                     <div className="pl-4 space-y-1 pt-0.5 border-l-2 border-[#161C2D] dark:border-[#32363A] ml-5">
                       {item.subItems.map((sub) => {
                         const SubIcon = sub.icon;
-                        const isSubActive = location.pathname === sub.path;
+                        const isSubActive = isPathMatch(sub.path);
                         return (
                           <button
-                            key={sub.name}
+                            key={`${sub.name}-${sub.path}`}
                             onClick={() => navigate(sub.path)}
                             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition duration-150 cursor-pointer ${
                               isSubActive
@@ -218,10 +285,10 @@ export const SuperAdminLayout: React.FC = () => {
               );
             }
 
-            const isActive = location.pathname === item.path;
+            const isActive = isPathMatch(item.path);
             return (
               <button
-                key={item.name}
+                key={`${item.name}-${item.path}`}
                 onClick={() => navigate(item.path)}
                 title={isCollapsed ? item.name : undefined}
                 className={`w-full flex items-center ${
@@ -240,16 +307,40 @@ export const SuperAdminLayout: React.FC = () => {
         </nav>
 
         {/* Footer Sidebar */}
-        <div className="pt-4 border-t-2 border-[#161C2D] dark:border-[#32363A] w-full">
-          <div className={`flex ${isCollapsed ? 'flex-col items-center' : 'items-center justify-between'} gap-2 mb-4`}>
-            <ThemeToggle />
-            {!isCollapsed && (
-              <div className="text-right overflow-hidden">
-                <p className="text-xs font-black text-[#161C2D] dark:text-white truncate">{user?.name}</p>
-                <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider">Super Administrator</p>
+        <div className="mt-auto pt-4 border-t-2 border-[#161C2D] dark:border-[#32363A] w-full space-y-3">
+          {/* Theme Toggle - baris sendiri lebar penuh saat expanded, 1 ikon saat collapsed */}
+          {!isCollapsed ? (
+            <div className="w-full">
+              <ThemeToggle fullWidth />
+            </div>
+          ) : (
+            <div className="flex justify-center">
+              <ThemeToggle iconOnly />
+            </div>
+          )}
+
+          {/* Info User - baris sendiri agar nama & peran tampil utuh */}
+          {!isCollapsed ? (
+            <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-[#F7F9FC] dark:bg-[#262A2E] border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
+              <div className="h-8 w-8 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center justify-center border-2 border-[#161C2D] shrink-0">
+                {user?.name?.charAt(0)?.toUpperCase() || 'S'}
               </div>
-            )}
-          </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-black text-[#161C2D] dark:text-white truncate" title={user?.name}>
+                  {user?.name}
+                </p>
+                <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider truncate">
+                  Super Administrator
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center" title={`${user?.name || 'Super Admin'} (Super Administrator)`}>
+              <div className="h-9 w-9 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center justify-center border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] shrink-0">
+                {user?.name?.charAt(0)?.toUpperCase() || 'S'}
+              </div>
+            </div>
+          )}
 
           <button
             onClick={() => {
@@ -258,7 +349,7 @@ export const SuperAdminLayout: React.FC = () => {
             }}
             title={isCollapsed ? 'Keluar' : undefined}
             className={`w-full flex items-center ${
-              isCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'
+              isCollapsed ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-2.5'
             } text-sm font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 border-2 border-transparent hover:border-rose-600 rounded-xl transition duration-150 cursor-pointer`}
           >
             <LogOut className="h-5 w-5 shrink-0 stroke-[2.5]" />
@@ -287,12 +378,12 @@ export const SuperAdminLayout: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex flex-col text-right">
-              <span className="text-xs font-black text-[#161C2D] dark:text-white">{user?.name}</span>
-              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-semibold">{user?.email}</span>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="hidden sm:flex flex-col text-right min-w-0">
+              <span className="text-xs font-black text-[#161C2D] dark:text-white truncate">{user?.name}</span>
+              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-semibold truncate">{user?.email}</span>
             </div>
-            <div className="h-9 w-9 rounded-xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]">
+            <div className="h-9 w-9 shrink-0 rounded-xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]">
               {user?.name?.charAt(0)?.toUpperCase() || 'S'}
             </div>
           </div>
@@ -319,7 +410,7 @@ export const SuperAdminLayout: React.FC = () => {
                 {superAdminMenus.map((item) => {
                   const Icon = item.icon;
 
-                  if (item.subItems) {
+                  if (item.subItems && item.subItems.length > 0) {
                     return (
                       <div key={item.name} className="space-y-1">
                         <div className="flex items-center justify-between px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-gray-300">
@@ -331,10 +422,10 @@ export const SuperAdminLayout: React.FC = () => {
                         <div className="pl-4 space-y-1 border-l-2 border-indigo-200 dark:border-indigo-800 ml-4">
                           {item.subItems.map((sub) => {
                             const SubIcon = sub.icon;
-                            const isSubActive = location.pathname === sub.path;
+                            const isSubActive = isPathMatch(sub.path);
                             return (
                               <button
-                                key={sub.name}
+                                key={`${sub.name}-${sub.path}`}
                                 onClick={() => {
                                   navigate(sub.path);
                                   setMobileMenuOpen(false);
@@ -353,10 +444,10 @@ export const SuperAdminLayout: React.FC = () => {
                     );
                   }
 
-                  const isActive = location.pathname === item.path;
+                  const isActive = isPathMatch(item.path);
                   return (
                     <button
-                      key={item.name}
+                      key={`${item.name}-${item.path}`}
                       onClick={() => {
                         navigate(item.path);
                         setMobileMenuOpen(false);
@@ -372,13 +463,14 @@ export const SuperAdminLayout: React.FC = () => {
                 })}
               </nav>
 
-              <div className="pt-4 border-t border-slate-200 dark:border-white/10 space-y-2">
+              <div className="mt-auto pt-4 border-t border-slate-200 dark:border-white/10 space-y-3">
+                <ThemeToggle fullWidth />
                 <button
                   onClick={() => {
                     logout();
                     navigate('/login');
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-xl transition cursor-pointer"
                 >
                   <LogOut className="h-4 w-4" />
                   <span>Keluar</span>

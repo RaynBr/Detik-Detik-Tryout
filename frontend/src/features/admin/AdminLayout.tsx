@@ -1,15 +1,16 @@
 import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../shared/context/AuthContext';
+import { useAuth, DynamicMenuNode } from '../../shared/context/AuthContext';
 import { ThemeToggle } from '../../shared/components/ThemeToggle';
 import { BrandLogo } from '../../shared/components/BrandLogo';
-import { 
-  LayoutDashboard, 
-  GraduationCap, 
-  BookOpen, 
-  School, 
-  LogOut, 
-  Menu, 
+import { resolveMenuIcon } from '../../shared/utils/iconMapper';
+import {
+  LayoutDashboard,
+  GraduationCap,
+  BookOpen,
+  School,
+  LogOut,
+  Menu,
   X,
   BarChart3,
   Layers,
@@ -21,7 +22,8 @@ import {
   ChevronDown,
   ChevronRight,
   History,
-  Megaphone
+  Megaphone,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface SubMenuItem {
@@ -37,8 +39,53 @@ interface MenuItem {
   subItems?: SubMenuItem[];
 }
 
+// Fallback hardcoded menu strictly for ADMIN INSTANSI (Portal Sekolah)
+const FALLBACK_SCHOOL_ADMIN_MENUS: MenuItem[] = [
+  { name: 'Dashboard Sekolah', path: '/admin/dashboard', icon: LayoutDashboard },
+  { name: 'Kelola Pengguna', path: '/admin/users', icon: Users },
+  {
+    name: 'Master Akademik',
+    path: '/admin/classes',
+    icon: Layers,
+    subItems: [
+      { name: 'Kelas & Rombel', path: '/admin/classes', icon: School },
+      { name: 'Mata Pelajaran', path: '/admin/master-akademik/mata-pelajaran', icon: BookOpen },
+      { name: 'Guru Pengampu', path: '/admin/classes?tab=guru-mapel', icon: UserCheck },
+      { name: 'Wali Kelas', path: '/admin/classes?tab=wali-kelas', icon: GraduationCap },
+    ],
+  },
+  { name: 'Jadwal Ujian', path: '/admin/exams', icon: CalendarDays },
+  { name: 'Monitoring Ujian', path: '/admin/proctoring', icon: BarChart3 },
+  { name: 'Aktivitas Guru & Siswa', path: '/admin/activities', icon: History },
+  { name: 'Pengumuman', path: '/admin/announcements', icon: Megaphone },
+  { name: 'Laporan Rekap Nilai', path: '/admin/reports', icon: BarChart3 },
+  { name: 'Profil & Keamanan', path: '/admin/profile', icon: UserCheck },
+  { name: 'Role & Akses Sekolah', path: '/admin/roles', icon: ShieldCheck },
+];
+
+function mapDynamicSchoolMenus(nodes: DynamicMenuNode[]): MenuItem[] {
+  return nodes.map((node) => {
+    const label = node.label || node.name || 'Menu';
+    const children =
+      Array.isArray(node.children) && node.children.length > 0
+        ? node.children.map((child) => ({
+            name: child.label || child.name || 'Submenu',
+            path: child.path || '/admin/dashboard',
+            icon: resolveMenuIcon(child.icon),
+          }))
+        : undefined;
+
+    return {
+      name: label,
+      path: node.path || (children?.[0]?.path ?? '/admin/dashboard'),
+      icon: resolveMenuIcon(node.icon),
+      subItems: children,
+    };
+  });
+}
+
 export const AdminLayout: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, menus, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
@@ -56,46 +103,60 @@ export const AdminLayout: React.FC = () => {
     });
   };
 
-  // Submenu state for Admin Instansi Master Akademik
-  const isSchoolAcademicsActive = 
-    location.pathname.startsWith('/admin/master-akademik') ||
-    [
-      '/admin/classes',
-      '/admin/subjects'
-    ].includes(location.pathname);
+  // Use dynamic backend menus when available; fallback safely to hardcoded menus
+  const currentMenuItems = React.useMemo<MenuItem[]>(() => {
+    if (Array.isArray(menus) && menus.length > 0) {
+      return mapDynamicSchoolMenus(menus);
+    }
+    return FALLBACK_SCHOOL_ADMIN_MENUS;
+  }, [menus]);
 
-  const [academicsOpen, setAcademicsOpen] = React.useState<boolean>(isSchoolAcademicsActive);
+  const isPathMatch = React.useCallback(
+    (targetPath: string) => {
+      if (!targetPath) return false;
+      if (targetPath.includes('?')) {
+        return `${location.pathname}${location.search}` === targetPath;
+      }
+      // If current URL has ?tab=... and targetPath is /admin/classes without tab, don't double-highlight
+      if (location.search && targetPath === '/admin/classes') {
+        return false;
+      }
+      return location.pathname === targetPath;
+    },
+    [location.pathname, location.search]
+  );
+
+  const isGroupActive = React.useCallback(
+    (item: MenuItem) => {
+      if (!item.subItems || item.subItems.length === 0) return false;
+      return (
+        item.subItems.some((sub) => isPathMatch(sub.path)) ||
+        location.pathname.startsWith('/admin/master-akademik') ||
+        ['/admin/classes', '/admin/subjects'].includes(location.pathname)
+      );
+    },
+    [isPathMatch, location.pathname]
+  );
+
+  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
-    if (isSchoolAcademicsActive) {
-      setAcademicsOpen(true);
-    }
-  }, [location.pathname, isSchoolAcademicsActive]);
+    setOpenGroups((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const item of currentMenuItems) {
+        if (item.subItems && isGroupActive(item) && !next[item.name]) {
+          next[item.name] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [currentMenuItems, isGroupActive]);
 
-  // Menu items strictly for ADMIN INSTANSI (Portal Sekolah)
-  const schoolAdminMenus: MenuItem[] = [
-    { name: 'Dashboard Sekolah', path: '/admin/dashboard', icon: LayoutDashboard },
-    { name: 'Kelola Pengguna', path: '/admin/users', icon: Users },
-    { 
-      name: 'Master Akademik', 
-      path: '/admin/classes', 
-      icon: Layers,
-      subItems: [
-        { name: 'Kelas & Rombel', path: '/admin/classes', icon: School },
-        { name: 'Mata Pelajaran', path: '/admin/master-akademik/mata-pelajaran', icon: BookOpen },
-        { name: 'Guru Pengampu', path: '/admin/classes?tab=guru-mapel', icon: UserCheck },
-        { name: 'Wali Kelas', path: '/admin/classes?tab=wali-kelas', icon: GraduationCap },
-      ]
-    },
-    { name: 'Jadwal Ujian', path: '/admin/exams', icon: CalendarDays },
-    { name: 'Monitoring Ujian', path: '/admin/proctoring', icon: BarChart3 },
-    { name: 'Aktivitas Guru & Siswa', path: '/admin/activities', icon: History },
-    { name: 'Pengumuman', path: '/admin/announcements', icon: Megaphone },
-    { name: 'Laporan Rekap Nilai', path: '/admin/reports', icon: BarChart3 },
-    { name: 'Profil & Keamanan', path: '/admin/profile', icon: UserCheck },
-  ];
-
-  const currentMenuItems = schoolAdminMenus;
+  const toggleGroup = (name: string) => {
+    setOpenGroups((prev) => ({ ...prev, [name]: !prev[name] }));
+  };
 
   return (
     <div className="h-screen overflow-hidden flex bg-[#F7F9FC] dark:bg-[#0B1014] text-[#161C2D] dark:text-[#F7FCFE] transition-colors duration-200 font-sans">
@@ -148,9 +209,10 @@ export const AdminLayout: React.FC = () => {
           {currentMenuItems.map((item) => {
             const Icon = item.icon;
             
-            // Render accordion menu if item has sub-items (e.g. Akademik Sekolah)
-            if (item.subItems) {
-              const isParentActive = isSchoolAcademicsActive;
+            // Render accordion menu if item has sub-items (e.g. Master Akademik)
+            if (item.subItems && item.subItems.length > 0) {
+              const isParentActive = isGroupActive(item);
+              const isMenuOpen = !!openGroups[item.name];
               return (
                 <div key={item.name} className="space-y-1">
                   <button
@@ -158,14 +220,14 @@ export const AdminLayout: React.FC = () => {
                       if (isCollapsed) {
                         navigate(item.path);
                       } else {
-                        setAcademicsOpen((prev) => !prev);
+                        toggleGroup(item.name);
                       }
                     }}
                     title={isCollapsed ? item.name : undefined}
                     className={`w-full flex items-center ${
                       isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'
                     } rounded-xl text-sm font-bold transition duration-150 cursor-pointer ${
-                      isParentActive && !academicsOpen
+                      isParentActive && !isMenuOpen
                         ? 'bg-[#38B1ED] text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]'
                         : isParentActive
                         ? 'text-[#0A2540] dark:text-[#38B1ED] bg-[#38B1ED]/15 border-2 border-[#161C2D] dark:border-[#38B1ED]'
@@ -178,22 +240,22 @@ export const AdminLayout: React.FC = () => {
                     </div>
                     {!isCollapsed && (
                       <span className="shrink-0 text-slate-500">
-                        {academicsOpen ? <ChevronDown className="h-4 w-4 stroke-[2.5]" /> : <ChevronRight className="h-4 w-4 stroke-[2.5]" />}
+                        {isMenuOpen ? <ChevronDown className="h-4 w-4 stroke-[2.5]" /> : <ChevronRight className="h-4 w-4 stroke-[2.5]" />}
                       </span>
                     )}
                   </button>
 
                   {/* Sub-menu accordion (only shown when expanded desktop) */}
-                  {!isCollapsed && academicsOpen && (
+                  {!isCollapsed && isMenuOpen && (
                     <div className="pl-4 space-y-1 pt-0.5 border-l-2 border-[#161C2D] dark:border-[#32363A] ml-5">
                       {item.subItems.map((sub) => {
                         const SubIcon = sub.icon;
-                        const isSubActive = location.pathname === sub.path;
+                        const isSubActive = isPathMatch(sub.path);
                         return (
                           <button
-                            key={sub.name}
+                            key={`${sub.name}-${sub.path}`}
                             onClick={() => navigate(sub.path)}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition duration-150 ${
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition duration-150 cursor-pointer ${
                               isSubActive
                                 ? 'bg-[#38B1ED] text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]'
                                 : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5'
@@ -210,15 +272,15 @@ export const AdminLayout: React.FC = () => {
               );
             }
 
-            const isActive = location.pathname === item.path;
+            const isActive = isPathMatch(item.path);
             return (
               <button
-                key={item.name}
+                key={`${item.name}-${item.path}`}
                 onClick={() => navigate(item.path)}
                 title={isCollapsed ? item.name : undefined}
                 className={`w-full flex items-center ${
                   isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3.5 py-2.5'
-                } rounded-xl text-sm font-bold transition duration-150 ${
+                } rounded-xl text-sm font-bold transition duration-150 cursor-pointer ${
                   isActive 
                     ? 'bg-[#38B1ED] text-white border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]' 
                     : 'text-[#5D6371] dark:text-gray-400 hover:text-[#161C2D] dark:hover:text-white hover:bg-[#F7F9FC] dark:hover:bg-white/5'
@@ -232,16 +294,15 @@ export const AdminLayout: React.FC = () => {
         </nav>
 
         {/* Footer Sidebar */}
-        <div className="border-t border-slate-200 dark:border-white/5 pt-4 mt-4 space-y-3 w-full">
-          {/* Theme switcher */}
+        <div className="mt-auto border-t border-slate-200 dark:border-white/5 pt-4 space-y-3 w-full">
+          {/* Theme switcher - baris sendiri lebar penuh saat expanded, 1 ikon saat collapsed */}
           {!isCollapsed ? (
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">Tema</span>
-              <ThemeToggle compact />
+            <div className="w-full">
+              <ThemeToggle fullWidth />
             </div>
           ) : (
-            <div className="flex justify-center" title="Ubah Tema">
-              <ThemeToggle compact />
+            <div className="flex justify-center">
+              <ThemeToggle iconOnly />
             </div>
           )}
 
@@ -292,18 +353,18 @@ export const AdminLayout: React.FC = () => {
       </aside>
 
       {/* Mobile Topbar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-[#1A1E22] border-b-2 border-[#161C2D] dark:border-[#32363A] px-4 flex items-center justify-between z-40">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-[#38B1ED] text-white rounded-xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]">
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-[#1A1E22] border-b-2 border-[#161C2D] dark:border-[#32363A] px-4 flex items-center justify-between gap-2 z-40">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-2 bg-[#38B1ED] text-white rounded-xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] shrink-0">
             <School className="h-5 w-5 stroke-[2.5]" />
           </div>
-          <div>
-            <h1 className="font-black text-sm text-[#161C2D] dark:text-white leading-tight">Detik Detik TryOut</h1>
-            <p className="text-[10px] text-[#5D6371] dark:text-gray-400 font-semibold">Administrator IP Portal</p>
+          <div className="min-w-0">
+            <h1 className="font-black text-sm text-[#161C2D] dark:text-white leading-tight truncate">Detik Detik TryOut</h1>
+            <p className="text-[10px] text-[#5D6371] dark:text-gray-400 font-semibold truncate">Administrator IP Portal</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle compact />
+        <div className="flex items-center gap-2 shrink-0">
+          <ThemeToggle iconOnly />
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="p-2 text-[#161C2D] dark:text-white rounded-lg bg-[#F7F9FC] dark:bg-white/5 border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717]"
@@ -326,7 +387,7 @@ export const AdminLayout: React.FC = () => {
           >
             <div className="flex items-center gap-3 px-2 py-2 border-b border-slate-100 dark:border-white/5 mb-2">
               <div className="h-10 w-10 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center font-bold text-indigo-600 dark:text-indigo-400">
-                A
+                {user?.name?.charAt(0) || 'A'}
               </div>
               <div className="overflow-hidden">
                 <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user?.name}</p>
@@ -337,27 +398,28 @@ export const AdminLayout: React.FC = () => {
             <nav className="space-y-1.5 max-h-[55vh] overflow-y-auto pr-1">
               {currentMenuItems.map((item) => {
                 const Icon = item.icon;
-                if (item.subItems) {
+                if (item.subItems && item.subItems.length > 0) {
+                  const isMenuOpen = !!openGroups[item.name];
                   return (
                     <div key={item.name} className="space-y-1">
                       <button
-                        onClick={() => setAcademicsOpen((prev) => !prev)}
+                        onClick={() => toggleGroup(item.name)}
                         className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5 transition"
                       >
                         <div className="flex items-center gap-3">
                           <Icon className="h-4.5 w-4.5" />
                           <span>{item.name}</span>
                         </div>
-                        {academicsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        {isMenuOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </button>
-                      {academicsOpen && (
+                      {isMenuOpen && (
                         <div className="pl-6 space-y-1 border-l-2 border-indigo-200 dark:border-indigo-500/20 ml-4">
                           {item.subItems.map((sub) => {
                             const SubIcon = sub.icon;
-                            const isSubActive = location.pathname === sub.path;
+                            const isSubActive = isPathMatch(sub.path);
                             return (
                               <button
-                                key={sub.name}
+                                key={`${sub.name}-${sub.path}`}
                                 onClick={() => {
                                   navigate(sub.path);
                                   setMobileMenuOpen(false);
@@ -379,10 +441,10 @@ export const AdminLayout: React.FC = () => {
                   );
                 }
 
-                const isActive = location.pathname === item.path;
+                const isActive = isPathMatch(item.path);
                 return (
                   <button
-                    key={item.name}
+                    key={`${item.name}-${item.path}`}
                     onClick={() => {
                       navigate(item.path);
                       setMobileMenuOpen(false);

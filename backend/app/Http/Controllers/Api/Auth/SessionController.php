@@ -108,6 +108,25 @@ class SessionController extends Controller
             $profile = null;
         }
 
+        // Resolve RBAC roles, permissions, and hierarchical menus
+        $isSuperAdmin = method_exists($user, 'isSuperAdmin') ? $user->isSuperAdmin() : ($role === 'super_admin');
+        
+        $roles = [];
+        if (method_exists($user, 'roles')) {
+            $roles = $user->roles()->pluck('name')->all();
+        }
+        if (empty($roles)) {
+            $roles = [$role];
+        }
+
+        $permissions = [];
+        if (method_exists($user, 'permissions')) {
+            $permissions = $user->permissions();
+        }
+
+        $menuScope = $isSuperAdmin ? 'platform' : 'instansi';
+        $menus = \App\Models\Menu::getTreeForUser($permissions, $menuScope, $isSuperAdmin);
+
         return response()->json([
             'user' => [
                 'id' => $id,
@@ -116,8 +135,13 @@ class SessionController extends Controller
                 'username' => $user->username,
                 'role' => $role,
                 'idkategori' => $user->idkategori ?? null,
-                'profile' => $profile
-            ]
+                'profile' => $profile,
+                'roles' => $roles,
+                'permissions' => $permissions,
+            ],
+            'roles' => $roles,
+            'permissions' => $permissions,
+            'menus' => $menus,
         ]);
     }
 }

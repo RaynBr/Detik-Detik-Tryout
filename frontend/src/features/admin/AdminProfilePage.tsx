@@ -22,7 +22,12 @@ export const AdminProfilePage: React.FC = () => {
   const [pwLoading, setPwLoading] = useState(false);
   const [profileData, setProfileData] = useState<any>(null);
 
-  const baseEndpoint = user?.role === 'guru' ? '/teacher/profile' : '/admin/profile';
+  const baseEndpoint =
+    user?.role === 'super_admin'
+      ? '/super-admin/profile'
+      : user?.role === 'guru'
+      ? '/teacher/profile'
+      : '/admin/profile';
 
   const fetchProfile = async () => {
     try {

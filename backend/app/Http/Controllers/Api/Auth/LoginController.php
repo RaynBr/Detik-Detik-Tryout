@@ -124,6 +124,13 @@ class LoginController extends Controller
                 $role
             );
 
+            $isSuperAdmin = method_exists($userBo, 'isSuperAdmin') ? $userBo->isSuperAdmin() : ($role === 'super_admin');
+            $roles = method_exists($userBo, 'roles') ? $userBo->roles()->pluck('name')->all() : [];
+            if (empty($roles)) $roles = [$role];
+            $permissions = method_exists($userBo, 'permissions') ? $userBo->permissions() : [];
+            $menuScope = $isSuperAdmin ? 'platform' : 'instansi';
+            $menus = \App\Models\Menu::getTreeForUser($permissions, $menuScope, $isSuperAdmin);
+
             return response()->json([
                 'token' => $apiToken,
                 'session_token' => $sessionToken,
@@ -143,8 +150,13 @@ class LoginController extends Controller
                         'address' => $userBo->alamat,
                         'idkategori' => $userBo->idkategori,
                         'institution' => $userBo->kategori?->nama_kategori,
-                    ]
-                ]
+                    ],
+                    'roles' => $roles,
+                    'permissions' => $permissions,
+                ],
+                'roles' => $roles,
+                'permissions' => $permissions,
+                'menus' => $menus,
             ]);
         }
 
@@ -224,6 +236,11 @@ class LoginController extends Controller
                 ?? $userSiswa->kelas?->kategori?->nama_kategori 
                 ?? 'Sekolah Mitra';
 
+            $roles = method_exists($userSiswa, 'roles') ? $userSiswa->roles()->pluck('name')->all() : [];
+            if (empty($roles)) $roles = ['siswa'];
+            $permissions = method_exists($userSiswa, 'permissions') ? $userSiswa->permissions() : [];
+            $menus = \App\Models\Menu::getTreeForUser($permissions, 'instansi', false);
+
             return response()->json([
                 'token' => $apiToken,
                 'session_token' => $sessionToken,
@@ -249,8 +266,13 @@ class LoginController extends Controller
                             'jenjang' => $userSiswa->kelas->jenjang?->nama_jenjang,
                             'institution' => $institutionName,
                         ] : null,
-                    ]
-                ]
+                    ],
+                    'roles' => $roles,
+                    'permissions' => $permissions,
+                ],
+                'roles' => $roles,
+                'permissions' => $permissions,
+                'menus' => $menus,
             ]);
         }
 
