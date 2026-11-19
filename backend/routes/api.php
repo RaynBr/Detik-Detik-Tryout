@@ -630,11 +630,17 @@ Route::middleware(['auth:sanctum', 'single_session'])->group(function () {
         // Laporan & Rekap Nilai Ujian Guru
         Route::get('exams/{idassessment}/results', [TeacherExamController::class, 'results'])
             ->middleware('permission:laporan.view');
+        Route::get('exams/{idassessment}/attempts', [TeacherExamController::class, 'attempts'])
+            ->middleware('permission:laporan.view');
         Route::get('exams/{idassessment}/report', [TeacherExamController::class, 'report'])
             ->middleware('permission:laporan.export');
         Route::get('exams/{idassessment}/report/export', [TeacherExamController::class, 'exportReport'])
             ->middleware(['throttle:20,1', 'permission:laporan.export']);
         Route::get('exams/{idassessment}/attempts/{attemptId}', [TeacherExamController::class, 'attemptDetail'])
+            ->middleware('permission:laporan.view');
+        Route::get('attempts/{attemptId}', [TeacherExamController::class, 'singleAttemptDetail'])
+            ->middleware('permission:laporan.view');
+        Route::post('answers/{ansId}/grade', [TeacherExamController::class, 'gradeAnswer'])
             ->middleware('permission:laporan.view');
 
         Route::get('exam-groups', [\App\Http\Controllers\Api\Teacher\ExamGroupController::class, 'index'])->middleware('permission:jadwal.view');

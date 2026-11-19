@@ -37,14 +37,16 @@ return new class extends Migration
                 }
             });
 
-            // Backfill idjenjang based on jenjang name
-            $smaId = DB::table('master_jenjang')->where('kode_jenjang', 'SMA')->orWhere('nama_jenjang', 'like', '%SMA%')->value('id');
-            $smkId = DB::table('master_jenjang')->where('kode_jenjang', 'SMK')->orWhere('nama_jenjang', 'like', '%SMK%')->value('id') ?? $smaId;
-            if ($smaId) {
-                DB::table('majors')->where('jenjang', 'SMA')->whereNull('idjenjang')->update(['idjenjang' => $smaId]);
-            }
-            if ($smkId) {
-                DB::table('majors')->where('jenjang', 'SMK')->whereNull('idjenjang')->update(['idjenjang' => $smkId]);
+            // Backfill idjenjang based on jenjang name (only if jenjang column exists)
+            if (Schema::hasColumn('majors', 'jenjang')) {
+                $smaId = DB::table('master_jenjang')->where('kode_jenjang', 'SMA')->orWhere('nama_jenjang', 'like', '%SMA%')->value('id');
+                $smkId = DB::table('master_jenjang')->where('kode_jenjang', 'SMK')->orWhere('nama_jenjang', 'like', '%SMK%')->value('id') ?? $smaId;
+                if ($smaId) {
+                    DB::table('majors')->where('jenjang', 'SMA')->whereNull('idjenjang')->update(['idjenjang' => $smaId]);
+                }
+                if ($smkId) {
+                    DB::table('majors')->where('jenjang', 'SMK')->whereNull('idjenjang')->update(['idjenjang' => $smkId]);
+                }
             }
         }
 

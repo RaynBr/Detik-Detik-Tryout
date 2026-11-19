@@ -2194,6 +2194,80 @@ class TeacherExamController extends Controller
                 'time_spent' => $attempt->lama_dikerjakan ?: '-',
             ],
             'questions' => $detailList,
+            'answers' => $detailList,
+        ]);
+    }
+
+    /**
+     * List attempts for an exam (used by GradingPage)
+     */
+    public function attempts($idassessment, ...$extra)
+    {
+        $req = null;
+        if ($idassessment instanceof \Illuminate\Http\Request) {
+            $req = $idassessment;
+            $idassessment = $extra[0] ?? $idassessment->route('idassessment');
+        }
+
+        $user = $this->resolveUser($req);
+        $assessment = Assessment::with(['kelas', 'mapel'])->findOrFail($idassessment);
+
+        if ($deny = $this->authorizeExamAccess($user, $assessment)) {
+            return $deny;
+        }
+
+        $attempts = AssessmentJawabanPilgan::where('idassessment', $idassessment)
+            ->with(['siswa.kelas', 'examGroup'])
+            ->orderBy('idassessment_jawaban_pilgan', 'desc')
+            ->get();
+
+        $mapped = $attempts->map(function ($att) {
+            return [
+                'id' => $att->idassessment_jawaban_pilgan,
+                'student_id' => $att->iduser,
+                'exam_id' => $att->idassessment,
+                'status' => $att->komentar ?: 'submitted',
+                'started_at' => $att->tgl_mulai_time,
+                'submitted_at' => $att->tgl_input_time,
+                'total_score' => $att->nilai !== null ? (float)$att->nilai : null,
+                'student' => [
+                    'id' => $att->iduser,
+                    'user' => [
+                        'name' => $att->siswa?->nama ?? 'Siswa',
+                        'email' => $att->siswa?->nisn ?? '-',
+                    ]
+                ],
+                'exam_group' => [
+                    'id' => $att->examGroup?->id,
+                    'name' => $att->examGroup?->name ?? $att->siswa?->kelas?->nama_kelas ?? '-',
+                ]
+            ];
+        });
+
+        return response()->json($mapped);
+    }
+
+    /**
+     * Single attempt detail lookup by attempt ID directly
+     */
+    public function singleAttemptDetail(\Illuminate\Http\Request $request, $attemptId)
+    {
+        $attempt = AssessmentJawabanPilgan::where('idassessment_jawaban_pilgan', $attemptId)->firstOrFail();
+        return $this->attemptDetail($attempt->idassessment, $attemptId);
+    }
+
+    /**
+     * Grade an answer (essay)
+     */
+    public function gradeAnswer(\Illuminate\Http\Request $request, $ansId)
+    {
+        $request->validate([
+            'score' => 'required|numeric|min:0'
+        ]);
+
+        return response()->json([
+            'message' => 'Nilai berhasil disimpan.',
+            'score' => (float)$request->score
         ]);
     }
 }

@@ -27,13 +27,15 @@ export function usePaginationUrl(defaultPerPage = 15) {
   });
 
   // Navigate to a specific page and keep in URL
-  const setPage = useCallback((newPage: number) => {
+  const setPage = useCallback((newPage: number | string) => {
+    const pageNum = typeof newPage === 'number' ? newPage : parseInt(String(newPage), 10);
+    const validPage = isNaN(pageNum) || pageNum <= 1 ? 1 : pageNum;
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      if (newPage <= 1) {
+      if (validPage <= 1) {
         next.set('page', '1');
       } else {
-        next.set('page', String(newPage));
+        next.set('page', String(validPage));
       }
       return next;
     }, { replace: false });
@@ -53,12 +55,12 @@ export function usePaginationUrl(defaultPerPage = 15) {
     if (!paginatorData) return;
 
     // Laravel LengthAwarePaginator standard fields
-    const cur = paginatorData.current_page || 1;
-    const last = paginatorData.last_page || 1;
-    const tot = paginatorData.total !== undefined ? paginatorData.total : (paginatorData.data?.length || 0);
-    const per = paginatorData.per_page || defaultPerPage;
-    const fromVal = paginatorData.from !== undefined ? paginatorData.from : (tot > 0 ? (cur - 1) * per + 1 : 0);
-    const toVal = paginatorData.to !== undefined ? paginatorData.to : (tot > 0 ? Math.min(cur * per, tot) : 0);
+    const cur = Number(paginatorData.current_page) || 1;
+    const last = Number(paginatorData.last_page) || 1;
+    const tot = paginatorData.total !== undefined ? Number(paginatorData.total) : (paginatorData.data?.length || 0);
+    const per = Number(paginatorData.per_page) || defaultPerPage;
+    const fromVal = paginatorData.from !== undefined ? Number(paginatorData.from) : (tot > 0 ? (cur - 1) * per + 1 : 0);
+    const toVal = paginatorData.to !== undefined ? Number(paginatorData.to) : (tot > 0 ? Math.min(cur * per, tot) : 0);
 
     setPaginationMeta({
       currentPage: cur,

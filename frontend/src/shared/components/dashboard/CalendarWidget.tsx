@@ -1,105 +1,116 @@
-import React, { useState } from 'react';
-import {
-  ChevronLeft, ChevronRight, Calendar as CalendarIcon,
-  CheckCircle, Bell, X, ArrowRight
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Bell, CheckCircle2 } from 'lucide-react';
 
-export interface HighlightDate {
+export interface CalendarHighlightItem {
   date: string; // YYYY-MM-DD
   title: string;
-  subject_name?: string;
+  type?: 'upcoming' | 'completed' | 'exam' | 'today' | 'submission' | 'event';
+  examGroupId?: number;
+}
+
+export type HighlightDate = CalendarHighlightItem;
+
+export interface UpcomingExamItem {
+  id: number | string;
+  title: string;
+  subject_name: string;
   subject_code?: string;
-  start_time?: string;
-  duration_minutes?: number;
-  status?: 'upcoming' | 'in_progress' | 'completed' | 'disqualified';
-  type?: 'exam' | 'submission' | 'event';
-  exam_group_id?: number;
+  start_time: string;
+  duration_minutes: number;
+  attempt?: any;
 }
 
 interface CalendarWidgetProps {
-  highlights?: HighlightDate[];
-  onSelectDate?: (date: Date) => void;
-  onSelectExam?: (examGroupId: number) => void;
-  isSyncing?: boolean;
+  highlights?: CalendarHighlightItem[];
+  upcomingExams?: UpcomingExamItem[];
+  totalUpcomingCount?: number;
+  onSelectDate?: (date: Date, highlights?: CalendarHighlightItem[]) => void;
+  onExamClick?: (exam: UpcomingExamItem) => void;
+  className?: string;
 }
 
-// Timezone-safe date extractors
-const extractDateOnly = (dateStr?: string | null): string => {
+export const toLocalDateKey = (dateStr?: string): string => {
   if (!dateStr) return '';
-  const match = String(dateStr).match(/^(\d{4}-\d{2}-\d{2})/);
-  if (match) return match[1];
-  try {
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-  } catch {
-    // ignore
-  }
-  return '';
-};
-
-const formatIndonesianDate = (dateStr: string) => {
-  const clean = extractDateOnly(dateStr);
-  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const match = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-    const d = parseInt(match[3], 10);
-    const m = parseInt(match[2], 10) - 1;
-    return `${d} ${months[m] || ''}`;
+    return `${match[1]}-${match[2]}-${match[3]}`;
   }
-  return dateStr;
-};
-
-const formatFullIndonesianDate = (dateStr: string) => {
-  const clean = extractDateOnly(dateStr);
-  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (match) {
-    const fullMonths = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
-    const y = match[1];
-    const m = parseInt(match[2], 10) - 1;
-    const d = parseInt(match[3], 10);
-    return `${d} ${fullMonths[m] || ''} ${y}`;
-  }
-  return dateStr;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
   highlights = [],
+  upcomingExams = [],
+  totalUpcomingCount,
   onSelectDate,
-  onSelectExam,
-  isSyncing = false
+  onExamClick,
+  className = ''
 }) => {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
+  const [currentDate, setCurrentDate] = useState(() => {
+    // Default to the month of the first upcoming exam if available, else today
+    if (upcomingExams.length > 0 && upcomingExams[0].start_time) {
+      const d = new Date(upcomingExams[0].start_time);
+      if (!isNaN(d.getTime())) {
+        return new Date(d.getFullYear(), d.getMonth(), 1);
+      }
+    }
+    return new Date();
+  });
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+
+  // Automatically sync calendar to the month of the nearest upcoming exam or highlights if current viewed month has no exams
+  useEffect(() => {
+    const currentPrefix = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+    const hasExamsInCurrentMonth = highlights.some(h => toLocalDateKey(h.date).startsWith(currentPrefix));
+
+    if (!hasExamsInCurrentMonth) {
+      if (upcomingExams.length > 0 && upcomingExams[0].start_time) {
+        const d = new Date(upcomingExams[0].start_time);
+        if (!isNaN(d.getTime())) {
+          setCurrentDate(new Date(d.getFullYear(), d.getMonth(), 1));
+          return;
+        }
+      }
+      if (highlights.length > 0 && highlights[0].date) {
+        const d = new Date(highlights[0].date);
+        if (!isNaN(d.getTime())) {
+          setCurrentDate(new Date(d.getFullYear(), d.getMonth(), 1));
+        }
+      }
+    }
+  }, [upcomingExams, highlights]);
 
   const monthNames = [
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
   ];
 
-  const daysShort = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+  const daysShort = [
+    { label: 'MIN', isSunday: true },
+    { label: 'SEN', isSunday: false },
+    { label: 'SEL', isSunday: false },
+    { label: 'RAB', isSunday: false },
+    { label: 'KAM', isSunday: false },
+    { label: 'JUM', isSunday: false },
+    { label: 'SAB', isSunday: false }
+  ];
 
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 1, 1));
-    setSelectedDateStr(null);
   };
 
   const nextMonth = () => {
     setCurrentDate(new Date(year, month + 1, 1));
-    setSelectedDateStr(null);
   };
 
   const today = new Date();
@@ -111,169 +122,111 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
     );
   };
 
-  const getDayEvents = (day: number) => {
+  const getHighlightsForDay = (day: number) => {
     const formatted = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return highlights.filter(h => {
-      const clean = extractDateOnly(h.date || h.start_time);
-      return clean === formatted;
-    });
+    return highlights.filter(h => toLocalDateKey(h.date) === formatted);
   };
 
-  // Selected date events popup
-  const selectedEvents = selectedDateStr
-    ? highlights.filter(h => extractDateOnly(h.date || h.start_time) === selectedDateStr)
-    : [];
+  // Sort upcoming exams strictly by closest start_time first (terdekat paling atas)
+  const sortedUpcomingExams = [...upcomingExams].sort((a, b) => {
+    const timeA = new Date(a.start_time).getTime();
+    const timeB = new Date(b.start_time).getTime();
+    return timeA - timeB;
+  });
 
-  // Upcoming & Active exams (sorted chronologically for reminder preview)
-  const upcomingExams = highlights
-    .filter(h => h.status === 'upcoming' || h.status === 'in_progress')
-    .sort((a, b) => {
-      const timeA = new Date((a.start_time || a.date || '').replace(' ', 'T')).getTime();
-      const timeB = new Date((b.start_time || b.date || '').replace(' ', 'T')).getTime();
-      return timeA - timeB;
-    });
+  const displayCount = totalUpcomingCount !== undefined ? totalUpcomingCount : sortedUpcomingExams.length;
 
-  // Jump calendar view directly to an exam's month and select date
-  const jumpToExamDate = (item: HighlightDate) => {
-    const clean = extractDateOnly(item.date || item.start_time);
-    if (clean) {
-      const [y, m] = clean.split('-').map(Number);
-      setCurrentDate(new Date(y, m - 1, 1));
-      setSelectedDateStr(clean);
+  const formatShortDate = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    } catch {
+      return dateStr;
     }
   };
 
-  // Check if upcoming exams exist in a month other than the current view
-  const upcomingInOtherMonth = upcomingExams.find(item => {
-    const clean = extractDateOnly(item.date || item.start_time);
-    if (!clean) return false;
-    const [y, m] = clean.split('-').map(Number);
-    return y !== year || (m - 1) !== month;
-  });
-
   return (
-    <div className="glass-panel rounded-3xl p-5 md:p-6 space-y-4 border-2 border-[#161C2D] dark:border-[#32363A] shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] bg-white dark:bg-[#1A1E22]">
+    <div className={`bg-white dark:bg-[#1A1E22] rounded-3xl border-2 border-[#161C2D] dark:border-[#32363A] p-5 sm:p-6 shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] space-y-5 ${className}`}>
       
-      {/* Calendar Header */}
+      {/* 1. Calendar Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-[#4379EE]/10 text-[#4379EE] rounded-xl border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
-            <CalendarIcon className="h-4 w-4" />
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-2xl border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
+            <CalendarIcon className="h-5 w-5 stroke-[2.5]" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-black text-slate-900 dark:text-white leading-none font-mono">
-                {monthNames[month]} {year}
-              </h4>
-              {isSyncing && (
-                <span className="flex h-2 w-2 relative" title="Sinkronisasi real-time">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-              )}
-            </div>
-            <p className="text-[10px] text-slate-500 dark:text-gray-400 mt-0.5 font-bold uppercase tracking-wider">
-              Kalender & Pengingat Ujian
+            <h4 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">
+              {monthNames[month]} {year}
+            </h4>
+            <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-gray-400 mt-0.5">
+              KALENDER & PENGINGAT UJIAN
             </p>
           </div>
         </div>
 
+        {/* Navigation arrows */}
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={prevMonth}
-            className="p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl text-slate-700 dark:text-gray-300 border border-slate-300 dark:border-white/10 transition active:scale-95 cursor-pointer"
-            title="Bulan Sebelumnya"
+            aria-label="Bulan Sebelumnya"
+            className="w-8 h-8 rounded-full border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/10 transition active:scale-95 cursor-pointer"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={nextMonth}
-            className="p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl text-slate-700 dark:text-gray-300 border border-slate-300 dark:border-white/10 transition active:scale-95 cursor-pointer"
-            title="Bulan Berikutnya"
+            aria-label="Bulan Berikutnya"
+            className="w-8 h-8 rounded-full border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/10 transition active:scale-95 cursor-pointer"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      {/* Quick Jump Banner when upcoming exams exist in another month */}
-      {upcomingInOtherMonth && (
-        <button
-          type="button"
-          onClick={() => jumpToExamDate(upcomingInOtherMonth)}
-          className="w-full text-left flex items-center justify-between p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/50 text-amber-900 dark:text-amber-300 text-[11px] font-bold transition active:scale-[0.99] cursor-pointer"
-          title="Klik untuk membuka bulan jadwal ujian"
-        >
-          <span className="truncate flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-amber-500 animate-ping"></span>
-            <span>Ujian terdekat di {formatIndonesianDate(upcomingInOtherMonth.date || upcomingInOtherMonth.start_time || '')}</span>
-          </span>
-          <span className="text-[10px] uppercase font-mono px-2 py-0.5 bg-amber-400 text-amber-950 rounded-lg font-black shrink-0 ml-1.5 flex items-center gap-1">
-            Lihat <ArrowRight className="h-3 w-3" />
-          </span>
-        </button>
-      )}
+      {/* Note: Kotak lonjong "Ujian terdekat" explicitly REMOVED per user instructions */}
 
-      {/* Days header */}
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-mono font-black text-slate-400 dark:text-gray-400 uppercase tracking-wider border-b border-slate-100 dark:border-white/10 pb-1.5">
+      {/* 2. Days Header */}
+      <div className="grid grid-cols-7 gap-1 text-center text-xs font-black tracking-wider">
         {daysShort.map((d, idx) => (
-          <div key={idx} className={idx === 0 ? 'text-rose-500 font-black' : ''}>
-            {d}
+          <div
+            key={idx}
+            className={`py-1 ${d.isSunday ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400 dark:text-gray-400'}`}
+          >
+            {d.label}
           </div>
         ))}
       </div>
 
-      {/* Calendar Grid */}
-      <div className="grid grid-cols-7 gap-1.5 text-center text-xs">
+      {/* 3. Calendar Grid Numbers */}
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center text-xs">
         {Array.from({ length: firstDayOfMonth }).map((_, idx) => (
-          <div key={`empty-${idx}`} className="h-8" />
+          <div key={`empty-${idx}`} className="h-9 w-9 mx-auto" />
         ))}
 
         {Array.from({ length: daysInMonth }).map((_, idx) => {
           const day = idx + 1;
-          const formattedDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const dayEvents = getDayEvents(day);
-          const hasUpcoming = dayEvents.some(e => e.status === 'upcoming');
-          const hasInProgress = dayEvents.some(e => e.status === 'in_progress');
-          const hasCompleted = dayEvents.some(e => e.status === 'completed');
           const todayActive = isToday(day);
-          const isSelected = selectedDateStr === formattedDate;
+          const dayHighlights = getHighlightsForDay(day);
+          const hasUpcoming = dayHighlights.some(h => h.type === 'upcoming' || h.type === 'exam');
+          const hasCompleted = dayHighlights.some(h => h.type === 'completed');
 
-          let dayStyle = 'text-slate-700 dark:text-gray-300 hover:bg-slate-200/60 dark:hover:bg-white/10 font-bold';
-          let indicator = null;
+          let cellStyle = 'text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5';
+          let showBadge = false;
 
-          if (hasUpcoming || hasInProgress) {
-            // PENGINGAT UJIAN MENDATANG: Kuning/Amber terang mencolok (Neo-brutalist solid)
-            dayStyle = 'bg-amber-400 text-amber-950 font-black border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000] hover:bg-amber-300 scale-105 z-10';
-            if (todayActive) {
-              dayStyle += ' ring-4 ring-[#4379EE]';
-            }
-            indicator = (
-              <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5" title="Ada pengingat ujian mendatang!">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500 border-2 border-white dark:border-[#161C2D] text-[8px] font-mono font-black text-white items-center justify-center">
-                  !
-                </span>
-              </span>
-            );
+          if (todayActive) {
+            // Hari Ini: Solid blue circle with drop shadow in both light and dark themes
+            cellStyle = 'bg-[#2563EB] text-white font-black border-2 border-[#161C2D] dark:border-blue-400 shadow-[2px_2px_0px_0px_#171717] dark:shadow-none';
+          } else if (hasUpcoming) {
+            // Ujian Mendatang: Solid amber circle with shadow and exclamation badge
+            cellStyle = 'bg-[#F59E0B] text-white font-black border-2 border-[#161C2D] dark:border-amber-400 shadow-[2px_2px_0px_0px_#171717] dark:shadow-none';
+            showBadge = true;
           } else if (hasCompleted) {
-            // Ujian Sudah Selesai: Hijau lembut
-            dayStyle = 'bg-emerald-100 text-emerald-800 border-2 border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700/60 font-bold hover:bg-emerald-200/60';
-            if (todayActive) {
-              dayStyle += ' ring-4 ring-[#4379EE]';
-            }
-            indicator = (
-              <span className="absolute bottom-0.5 h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
-            );
-          } else if (todayActive) {
-            // Hari ini tanpa ujian: Biru solid
-            dayStyle = 'bg-[#4379EE] text-white font-black border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] hover:bg-blue-600';
-          }
-
-          if (isSelected && !hasUpcoming && !hasInProgress && !todayActive && !hasCompleted) {
-            dayStyle += ' ring-2 ring-indigo-500 bg-indigo-50 dark:bg-indigo-950/40';
+            // Selesai: Mint green circle with green border
+            cellStyle = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500 font-bold';
           }
 
           return (
@@ -281,157 +234,109 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
               key={day}
               type="button"
               onClick={() => {
-                setSelectedDateStr(prev => (prev === formattedDate ? null : formattedDate));
-                if (onSelectDate) onSelectDate(new Date(year, month, day));
+                if (onSelectDate) onSelectDate(new Date(year, month, day), dayHighlights);
+                const firstExam = dayHighlights.find(h => h.examGroupId);
+                if (firstExam && onExamClick) {
+                  const examObj = upcomingExams.find(e => String(e.id) === String(firstExam.examGroupId));
+                  if (examObj) {
+                    onExamClick(examObj);
+                  } else {
+                    onExamClick({
+                      id: firstExam.examGroupId || '',
+                      title: firstExam.title,
+                      subject_name: '',
+                      start_time: firstExam.date,
+                      duration_minutes: 60
+                    });
+                  }
+                }
               }}
-              className={`h-8 w-8 mx-auto rounded-xl flex flex-col items-center justify-center transition relative text-xs font-mono cursor-pointer active:scale-95 ${dayStyle}`}
-              title={
-                hasUpcoming || hasInProgress
-                  ? `Tanggal ${day} ${monthNames[month]}: Ada Ujian Mendatang!`
-                  : hasCompleted
-                  ? `Tanggal ${day} ${monthNames[month]}: Ujian Selesai`
-                  : todayActive
-                  ? `Hari Ini (${day} ${monthNames[month]})`
-                  : `${day} ${monthNames[month]}`
-              }
+              className={`h-9 w-9 mx-auto rounded-full flex flex-col items-center justify-center font-bold text-xs relative transition active:scale-95 cursor-pointer ${cellStyle}`}
             >
               <span>{day}</span>
-              {indicator}
+              {showBadge && (
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center border border-white dark:border-[#1A1E22]">
+                  !
+                </span>
+              )}
+              {hasCompleted && !todayActive && !hasUpcoming && (
+                <span className="absolute bottom-1 w-1 h-1 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* Legend Guide Pengingat Ujian */}
-      <div className="flex flex-wrap items-center justify-center gap-1.5 pt-2 pb-1 border-t border-slate-200 dark:border-white/10 text-[10px] font-bold">
-        <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-lg border border-amber-300 dark:border-amber-700/40">
-          <span className="h-2.5 w-2.5 rounded-sm bg-amber-400 border border-[#161C2D] shadow-xs shrink-0"></span>
-          <span className="text-amber-900 dark:text-amber-300">Ujian Mendatang</span>
+      {/* 4. Legend Pills */}
+      <div className="flex items-center justify-center gap-2 flex-wrap pt-1">
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-300 dark:border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/20 text-amber-900 dark:text-amber-300 text-[11px] font-bold">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B]" />
+          <span>Ujian Mendatang</span>
         </div>
-        <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-lg border border-emerald-300 dark:border-emerald-700/40">
-          <span className="h-2.5 w-2.5 rounded-sm bg-emerald-100 border border-emerald-500 shrink-0"></span>
-          <span className="text-emerald-800 dark:text-emerald-300">Selesai</span>
+
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-300 text-[11px] font-bold">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+          <span>Selesai</span>
         </div>
-        <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/30 px-2 py-0.5 rounded-lg border border-blue-300 dark:border-blue-700/40">
-          <span className="h-2.5 w-2.5 rounded-sm bg-[#4379EE] border border-[#161C2D] shrink-0"></span>
-          <span className="text-[#4379EE] dark:text-blue-300">Hari Ini</span>
+
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-blue-300 dark:border-blue-500/40 bg-blue-50/70 dark:bg-blue-950/20 text-blue-900 dark:text-blue-300 text-[11px] font-bold">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB]" />
+          <span>Hari Ini</span>
         </div>
       </div>
 
-      {/* Interactive Detail Panel for Clicked Date */}
-      {selectedDateStr && (
-        <div className="p-3 bg-slate-50 dark:bg-white/[0.03] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl space-y-2 animate-fade-in shadow-[2px_2px_0px_0px_#171717] dark:shadow-[2px_2px_0px_0px_#000000]">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-1.5">
-            <span className="text-xs font-black text-slate-900 dark:text-white font-mono">
-              📅 {formatFullIndonesianDate(selectedDateStr)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelectedDateStr(null)}
-              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-md cursor-pointer"
-              title="Tutup detail tanggal"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          {selectedEvents.length > 0 ? (
-            <div className="space-y-1.5 max-h-36 overflow-y-auto">
-              {selectedEvents.map((ev, i) => (
-                <div
-                  key={i}
-                  className={`p-2 rounded-xl border text-xs flex items-center justify-between gap-2 ${
-                    ev.status === 'upcoming' || ev.status === 'in_progress'
-                      ? 'bg-amber-100/70 border-amber-300 text-amber-950 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-200'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/30 dark:border-emerald-800/40 dark:text-emerald-200'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="font-bold truncate leading-tight">{ev.title}</p>
-                    <p className="text-[10px] opacity-80 mt-0.5">{ev.subject_name || ev.subject_code}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase ${
-                      ev.status === 'upcoming' || ev.status === 'in_progress'
-                        ? 'bg-amber-400 text-amber-950 border border-amber-600'
-                        : 'bg-emerald-200 text-emerald-900'
-                    }`}>
-                      {ev.status === 'upcoming' ? 'Mendatang' : ev.status === 'in_progress' ? 'Aktif' : 'Selesai'}
-                    </span>
-                    {ev.exam_group_id && onSelectExam && (
-                      <button
-                        type="button"
-                        onClick={() => onSelectExam(ev.exam_group_id!)}
-                        className="p-1 rounded-md bg-white/60 dark:bg-black/30 hover:bg-white text-slate-700 dark:text-gray-200 cursor-pointer"
-                        title="Buka ujian ini"
-                      >
-                        <ArrowRight className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[11px] text-slate-500 dark:text-gray-400 italic text-center py-1">
-              Tidak ada jadwal ujian pada tanggal ini.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Upcoming events preview (Pengingat Ujian Mendatang) */}
-      <div className="border-t border-slate-200/80 dark:border-white/5 pt-3 space-y-2">
+      {/* 5. Section: PENGINGAT UJIAN MENDATANG */}
+      <div className="border-t border-slate-200/80 dark:border-white/10 pt-4 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-[11px] font-black text-slate-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-            <Bell className="h-3.5 w-3.5 text-amber-500 animate-bounce" />
-            <span>Pengingat Ujian Mendatang:</span>
-          </p>
-          <span className="text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-500/30">
-            {upcomingExams.length} Ujian
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-amber-500 fill-amber-500/20" />
+            <h5 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-gray-200">
+              PENGINGAT UJIAN MENDATANG:
+            </h5>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-600/40 text-amber-900 dark:text-amber-300 font-black text-xs font-mono">
+            {displayCount} Ujian
           </span>
         </div>
 
-        {upcomingExams.length > 0 ? (
-          <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
-            {upcomingExams.slice(0, 4).map((item, idx) => (
+        {/* List of upcoming exams sorted by closest date first */}
+        <div className="space-y-2.5 max-h-72 overflow-y-auto no-scrollbar">
+          {sortedUpcomingExams.length > 0 ? (
+            sortedUpcomingExams.slice(0, 4).map((exam) => (
               <div
-                key={idx}
-                onClick={() => jumpToExamDate(item)}
-                className="flex items-center justify-between text-xs p-2.5 bg-amber-50/70 hover:bg-amber-100/90 dark:bg-amber-950/20 dark:hover:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/40 rounded-xl transition shadow-xs cursor-pointer active:scale-[0.99]"
-                title="Klik untuk melihat tanggal di kalender"
+                key={exam.id}
+                onClick={() => onExamClick && onExamClick(exam)}
+                className={`p-3 sm:p-3.5 rounded-2xl border-2 border-amber-300/90 dark:border-amber-500/40 bg-amber-50/20 dark:bg-amber-950/10 hover:bg-amber-50/60 dark:hover:bg-amber-950/25 transition flex items-center justify-between gap-3 ${
+                  onExamClick ? 'cursor-pointer active:scale-[0.99]' : ''
+                }`}
               >
-                <div className="min-w-0 pr-2">
-                  <span className="font-bold text-slate-900 dark:text-white truncate block text-xs">
-                    {item.title}
-                  </span>
-                  {item.subject_name && (
-                    <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium truncate block">
-                      {item.subject_name}
-                    </span>
-                  )}
+                <div className="min-w-0 flex-1">
+                  <h6 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight truncate">
+                    {exam.title}
+                  </h6>
+                  <p className="text-[11px] text-slate-500 dark:text-gray-400 font-medium truncate mt-0.5">
+                    {exam.subject_name}
+                  </p>
                 </div>
+
                 <div className="flex flex-col items-end shrink-0">
-                  <span className="text-[10px] font-mono font-bold text-amber-900 dark:text-amber-300 px-2 py-0.5 bg-amber-200/80 dark:bg-amber-500/20 rounded-md border border-amber-300 dark:border-amber-500/30">
-                    {formatIndonesianDate(item.date || item.start_time || '')}
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-600/40 text-amber-900 dark:text-amber-300 font-bold text-[10.5px] font-mono">
+                    {formatShortDate(exam.start_time)}
                   </span>
-                  {item.duration_minutes && (
-                    <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-                      {item.duration_minutes} Menit
-                    </span>
-                  )}
+                  <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium mt-1">
+                    {exam.duration_minutes} Menit
+                  </span>
                 </div>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-700/30 rounded-xl text-center">
-            <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-1.5">
-              <CheckCircle className="h-4 w-4" />
-              <span>Semua ujian telah diselesaikan</span>
-            </p>
-          </div>
-        )}
+            ))
+          ) : (
+            <div className="text-center py-6 text-slate-500 dark:text-gray-400 text-xs font-medium space-y-1">
+              <CheckCircle2 className="h-6 w-6 text-emerald-500 mx-auto" />
+              <p className="font-bold text-slate-700 dark:text-gray-300">Tidak ada ujian mendatang</p>
+              <p className="text-[11px]">Semua jadwal ujian telah tuntas atau belum dijadwalkan.</p>
+            </div>
+          )}
+        </div>
       </div>
 
     </div>

@@ -29,27 +29,16 @@ class ResultController extends Controller
         $savedAnswers = $attempt->details->keyBy('idassessment_soal_pilgan');
 
         $correctCount = 0;
-        $incorrectCount = 0;
-        $unansweredCount = 0;
         $reviewQuestions = [];
 
         foreach ($questions as $idx => $q) {
             $studentAns = $savedAnswers->get($q->idassessment_soal_pilgan);
-            $rawAnswer = $studentAns ? trim((string)$studentAns->jawaban) : '';
-            $chosen = ($rawAnswer !== '') ? strtoupper($rawAnswer) : null;
-            $correctKey = strtoupper(trim((string)$q->jawaban));
+            $chosen = $studentAns ? strtoupper(trim($studentAns->jawaban)) : null;
+            $correctKey = strtoupper(trim($q->jawaban));
+            $isCorrect = ($chosen !== null && $chosen === $correctKey);
 
-            $status = 'unanswered';
-            if ($chosen !== null) {
-                if ($chosen === $correctKey) {
-                    $status = 'correct';
-                    $correctCount++;
-                } else {
-                    $status = 'incorrect';
-                    $incorrectCount++;
-                }
-            } else {
-                $unansweredCount++;
+            if ($isCorrect) {
+                $correctCount++;
             }
 
             $options = [];
@@ -69,21 +58,6 @@ class ResultController extends Controller
                 $options[] = ['key' => 'E', 'content' => $q->pilihan_e_text ?: 'Pilihan E', 'media' => $q->pilihan_e_gambar];
             }
 
-            // Consistent deterministic seeded shuffle matching ExamAttemptController (Temuan 27)
-            $isAcakOpsi = in_array($assessment->acak_opsi, ['Y', '1', 1, true], true);
-            if ($isAcakOpsi) {
-                $seed = crc32($attempt->idassessment_jawaban_pilgan . '_' . $q->idassessment_soal_pilgan);
-                mt_srand($seed);
-                $shuffledOptions = $options;
-                for ($i = count($shuffledOptions) - 1; $i > 0; $i--) {
-                    $j = mt_rand(0, $i);
-                    $tmp = $shuffledOptions[$i];
-                    $shuffledOptions[$i] = $shuffledOptions[$j];
-                    $shuffledOptions[$j] = $tmp;
-                }
-                $options = $shuffledOptions;
-            }
-
             $reviewQuestions[] = [
                 'number' => $idx + 1,
                 'question_id' => $q->idassessment_soal_pilgan,
@@ -92,33 +66,13 @@ class ResultController extends Controller
                 'options' => $options,
                 'student_answer' => $chosen,
                 'correct_answer' => $correctKey,
-                'is_correct' => ($status === 'correct'),
-                'status' => $status, // 'correct' | 'incorrect' | 'unanswered'
+                'is_correct' => $isCorrect,
                 'explanation' => $q->penjelasan_jawaban ?: 'Tidak ada pembahasan khusus untuk nomor ini.',
             ];
         }
 
-        // Consistent deterministic question shuffle matching ExamAttemptController (Temuan 27)
-        $isAcakSoal = in_array($assessment->acak_soal, ['Y', '1', 1, true], true);
-        if ($isAcakSoal) {
-            $qSeed = crc32($attempt->idassessment_jawaban_pilgan . '_questions_order');
-            mt_srand($qSeed);
-            for ($i = count($reviewQuestions) - 1; $i > 0; $i--) {
-                $j = mt_rand(0, $i);
-                $tmp = $reviewQuestions[$i];
-                $reviewQuestions[$i] = $reviewQuestions[$j];
-                $reviewQuestions[$j] = $tmp;
-            }
-            foreach ($reviewQuestions as $k => &$rq) {
-                $rq['number'] = $k + 1;
-            }
-            unset($rq);
-        }
-
         $totalQuestions = count($questions);
         $score = ($totalQuestions > 0) ? round(($correctCount / $totalQuestions) * 100, 2) : 0;
-        $kkm = (float) ($assessment->mapel?->kkm ?? 75);
-        $finalScore = (float) ($attempt->nilai ?? $score);
 
         // Flow Requirement (mod-siswa-end-session-check):
         // Pengecekan Status Sesi: Apakah Sesi Ujian Benar-benar Berakhir? (End Session)
@@ -179,14 +133,11 @@ class ResultController extends Controller
                 'assessment_id' => $assessment->idassessment,
                 'title' => $assessment->nama_assessment,
                 'subject' => $assessment->mapel?->nama_mapel ?? 'TryOut',
-                'kkm' => $kkm,
                 'status' => 'submitted',
-                'total_score' => $finalScore,
+                'total_score' => (float) ($attempt->nilai ?? $score),
                 'total_questions' => $totalQuestions,
                 'total_correct' => $correctCount,
-                'total_incorrect' => $incorrectCount,
-                'total_unanswered' => $unansweredCount,
-                'is_passed_kkm' => ($finalScore >= $kkm),
+                'total_incorrect' => $totalQuestions - $correctCount,
                 'duration_spent' => $attempt->lama_dikerjakan ?: '-',
                 'submitted_at' => $attempt->tgl_input_time,
                 'is_session_ended' => true,

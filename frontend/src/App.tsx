@@ -18,7 +18,6 @@ const TeacherDashboard = lazy(() => import('./features/teacher/TeacherDashboard'
 const TeacherLayout = lazy(() => import('./features/teacher/TeacherLayout').then(m => ({ default: m.TeacherLayout })));
 const QuestionBankPage = lazy(() => import('./features/teacher/QuestionBankPage').then(m => ({ default: m.QuestionBankPage })));
 const ExamsPage = lazy(() => import('./features/teacher/ExamsPage').then(m => ({ default: m.ExamsPage })));
-const GradingPage = lazy(() => import('./features/teacher/GradingPage').then(m => ({ default: m.GradingPage })));
 const ExamReportPage = lazy(() => import('./features/teacher/ExamReportPage').then(m => ({ default: m.ExamReportPage })));
 const TeacherAnnouncementsPage = lazy(() => import('./features/teacher/TeacherAnnouncementsPage').then(m => ({ default: m.TeacherAnnouncementsPage })));
 const SuperAdminLayout = lazy(() => import('./features/admin/SuperAdminLayout').then(m => ({ default: m.SuperAdminLayout })));
@@ -108,7 +107,7 @@ export const App: React.FC = () => {
                   <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
                   <Route path="/teacher/questions" element={<QuestionBankPage />} />
                   <Route path="/teacher/exams" element={<ExamsPage />} />
-                  <Route path="/teacher/grading" element={<GradingPage />} />
+                  <Route path="/teacher/grading" element={<Navigate to="/teacher/reports" replace />} />
                   <Route path="/teacher/reports" element={<ExamReportPage />} />
                   <Route path="/teacher/announcements" element={<TeacherAnnouncementsPage />} />
                   <Route path="/teacher/profile" element={<AdminProfilePage />} />
@@ -195,7 +194,7 @@ export const App: React.FC = () => {
                   <Route path="/admin/announcements" element={<PermissionRoute perm="announcement.view"><AdminAnnouncementsPage /></PermissionRoute>} />
                   <Route path="/admin/reports" element={<PermissionRoute perm="laporan.view"><ExamReportPage /></PermissionRoute>} />
                   <Route path="/admin/profile" element={<PermissionRoute perm="profil.manage"><AdminProfilePage /></PermissionRoute>} />
-                  <Route path="/admin/school/profile" element={<PermissionRoute perm="instansi_sekolah.view|profil.manage"><AdminProfilePage /></PermissionRoute>} />
+                  <Route path="/admin/school/profile" element={<Navigate to="/admin/profile" replace />} />
                 </Route>
               </Route>
 

@@ -23,18 +23,15 @@ class LoginController extends Controller
         $password = (string) $request->password;
         $expectedRole = $request->input('expected_role');
 
-        // Enforce credential rule from flow: Email is strictly for profile info, NOT for login
-        if (str_contains($loginInput, '@')) {
-            return response()->json([
-                'message' => 'Sesuai ketentuan sistem, Email hanya digunakan untuk informasi profil akun (tidak dapat digunakan untuk login). Silakan masuk menggunakan Username atau Nomor Induk (NUPTK / NISN / NIS) Anda.',
-            ], 422);
-        }
-
         // 1. Attempt to authenticate as Back Office User (Super Admin IP, Admin Instansi, Guru)
         $userBo = UserBo::with('kategori')
             ->where(function ($q) use ($loginInput) {
                 $q->where('login_username', $loginInput)
+                  ->orWhere('login_email', $loginInput)
                   ->orWhere('iduser_bo', $loginInput);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_bo', 'email')) {
+                    $q->orWhere('email', $loginInput);
+                }
                 if (\Illuminate\Support\Facades\Schema::hasColumn('user_bo', 'nuptk')) {
                     $q->orWhere('nuptk', $loginInput);
                 }
@@ -125,11 +122,17 @@ class LoginController extends Controller
             );
 
             $isSuperAdmin = method_exists($userBo, 'isSuperAdmin') ? $userBo->isSuperAdmin() : ($role === 'super_admin');
-            $roles = method_exists($userBo, 'roles') ? $userBo->roles()->pluck('name')->all() : [];
-            if (empty($roles)) $roles = [$role];
-            $permissions = method_exists($userBo, 'permissions') ? $userBo->permissions() : [];
-            $menuScope = $isSuperAdmin ? 'platform' : 'instansi';
-            $menus = \App\Models\Menu::getTreeForUser($permissions, $menuScope, $isSuperAdmin);
+            try {
+                $roles = method_exists($userBo, 'roles') ? $userBo->roles()->pluck('name')->all() : [];
+                if (empty($roles)) $roles = [$role];
+                $permissions = method_exists($userBo, 'permissions') ? $userBo->permissions() : [];
+                $menuScope = $isSuperAdmin ? 'platform' : 'instansi';
+                $menus = \App\Models\Menu::getTreeForUser($permissions, $menuScope, $isSuperAdmin);
+            } catch (\Throwable $e) {
+                $roles = [$role];
+                $permissions = [];
+                $menus = [];
+            }
 
             return response()->json([
                 'token' => $apiToken,
@@ -164,9 +167,16 @@ class LoginController extends Controller
         $userSiswa = UserSiswa::with(['kelas.jenjang', 'kelas.kategori', 'kategori'])
             ->where(function ($q) use ($loginInput) {
                 $q->where('nisn', $loginInput)
-                  ->orWhere('iduser', $loginInput);
+                  ->orWhere('iduser', $loginInput)
+                  ->orWhere('login_email', $loginInput);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user', 'email')) {
+                    $q->orWhere('email', $loginInput);
+                }
                 if (\Illuminate\Support\Facades\Schema::hasColumn('user', 'nis')) {
                     $q->orWhere('nis', $loginInput);
+                }
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user', 'login_username')) {
+                    $q->orWhere('login_username', $loginInput);
                 }
             })
             ->first();
@@ -236,10 +246,16 @@ class LoginController extends Controller
                 ?? $userSiswa->kelas?->kategori?->nama_kategori 
                 ?? 'Sekolah Mitra';
 
-            $roles = method_exists($userSiswa, 'roles') ? $userSiswa->roles()->pluck('name')->all() : [];
-            if (empty($roles)) $roles = ['siswa'];
-            $permissions = method_exists($userSiswa, 'permissions') ? $userSiswa->permissions() : [];
-            $menus = \App\Models\Menu::getTreeForUser($permissions, 'instansi', false);
+            try {
+                $roles = method_exists($userSiswa, 'roles') ? $userSiswa->roles()->pluck('name')->all() : [];
+                if (empty($roles)) $roles = ['siswa'];
+                $permissions = method_exists($userSiswa, 'permissions') ? $userSiswa->permissions() : [];
+                $menus = \App\Models\Menu::getTreeForUser($permissions, 'instansi', false);
+            } catch (\Throwable $e) {
+                $roles = ['siswa'];
+                $permissions = [];
+                $menus = [];
+            }
 
             return response()->json([
                 'token' => $apiToken,

@@ -783,20 +783,12 @@ class DynamicRbacSeeder extends Seeder
                 'sort_order' => 9,
             ],
             [
-                'label' => 'Profil Sekolah',
-                'icon' => 'Building',
-                'path' => '/admin/school/profile',
-                'permission_key' => 'instansi_sekolah.view',
-                'scope' => 'instansi',
-                'sort_order' => 10,
-            ],
-            [
                 'label' => 'Role & Akses Sekolah',
                 'icon' => 'ShieldCheck',
                 'path' => '/admin/roles',
                 'permission_key' => 'role_instansi.manage',
                 'scope' => 'instansi',
-                'sort_order' => 11,
+                'sort_order' => 10,
             ],
         ];
 

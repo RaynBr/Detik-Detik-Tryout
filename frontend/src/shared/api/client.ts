@@ -1,16 +1,22 @@
 import axios from 'axios';
 
-const getApiBaseUrl = (): string => {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+const getBaseUrl = () => {
+  // If VITE_API_URL is explicitly set to an absolute URL other than localhost/8001, use it
+  if (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.includes('localhost') && !import.meta.env.VITE_API_URL.includes('127.0.0.1') && import.meta.env.VITE_API_URL !== '/api') {
+    return import.meta.env.VITE_API_URL;
   }
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    return `http://${window.location.hostname}:8000/api`;
+
+  // In browser environment, use relative '/api' so all requests route through Vite's proxy (port 5173).
+  // This works identically on desktop (localhost:5173) and mobile phones (e.g. 192.168.x.x:5173),
+  // completely bypassing local loopback (127.0.0.1) network isolation and CORS restrictions.
+  if (typeof window !== 'undefined') {
+    return '/api';
   }
-  return 'http://localhost:8000/api';
+
+  return 'http://127.0.0.1:8000/api';
 };
 
-export const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getBaseUrl();
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,

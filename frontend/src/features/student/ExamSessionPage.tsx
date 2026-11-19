@@ -16,11 +16,11 @@ import {
 } from '../../shared/utils/offlineExamStorage';
 import { 
   Clock, AlertTriangle, Shield, CheckSquare, 
-  ChevronLeft, ChevronRight, ChevronDown, HelpCircle, Send, Maximize,
-  CheckCircle, X, RefreshCw, Check, Ban, WifiOff, HardDrive,
-  BookOpen, Lock, Pin, PinOff
+  ChevronLeft, ChevronRight, HelpCircle, Send, Maximize,
+  CheckCircle, X, RefreshCw, Check, Ban, WifiOff,
+  BookOpen, CheckCircle2, XCircle, AlertCircle, Lightbulb, Lock,
+  LayoutGrid, ChevronsUp, ChevronsDown
 } from 'lucide-react';
-import { ExamReviewModal } from './components/ExamReviewModal';
 
 interface QuestionOption {
   id: number;
@@ -53,7 +53,6 @@ export const ExamSessionPage: React.FC = () => {
 
   // Core state
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [examTitle, setExamTitle] = useState<string>('Ujian CBT');
   const [currentIdx, setCurrentIdx] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [isSessionLimited, setIsSessionLimited] = useState<boolean>(false);
@@ -80,9 +79,9 @@ export const ExamSessionPage: React.FC = () => {
   const autoSubmittedRef = useRef<boolean>(false);
 
   // Autosave and Sync state
-  const [savingStatus, setSavingStatus] = useState<'idle' | 'saving' | 'saved' | 'saved_offline' | 'error'>('idle');
+  const [, setSavingStatus] = useState<'idle' | 'saving' | 'saved' | 'saved_offline' | 'error'>('idle');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [, setPendingSyncCount] = useState(0);
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -94,69 +93,8 @@ export const ExamSessionPage: React.FC = () => {
     session_end_time?: string | null;
   } | null>(null);
 
-  // Responsive & Accessibility State (Font Scaling)
-  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
-
-  // Dropdown Menu Navigasi Soal di Sisi Kanan (User Request: "ditaruh kanan aja dibikin kaya menu dropdown gitu jangan diatas")
-  const [showNavDropdown, setShowNavDropdown] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
-
-  // Opsi sematkan sidebar di desktop jika siswa ingin tetap menampilkan panel
-  const [isSidebarPinned, setIsSidebarPinned] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('cbt_sidebar_pinned') === 'true';
-    } catch (_) {
-      return false;
-    }
-  });
-
-  const toggleSidebarPin = () => {
-    setIsSidebarPinned(prev => {
-      const next = !prev;
-      try { localStorage.setItem('cbt_sidebar_pinned', String(next)); } catch (_) {}
-      return next;
-    });
-  };
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowNavDropdown(false);
-      }
-    };
-    if (showNavDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('touchstart', handleClickOutside, { passive: true });
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
-    };
-  }, [showNavDropdown]);
-
-  // Question Filter in Navigation: 'all' | 'unanswered' | 'answered' | 'flagged'
-  type NavFilterType = 'all' | 'unanswered' | 'answered' | 'flagged';
-  const [navFilter, setNavFilter] = useState<NavFilterType>('all');
-
-  // Fast navigation to next unanswered question
-  const jumpToNextUnanswered = () => {
-    const nextIdx = questions.findIndex(
-      (q, i) => i > currentIdx && (!q.answer_content || Object.keys(q.answer_content).length === 0)
-    );
-    if (nextIdx !== -1) {
-      setCurrentIdx(nextIdx);
-      return;
-    }
-    const firstIdx = questions.findIndex(
-      q => !q.answer_content || Object.keys(q.answer_content).length === 0
-    );
-    if (firstIdx !== -1) {
-      setCurrentIdx(firstIdx);
-    } else {
-      toast.success('Hebat! Semua soal telah dijawab.');
-    }
-  };
+  // Responsive Navigation State (Mobile Sheet)
+  const [showMobileNavSheet, setShowMobileNavSheet] = useState(false);
 
   // Immediate Review & Pembahasan Modal State
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
@@ -191,13 +129,6 @@ export const ExamSessionPage: React.FC = () => {
         const res = await apiClient.get(`/student/attempts/${attemptId}/questions`);
         const attempt = res.data.attempt;
         let qList: Question[] = res.data.questions || [];
-
-        // Exam title
-        const title = attempt?.exam?.title || res.data.attempt?.exam?.title || 'Ujian CBT';
-        setExamTitle(title);
-        if (attemptId) {
-          try { localStorage.setItem(`cbt_exam_title_${attemptId}`, title); } catch (_) {}
-        }
 
         // Dynamic max tab switches from exam anti-cheat settings
         const settingLimit = attempt.exam?.settings?.max_tab_switches;
@@ -280,8 +211,6 @@ export const ExamSessionPage: React.FC = () => {
 
         // Attempt to load from IndexedDB offline storage
         if (attemptId) {
-          const cachedTitle = localStorage.getItem(`cbt_exam_title_${attemptId}`);
-          if (cachedTitle) setExamTitle(cachedTitle);
           const cachedSession = await getExamSessionOffline(attemptId);
           if (cachedSession && cachedSession.questions && cachedSession.questions.length > 0) {
             const offlineAnswers = await getOfflineAnswers(attemptId);
@@ -425,24 +354,7 @@ export const ExamSessionPage: React.FC = () => {
       }
     }, 500);
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && targetEndTimeRef.current) {
-        const now = Date.now();
-        const diffMs = targetEndTimeRef.current - now;
-        const remainingSecs = Math.max(0, Math.ceil(diffMs / 1000));
-        setTimeRemaining(remainingSecs);
-        if (remainingSecs <= 0 && !autoSubmittedRef.current) {
-          autoSubmittedRef.current = true;
-          handleAutoSubmit();
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
+    return () => clearInterval(interval);
   }, [loadingSession, submissionResult, disqualified]);
 
   // 4. Anti-Cheat: Tab Switching & Window Blur Detection (Alt+Tab, Minimize, Split Screen)
@@ -985,13 +897,218 @@ export const ExamSessionPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Modal Kunci & Pembahasan Ujian (Revisi 4, 5, 6) */}
-        <ExamReviewModal
-          isOpen={showReviewModal}
-          onClose={() => setShowReviewModal(false)}
-          reviewData={reviewData}
-          isLoading={reviewLoading}
-        />
+        {/* Modal Kunci & Pembahasan Ujian */}
+        {showReviewModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-[#070a13]/80 backdrop-blur-md">
+            <div className="w-full max-w-4xl bg-white dark:bg-[#0c1222] border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col text-left">
+              {/* Modal Header */}
+              <div className="px-5 sm:px-6 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0 bg-slate-50/80 dark:bg-white/[0.02]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-2xl border border-indigo-200 dark:border-indigo-500/30">
+                    <BookOpen className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white">
+                      Kunci Jawaban & Pembahasan
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-gray-400">
+                      Evaluasi butir soal, pilihan jawaban Anda, dan penjelasan detail.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+                {reviewLoading ? (
+                  <div className="py-20 text-center space-y-3">
+                    <RefreshCw className="h-8 w-8 text-indigo-600 animate-spin mx-auto" />
+                    <p className="text-xs text-slate-500 font-semibold">Memuat pembahasan lengkap...</p>
+                  </div>
+                ) : (reviewData?.is_session_ended === false || reviewData?.results_hidden === true) ? (
+                  <div className="py-14 text-center space-y-4 bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-500/20 rounded-3xl p-6">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+                      <Clock className="h-7 w-7" />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                        Sesi Ujian Masih Berlangsung
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-gray-300 max-w-md mx-auto mt-2 leading-relaxed font-medium">
+                        {reviewData.message || 'Skor dan pembahasan soal belum dapat diakses. Menunggu jadwal sesi ujian ditutup resmi.'}
+                      </p>
+                    </div>
+                    <div className="pt-2">
+                      <span className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 inline-flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5" />
+                        Akses Terkunci Sementara
+                      </span>
+                    </div>
+                  </div>
+                ) : reviewData ? (
+                  <>
+                    {/* Score summary cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5 rounded-2xl text-center">
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium block">Skor Akhir</span>
+                        <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                          {reviewData.attempt?.total_score ?? 0}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium block">Total Soal</span>
+                        <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                          {reviewData.attempt?.total_questions ?? reviewData.questions?.length ?? 0}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-emerald-600 font-medium block">Jawaban Benar</span>
+                        <span className="text-2xl font-black text-emerald-600 font-mono">
+                          {reviewData.attempt?.total_correct ?? 0}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-rose-600 font-medium block">Jawaban Salah</span>
+                        <span className="text-2xl font-black text-rose-600 font-mono">
+                          {reviewData.attempt?.total_incorrect ?? 0}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Questions review list */}
+                    <div className="space-y-4">
+                      {reviewData.questions?.map((q: any) => {
+                        const isCorrect = q.is_correct;
+                        const hasAnswered = !!q.student_answer;
+
+                        return (
+                          <div
+                            key={q.question_id || q.number}
+                            className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                              !hasAnswered
+                                ? 'border-amber-200 dark:border-amber-500/20 bg-amber-50/20 dark:bg-amber-950/10'
+                                : isCorrect
+                                ? 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/15 dark:bg-emerald-950/10'
+                                : 'border-rose-200 dark:border-rose-500/20 bg-rose-50/15 dark:bg-rose-950/10'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                              <span className="text-xs font-black tracking-wider uppercase font-mono text-slate-700 dark:text-slate-300">
+                                Soal #{q.number}
+                              </span>
+                              <div>
+                                {isCorrect ? (
+                                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30">
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    <span>Benar</span>
+                                  </span>
+                                ) : hasAnswered ? (
+                                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-300 dark:border-rose-500/30">
+                                    <XCircle className="h-3 w-3" />
+                                    <span>Salah</span>
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30">
+                                    <AlertCircle className="h-3 w-3" />
+                                    <span>Tidak Dijawab</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-sm font-medium text-slate-900 dark:text-white leading-relaxed mb-3">
+                              <LaTeXRenderer text={q.soal_text} />
+                              {q.soal_gambar && (
+                                <img src={q.soal_gambar} alt={`Soal ${q.number}`} className="mt-2 max-h-56 rounded-xl border border-slate-200 dark:border-white/10" />
+                              )}
+                            </div>
+
+                            {/* Options */}
+                            <div className="space-y-2 mb-3">
+                              {q.options?.map((opt: any) => {
+                                const isStudentChoice = q.student_answer === opt.key;
+                                const isKey = q.correct_answer === opt.key;
+
+                                let optClass = "border-slate-200 dark:border-white/5 bg-white dark:bg-white/[0.02] text-slate-700 dark:text-gray-300";
+                                if (isKey) {
+                                  optClass = "border-emerald-400 dark:border-emerald-500/50 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-semibold";
+                                } else if (isStudentChoice && !isCorrect) {
+                                  optClass = "border-rose-400 dark:border-rose-500/50 bg-rose-50/80 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200";
+                                }
+
+                                return (
+                                  <div
+                                    key={opt.key}
+                                    className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-xs ${optClass}`}
+                                  >
+                                    <span className={`w-5 h-5 rounded-lg flex items-center justify-center font-bold text-[11px] shrink-0 ${
+                                      isKey
+                                        ? 'bg-emerald-600 text-white'
+                                        : isStudentChoice
+                                        ? 'bg-rose-600 text-white'
+                                        : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300'
+                                    }`}>
+                                      {opt.key}
+                                    </span>
+                                    <div className="flex-1">
+                                      <LaTeXRenderer text={opt.content} />
+                                      {opt.media && (
+                                        <img src={opt.media} alt={opt.key} className="mt-1 max-h-28 rounded-lg" />
+                                      )}
+                                    </div>
+                                    {isKey && (
+                                      <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 shrink-0 ml-auto bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 rounded-md">
+                                        Kunci Jawaban
+                                      </span>
+                                    )}
+                                    {isStudentChoice && !isKey && (
+                                      <span className="text-[10px] uppercase font-bold text-rose-700 dark:text-rose-400 shrink-0 ml-auto bg-rose-100 dark:bg-rose-500/20 px-2 py-0.5 rounded-md">
+                                        Jawaban Anda
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Pembahasan */}
+                            {q.explanation && (
+                              <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl space-y-1">
+                                <div className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-400 text-xs font-bold">
+                                  <Lightbulb className="h-3.5 w-3.5" />
+                                  <span>Pembahasan Soal:</span>
+                                </div>
+                                <div className="text-xs text-slate-700 dark:text-indigo-200/90 leading-relaxed pl-5">
+                                  <LaTeXRenderer text={q.explanation} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3 border-t border-slate-200 dark:border-white/10 flex justify-end shrink-0 bg-slate-50/50 dark:bg-white/[0.02]">
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="py-2 px-5 bg-slate-200 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/15 text-slate-800 dark:text-white font-bold text-xs rounded-xl transition"
+                >
+                  Tutup Pembahasan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1096,264 +1213,33 @@ export const ExamSessionPage: React.FC = () => {
     );
   }
 
-  // Answer stats for navigation & confirmation
-  const answeredCount = questions.filter(q => q.answer_content && Object.keys(q.answer_content).length > 0).length;
-  const flaggedCount = questions.filter(q => q.is_flagged).length;
-  const unansweredCount = questions.length - answeredCount;
+  // Mobile Quick Navigation (10-question chunk along phone right edge)
+  const mobileChunkSize = 10;
+  const currentChunk = Math.floor(currentIdx / mobileChunkSize);
+  const mobileStartIdx = currentChunk * mobileChunkSize;
+  const mobileVisibleQuestions = questions.slice(
+    mobileStartIdx,
+    Math.min(mobileStartIdx + mobileChunkSize, questions.length)
+  );
+  const totalChunks = Math.ceil(questions.length / mobileChunkSize);
 
   return (
-    <div className="min-h-screen bg-slate-100/70 dark:bg-[#070a13] text-slate-800 dark:text-gray-100 flex flex-col transition-colors duration-200 cbt-secure-session select-none cursor-default overflow-x-hidden">
+    <div className="min-h-screen bg-slate-100/70 dark:bg-[#070a13] text-slate-800 dark:text-gray-100 flex flex-col transition-colors duration-200 cbt-secure-session select-none cursor-default">
       
-      {/* Top Session Bar (Revisi 8: Sticky Header) */}
-      <header className="h-16 bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border-b-2 border-[#161C2D] dark:border-[#32363A] px-3 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-30 shadow-xs">
-        <div className="flex items-center gap-2 min-w-0">
-          <Shield className="h-5 w-5 text-[#4379EE] shrink-0" />
-          <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate max-w-[130px] sm:max-w-xs md:max-w-md" title={examTitle}>
-              {examTitle}
-            </h1>
-            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider hidden md:inline">
-              Modul Proteksi Aktif {isFullscreen ? '(Layar Penuh)' : ''}
-            </span>
-          </div>
+      {/* Top Session Bar */}
+      <header className="h-16 glass-panel border-b border-slate-200/80 dark:border-white/5 px-3 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-30">
+        <div className="flex items-center gap-2">
+          <Shield className="h-5 w-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <span className="text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider hidden md:inline">
+            Modul Proteksi Aktif {isFullscreen ? '(Layar Penuh)' : ''}
+          </span>
+          <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 md:hidden">
+            Detik Detik TryOut
+          </span>
         </div>
 
         {/* Sync Timer & Controls widget */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5">
-          
-          {/* Dropdown Menu Navigasi Soal di Kanan (User Request: "ditaruh kanan aja dibikin kaya menu dropdown gitu jangan diatas") */}
-          <div className="relative" ref={dropdownRef}>
-            <button
-              type="button"
-              onClick={() => setShowNavDropdown(prev => !prev)}
-              className={`min-h-[38px] flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] transition active:translate-x-[1px] active:translate-y-[1px] ${
-                showNavDropdown
-                  ? 'bg-[#4379EE] text-white ring-2 ring-[#4379EE]/30'
-                  : 'bg-white dark:bg-[#1A1E22] text-slate-800 dark:text-white hover:bg-slate-50 dark:hover:bg-[#252A2E]'
-              }`}
-              title="Menu Daftar Soal"
-            >
-              <CheckSquare className="h-4 w-4 text-[#4379EE] group-hover:text-white" />
-              <span className="font-mono">{currentIdx + 1}/{questions.length}</span>
-              <span className="hidden sm:inline">Daftar Soal</span>
-              {unansweredCount > 0 ? (
-                <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-md text-[10px] font-mono font-bold animate-pulse">
-                  {unansweredCount}
-                </span>
-              ) : (
-                <span className="hidden sm:inline-block px-1.5 py-0.2 bg-emerald-500 text-white rounded-md text-[10px] font-mono font-bold">
-                  ✓
-                </span>
-              )}
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showNavDropdown ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* Panel Dropdown Melayang di Sisi Kanan (Responsif: Fixed bounded di HP, Absolute di Desktop) */}
-            {showNavDropdown && (
-              <>
-                {/* Mobile Backdrop agar saat disentuh di luar, menu tertutup */}
-                <div
-                  className="sm:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-40 animate-fade-in"
-                  onClick={() => setShowNavDropdown(false)}
-                />
-
-                <div className="fixed inset-x-2.5 top-[68px] sm:top-full sm:right-0 sm:left-auto sm:absolute sm:mt-2 w-auto sm:w-[380px] max-w-[calc(100vw-20px)] sm:max-w-[94vw] bg-white dark:bg-[#1A1E22] border-2 border-[#161C2D] dark:border-[#32363A] rounded-2xl shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] p-3.5 sm:p-4 z-50 space-y-3 sm:space-y-3.5 animate-slideDown max-h-[calc(100vh-85px)] sm:max-h-[82vh] overflow-y-auto">
-                
-                {/* Header Dropdown */}
-                <div className="flex items-center justify-between border-b-2 border-slate-100 dark:border-white/10 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <CheckSquare className="h-4.5 w-4.5 text-[#4379EE]" />
-                    <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                      Daftar Soal
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {/* Opsi Sematkan Panel Samping di Desktop */}
-                    <button
-                      type="button"
-                      onClick={toggleSidebarPin}
-                      className="hidden md:flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg border border-slate-300 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-gray-300 transition"
-                      title={isSidebarPinned ? 'Lepas Sematan (Gunakan Dropdown)' : 'Sematkan ke Sisi Kanan Layar'}
-                    >
-                      {isSidebarPinned ? <PinOff className="h-3 w-3 text-rose-500" /> : <Pin className="h-3 w-3 text-[#4379EE]" />}
-                      <span>{isSidebarPinned ? 'Lepas' : 'Sematkan'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowNavDropdown(false)}
-                      className="p-1 text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-white rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Ringkasan Status */}
-                <div className="text-[11px] font-mono font-bold text-slate-700 dark:text-gray-300 bg-slate-100 dark:bg-white/5 p-2 rounded-xl border border-slate-200 dark:border-white/10 text-center">
-                  Dijawab: <span className="text-emerald-600 font-black">{answeredCount}</span> • Belum: <span className="text-rose-600 font-black">{unansweredCount}</span> • Ragu: <span className="text-amber-600 font-black">{flaggedCount}</span>
-                </div>
-
-                {/* Filter Tabs */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px] font-mono font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setNavFilter('all')}
-                    className={`py-1.5 px-1.5 rounded-xl border transition text-center ${
-                      navFilter === 'all'
-                        ? 'bg-[#161C2D] text-white dark:bg-white dark:text-black border-[#161C2D] shadow-xs'
-                        : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-gray-400 hover:text-slate-900'
-                    }`}
-                  >
-                    Semua ({questions.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNavFilter('unanswered')}
-                    className={`py-1.5 px-1.5 rounded-xl border transition text-center ${
-                      navFilter === 'unanswered'
-                        ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
-                        : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100'
-                    }`}
-                  >
-                    Belum ({unansweredCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNavFilter('answered')}
-                    className={`py-1.5 px-1.5 rounded-xl border transition text-center ${
-                      navFilter === 'answered'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                        : 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
-                    }`}
-                  >
-                    Dijawab ({answeredCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNavFilter('flagged')}
-                    className={`py-1.5 px-1.5 rounded-xl border transition text-center ${
-                      navFilter === 'flagged'
-                        ? 'bg-amber-400 text-amber-950 border-amber-600 font-black shadow-xs'
-                        : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
-                    }`}
-                  >
-                    Ragu ({flaggedCount})
-                  </button>
-                </div>
-
-                {/* Tombol Lompat ke Soal Kosong */}
-                {unansweredCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      jumpToNextUnanswered();
-                      if (window.innerWidth < 768) {
-                        setShowNavDropdown(false);
-                      }
-                    }}
-                    className="w-full py-2 px-3 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border-2 border-rose-400 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_#EF4444] active:translate-x-[1px] active:translate-y-[1px]"
-                  >
-                    <span>⏩ Lompat ke Soal Kosong Berikutnya</span>
-                  </button>
-                )}
-
-                {/* Grid Nomor Soal */}
-                <div className="overflow-y-auto max-h-[46vh] p-1">
-                  <div className="grid grid-cols-5 gap-2">
-                    {questions.map((q, index) => {
-                      const isAnswered = q.answer_content && Object.keys(q.answer_content).length > 0;
-                      const isCurrent = index === currentIdx;
-                      const isFlagged = q.is_flagged;
-
-                      const matchesFilter =
-                        navFilter === 'all' ||
-                        (navFilter === 'unanswered' && !isAnswered) ||
-                        (navFilter === 'answered' && isAnswered) ||
-                        (navFilter === 'flagged' && isFlagged);
-
-                      let colorStyle = "bg-white dark:bg-white/5 border-slate-300 dark:border-white/20 text-slate-700 dark:text-gray-300";
-                      if (isFlagged) {
-                        colorStyle = "bg-amber-400 text-amber-950 border-amber-600 font-black";
-                      } else if (isAnswered) {
-                        colorStyle = "bg-[#10B981] text-white border-[#059669]";
-                      }
-
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => {
-                            setCurrentIdx(index);
-                            if (window.innerWidth < 768) {
-                              setShowNavDropdown(false);
-                            }
-                          }}
-                          className={`h-10 rounded-xl text-xs font-black font-mono transition-all flex items-center justify-center border-2 shadow-xs ${colorStyle} ${
-                            isCurrent
-                              ? 'ring-4 ring-[#4379EE] border-2 border-[#161C2D] scale-105 shadow-[2px_2px_0px_0px_#171717] z-10'
-                              : 'hover:scale-105 active:scale-95'
-                          } ${!matchesFilter ? 'opacity-25 grayscale hover:opacity-100' : ''}`}
-                          title={`Soal ${index + 1}: ${isFlagged ? 'Ragu-ragu' : isAnswered ? 'Sudah Dijawab' : 'Belum Dijawab'}`}
-                        >
-                          {index + 1}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Legend Guide */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t-2 border-slate-100 dark:border-white/10 text-[10px] text-slate-600 dark:text-gray-400 font-bold">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-3 w-3 rounded-md border-2 border-[#4379EE] ring-2 ring-[#4379EE]/40 shrink-0"></span>
-                    <span>Soal Aktif</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-3 w-3 rounded-md bg-[#10B981] border border-[#059669] shrink-0"></span>
-                    <span>Dijawab ({answeredCount})</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-3 w-3 rounded-md bg-amber-400 border border-amber-600 shrink-0"></span>
-                    <span>Ragu-Ragu ({flaggedCount})</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-3 w-3 rounded-md bg-white dark:bg-white/5 border border-slate-300 dark:border-white/20 shrink-0"></span>
-                    <span>Belum Dijawab ({unansweredCount})</span>
-                  </div>
-                </div>
-
-              </div>
-              </>
-            )}
-          </div>
-
-          {/* Font Size Adjuster (A- / A / A+) */}
-          <div className="hidden sm:flex items-center bg-slate-200/60 dark:bg-white/5 border border-slate-300/60 dark:border-white/10 rounded-xl p-0.5 text-xs font-bold font-mono">
-            <button
-              type="button"
-              onClick={() => setFontSize('sm')}
-              className={`px-2 py-1 rounded-lg transition ${fontSize === 'sm' ? 'bg-[#4379EE] text-white shadow-xs' : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}
-              title="Ukuran Teks Kecil"
-            >
-              A-
-            </button>
-            <button
-              type="button"
-              onClick={() => setFontSize('base')}
-              className={`px-2 py-1 rounded-lg transition ${fontSize === 'base' ? 'bg-[#4379EE] text-white shadow-xs' : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}
-              title="Ukuran Teks Normal"
-            >
-              A
-            </button>
-            <button
-              type="button"
-              onClick={() => setFontSize('lg')}
-              className={`px-2 py-1 rounded-lg transition ${fontSize === 'lg' ? 'bg-[#4379EE] text-white shadow-xs' : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}
-              title="Ukuran Teks Besar"
-            >
-              A+
-            </button>
-          </div>
-
+        <div className="flex items-center gap-1.5 sm:gap-3">
           <ThemeToggle compact />
 
           {/* Violation warning badge */}
@@ -1365,50 +1251,21 @@ export const ExamSessionPage: React.FC = () => {
             </div>
           )}
 
-          {/* Live Network & IndexedDB Storage Status Badge */}
-          <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold font-mono border transition ${
-            !isOnline || savingStatus === 'saved_offline'
-              ? 'bg-amber-100 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-xs'
-              : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
-          }`}>
-            {!isOnline || savingStatus === 'saved_offline' ? (
-              <>
-                <HardDrive className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                <span>Tersimpan di Perangkat</span>
-                {pendingSyncCount > 0 && (
-                  <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-md text-[9px] font-black">
-                    {pendingSyncCount}
-                  </span>
-                )}
-              </>
-            ) : savingStatus === 'saving' ? (
-              <>
-                <RefreshCw className="h-3.5 w-3.5 text-[#4379EE] animate-spin" />
-                <span>Menyimpan...</span>
-              </>
-            ) : (
-              <>
-                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Tersimpan</span>
-              </>
-            )}
-          </div>
-
           {/* Timer with Adaptive Urgency Glow */}
-          <div className={`flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-black font-mono border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] transition-all duration-300 min-h-[38px] ${
+          <div className={`flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold font-mono border transition-all duration-300 ${
             timeRemaining <= 60
-              ? 'bg-rose-500 text-white animate-glow-rose'
+              ? 'bg-rose-500/15 border-rose-500 text-rose-600 dark:text-rose-400 animate-glow-rose'
               : timeRemaining <= 300
-              ? 'bg-amber-400 text-amber-950 animate-glow-amber'
-              : 'bg-white dark:bg-[#1A1E22] text-[#4379EE]'
+              ? 'bg-amber-500/15 border-amber-500 text-amber-600 dark:text-amber-400 animate-glow-amber'
+              : 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300'
           }`}>
-            <Clock className={`h-3.5 sm:h-4 w-3.5 sm:w-4 ${timeRemaining <= 300 ? 'animate-bounce' : 'animate-pulse'}`} />
+            <Clock className={`h-3.5 sm:h-4 w-3.5 sm:w-4 ${timeRemaining <= 300 ? 'animate-bounce text-amber-500 dark:text-amber-400' : 'animate-pulse'}`} />
             <span>{formatTime(timeRemaining)}</span>
           </div>
 
           <button
             onClick={handleManualSubmit}
-            className="hidden sm:flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 bg-[#10B981] hover:bg-emerald-600 active:translate-x-[1px] active:translate-y-[1px] text-white rounded-xl text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] transition min-h-[38px]"
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition shadow-md shadow-emerald-600/20 btn-press"
           >
             <Send className="h-3.5 w-3.5" />
             <span>Selesai</span>
@@ -1467,11 +1324,11 @@ export const ExamSessionPage: React.FC = () => {
       {/* Workspace Area */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         
-        {/* Question Workspace (Luas & Bersih Tanpa Bar di Atas Soal) */}
-        <main className="flex-1 p-3.5 sm:p-5 md:p-6 pb-28 md:pb-8 overflow-y-auto flex flex-col justify-between">
-          <div key={currentIdx} className="space-y-4 sm:space-y-5 max-w-4xl mx-auto w-full animate-fade-in">
+        {/* Left Side: Question Workspace */}
+        <main className="flex-1 p-3.5 sm:p-6 overflow-y-auto flex flex-col justify-between">
+          <div key={currentIdx} className="space-y-5 sm:space-y-6 max-w-4xl mx-auto w-full animate-fade-in pr-11 md:pr-0">
             
-            {/* Topic header dengan tombol buka dropdown di sisi kanan */}
+            {/* Topic header with responsive mobile sheet button */}
             <div className="flex flex-wrap justify-between items-center gap-2 text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-wider text-xs sm:text-sm">
@@ -1485,16 +1342,14 @@ export const ExamSessionPage: React.FC = () => {
               </div>
               
               <div className="flex items-center gap-2">
-                {/* Tombol Buka Menu Dropdown Soal (di Sisi Kanan) */}
+                {/* Mobile Question Sheet Button */}
                 <button
                   type="button"
-                  onClick={() => setShowNavDropdown(prev => !prev)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 border-2 border-[#161C2D] dark:border-[#32363A] text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition"
-                  title="Buka Menu Dropdown Daftar Soal"
+                  onClick={() => setShowMobileNavSheet(true)}
+                  className="md:hidden flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-600/20 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold active:scale-95 transition btn-press"
                 >
-                  <CheckSquare className="h-3.5 w-3.5 text-[#4379EE]" />
+                  <CheckSquare className="h-3.5 w-3.5" />
                   <span>Daftar Soal</span>
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showNavDropdown ? 'rotate-180' : ''}`} />
                 </button>
 
                 <span className="px-2.5 py-1 bg-slate-200/60 dark:bg-white/5 border border-slate-300/60 dark:border-white/5 text-slate-600 dark:text-gray-400 rounded-lg font-medium text-[11px] truncate max-w-[150px] sm:max-w-none">
@@ -1505,9 +1360,7 @@ export const ExamSessionPage: React.FC = () => {
 
             {/* Question prompt rendering with LaTeX */}
             <div className="glass-panel p-4 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-white/5 space-y-4 shadow-sm overflow-hidden backdrop-blur-md">
-              <div className={`text-slate-900 dark:text-white font-medium overflow-x-auto ${
-                fontSize === 'sm' ? 'text-sm leading-normal' : fontSize === 'lg' ? 'text-lg sm:text-xl leading-relaxed' : 'text-base leading-relaxed'
-              }`}>
+              <div className="text-slate-900 dark:text-white font-medium overflow-x-auto text-base leading-relaxed">
                 <LaTeXRenderer text={currentQuestion.content} />
               </div>
               {currentQuestion.media_url && (
@@ -1530,17 +1383,17 @@ export const ExamSessionPage: React.FC = () => {
                       <button
                         key={opt.id}
                         onClick={() => handleMCQSingleChange(opt.id)}
-                        className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border-2 text-xs sm:text-sm transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] min-h-[50px] ${
+                        className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border text-xs sm:text-sm transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm min-h-[50px] btn-press ${
                           isSelected
-                            ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-[#4379EE] text-indigo-950 dark:text-white font-bold ring-2 ring-[#4379EE]/25'
-                            : 'bg-white dark:bg-[#1A1E22] border-[#161C2D] dark:border-[#32363A] text-slate-800 dark:text-gray-200 hover:bg-slate-50 dark:hover:bg-[#252A2E]'
+                            ? 'bg-indigo-50/90 dark:bg-indigo-600/25 border-indigo-500 text-indigo-950 dark:text-white font-semibold ring-2 ring-indigo-500/20'
+                            : 'bg-white/80 dark:bg-white/[0.02] border-slate-200/80 dark:border-white/5 text-slate-700 dark:text-gray-300 hover:bg-slate-50 dark:hover:bg-white/[0.04] hover:border-indigo-300 dark:hover:border-indigo-500/30'
                         }`}
                       >
                         <div className="flex items-center gap-3 overflow-x-auto max-w-full">
-                          <span className={`h-7 w-7 shrink-0 rounded-xl text-xs font-black font-mono flex items-center justify-center transition-all border border-black/10 ${
+                          <span className={`h-7 w-7 shrink-0 rounded-xl text-xs font-bold font-mono flex items-center justify-center transition-all ${
                             isSelected
-                              ? 'bg-[#4379EE] text-white shadow-xs'
-                              : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300'
+                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                              : 'bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-gray-300'
                           }`}>
                             {optionLetter}
                           </span>
@@ -1666,139 +1519,48 @@ export const ExamSessionPage: React.FC = () => {
 
           </div>
 
-          {/* Desktop bottom navigation buttons (Revisi 8) */}
-          <div className="hidden md:flex justify-between items-center gap-3 pt-6 border-t-2 border-[#161C2D]/15 dark:border-white/10 mt-8 max-w-4xl mx-auto w-full">
+          {/* Bottom navigation buttons */}
+          <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 sm:gap-3 pt-6 border-t border-slate-200/80 dark:border-white/5 mt-8 max-w-4xl mx-auto w-full pr-11 md:pr-0">
             <button
-              type="button"
               onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
               disabled={currentIdx === 0}
-              className="min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-5 bg-white dark:bg-[#1A1E22] hover:bg-slate-100 dark:hover:bg-[#252A2E] disabled:opacity-40 border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl text-xs sm:text-sm font-black text-slate-800 dark:text-white shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-3 px-4 bg-white/80 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-50 text-slate-700 dark:text-gray-300 border border-slate-200/80 dark:border-white/5 rounded-xl text-xs sm:text-sm font-bold transition shadow-sm active:scale-95 btn-press"
             >
-              <ChevronLeft className="h-4 w-4 stroke-[2.5]" />
+              <ChevronLeft className="h-4 w-4" />
               <span>Sebelumnya</span>
             </button>
 
             <button
-              type="button"
               onClick={toggleFlag}
-              className={`min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-5 border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl text-xs sm:text-sm font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-3 px-4 border rounded-xl text-xs sm:text-sm font-bold transition shadow-sm active:scale-95 btn-press ${
                 currentQuestion.is_flagged
-                  ? 'bg-amber-400 text-amber-950 font-black'
-                  : 'bg-white dark:bg-[#1A1E22] text-slate-700 dark:text-gray-300 hover:bg-slate-50'
+                  ? 'bg-amber-100 dark:bg-yellow-500/20 border-amber-300 dark:border-yellow-500/40 text-amber-900 dark:text-yellow-400'
+                  : 'bg-white/80 dark:bg-white/5 border-slate-200/80 dark:border-white/5 text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <HelpCircle className="h-4 w-4" />
-              <span>{currentQuestion.is_flagged ? 'Batal Ragu-ragu' : 'Ragu-ragu'}</span>
+              <span>{currentQuestion.is_flagged ? 'Batal Ragu' : 'Ragu-Ragu'}</span>
             </button>
 
-            {currentIdx === questions.length - 1 ? (
-              <button
-                type="button"
-                onClick={handleManualSubmit}
-                className="min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-6 bg-[#10B981] hover:bg-emerald-600 text-white border-2 border-[#161C2D] rounded-xl text-xs sm:text-sm font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition"
-              >
-                <Send className="h-4 w-4" />
-                <span>Selesai & Kumpulkan</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
-                className="min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-5 bg-[#4379EE] hover:bg-[#3465D9] text-white border-2 border-[#161C2D] rounded-xl text-xs sm:text-sm font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition"
-              >
-                <span>Selanjutnya</span>
-                <ChevronRight className="h-4 w-4 stroke-[2.5]" />
-              </button>
-            )}
+            <button
+              onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
+              disabled={currentIdx === questions.length - 1}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-3 px-4 bg-white/80 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-50 text-slate-700 dark:text-gray-300 border border-slate-200/80 dark:border-white/5 rounded-xl text-xs sm:text-sm font-bold transition shadow-sm active:scale-95 btn-press"
+            >
+              <span>Selanjutnya</span>
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
         </main>
 
-        {/* Question Navigator Sidebar (Desktop 2-Kolom: Ditampilkan di sisi kanan saat disematkan) */}
-        {isSidebarPinned && (
-          <aside className="hidden md:block w-72 lg:w-80 bg-white/70 dark:bg-[#0c1222]/70 backdrop-blur-md border-l-2 border-[#161C2D] dark:border-[#32363A] p-4 lg:p-5 shrink-0 overflow-y-auto">
-            <div className="space-y-4">
-              
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                    <CheckSquare className="h-4.5 w-4.5 text-[#4379EE]" />
-                    <span>Panel Navigasi</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleSidebarPin}
-                    className="flex items-center gap-1 px-2 py-1 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-300 dark:border-white/10 rounded-lg text-[10px] font-bold text-slate-700 dark:text-gray-300 transition"
-                    title="Lepas sematan panel (gunakan menu dropdown di kanan)"
-                  >
-                    <PinOff className="h-3 w-3 text-rose-500" />
-                    <span>Tutup Panel</span>
-                  </button>
-                </div>
-
-                {/* Revisi 5: Ringkasan di atas grid */}
-                <div className="text-[11px] font-mono font-bold text-slate-700 dark:text-gray-300 bg-slate-100 dark:bg-white/5 p-2 rounded-xl border border-slate-200 dark:border-white/10">
-                  Dijawab: <span className="text-emerald-600 font-black">{answeredCount}</span> • Belum: <span className="text-rose-600 font-black">{unansweredCount}</span> • Ragu: <span className="text-amber-600 font-black">{flaggedCount}</span>
-                </div>
-              </div>
-
-            {/* Filter Buttons di Sidebar Desktop */}
-            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono font-bold">
-              <button
-                type="button"
-                onClick={() => setNavFilter('all')}
-                className={`py-1.5 px-2 rounded-xl border transition text-center ${
-                  navFilter === 'all'
-                    ? 'bg-[#161C2D] text-white dark:bg-white dark:text-black border-[#161C2D] shadow-xs'
-                    : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-gray-400 hover:text-slate-900'
-                }`}
-              >
-                Semua ({questions.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setNavFilter('unanswered')}
-                className={`py-1.5 px-2 rounded-xl border transition text-center ${
-                  navFilter === 'unanswered'
-                    ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
-                    : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100'
-                }`}
-              >
-                Belum ({unansweredCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setNavFilter('answered')}
-                className={`py-1.5 px-2 rounded-xl border transition text-center ${
-                  navFilter === 'answered'
-                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                    : 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
-                }`}
-              >
-                Dijawab ({answeredCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setNavFilter('flagged')}
-                className={`py-1.5 px-2 rounded-xl border transition text-center ${
-                  navFilter === 'flagged'
-                    ? 'bg-amber-400 text-amber-950 border-amber-600 font-black shadow-xs'
-                    : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
-                }`}
-              >
-                Ragu ({flaggedCount})
-              </button>
+        {/* Right Side: Question Navigator Sidebar (Desktop / Tablet) */}
+        <aside className="hidden md:block w-72 lg:w-80 glass-panel border-l border-slate-200/80 dark:border-white/5 p-5 shrink-0 overflow-y-auto">
+          <div className="space-y-6">
+            
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-gray-400 uppercase tracking-wider">
+              <CheckSquare className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Navigasi Soal Ujian</span>
             </div>
-
-            {/* Quick Jump Action Button */}
-            {unansweredCount > 0 && (
-              <button
-                type="button"
-                onClick={jumpToNextUnanswered}
-                className="w-full py-2 px-3 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border-2 border-rose-400 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_#EF4444] active:translate-x-[1px] active:translate-y-[1px]"
-              >
-                <span>⏩ Lompat ke Soal Kosong</span>
-              </button>
-            )}
 
             {/* Grid of numbers */}
             <div className="grid grid-cols-5 gap-2">
@@ -1807,29 +1569,19 @@ export const ExamSessionPage: React.FC = () => {
                 const isCurrent = index === currentIdx;
                 const isFlagged = q.is_flagged;
 
-                const matchesFilter =
-                  navFilter === 'all' ||
-                  (navFilter === 'unanswered' && !isAnswered) ||
-                  (navFilter === 'answered' && isAnswered) ||
-                  (navFilter === 'flagged' && isFlagged);
-
-                let colorStyle = "bg-white dark:bg-white/5 border-slate-300 dark:border-white/20 text-slate-700 dark:text-gray-300";
-                if (isFlagged) {
-                  colorStyle = "bg-amber-400 text-amber-950 border-amber-600 font-black";
-                } else if (isAnswered) {
-                  colorStyle = "bg-[#10B981] text-white border-[#059669]";
-                }
-
                 return (
                   <button
                     key={index}
                     onClick={() => setCurrentIdx(index)}
-                    className={`h-10 rounded-xl text-xs font-black font-mono transition-all flex items-center justify-center border-2 shadow-xs ${colorStyle} ${
+                    className={`h-11 rounded-xl text-xs font-bold font-mono transition flex items-center justify-center border shadow-sm btn-press ${
                       isCurrent
-                        ? 'ring-4 ring-[#4379EE] border-2 border-[#161C2D] scale-105 shadow-[2px_2px_0px_0px_#171717] z-10'
-                        : 'hover:scale-105 active:scale-95'
-                    } ${!matchesFilter ? 'opacity-25 grayscale hover:opacity-100' : ''}`}
-                    title={`Soal ${index + 1}: ${isFlagged ? 'Ragu-ragu' : isAnswered ? 'Sudah Dijawab' : 'Belum Dijawab'}`}
+                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30'
+                        : isFlagged
+                        ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-yellow-500/20 dark:border-yellow-500/30 dark:text-yellow-400'
+                        : isAnswered
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-500/20 dark:border-emerald-500/30 dark:text-emerald-400'
+                        : 'bg-white/80 dark:bg-white/5 border-slate-200/80 dark:border-white/5 text-slate-600 dark:text-gray-400 hover:border-indigo-300 dark:hover:text-white'
+                    }`}
                   >
                     {index + 1}
                   </button>
@@ -1838,28 +1590,28 @@ export const ExamSessionPage: React.FC = () => {
             </div>
 
             {/* Legend guide */}
-            <div className="border-t-2 border-slate-200 dark:border-white/10 pt-4 space-y-2 text-[11px] text-slate-600 dark:text-gray-400 font-bold">
+            <div className="border-t border-slate-200/80 dark:border-white/5 pt-4 space-y-2.5 text-[11px] text-slate-600 dark:text-gray-400 font-medium">
               <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-md border-2 border-[#4379EE] ring-2 ring-[#4379EE]/40 shrink-0"></span>
-                <span>Soal Aktif Saat Ini</span>
+                <span className="h-3 w-3 rounded bg-indigo-600 border border-indigo-500 shrink-0"></span>
+                <span>Soal Aktif saat ini</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-md bg-[#10B981] border border-[#059669] shrink-0"></span>
-                <span>Sudah Dijawab ({answeredCount})</span>
+                <span className="h-3 w-3 rounded bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-500/30 shrink-0"></span>
+                <span>Telah Terjawab</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-md bg-amber-400 border border-amber-600 shrink-0"></span>
-                <span>Ragu-Ragu ({flaggedCount})</span>
+                <span className="h-3 w-3 rounded bg-amber-100 dark:bg-yellow-500/20 border border-amber-300 dark:border-yellow-500/30 shrink-0"></span>
+                <span>Ragu-Ragu / Bendera</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-md bg-white dark:bg-white/5 border border-slate-300 dark:border-white/20 shrink-0"></span>
-                <span>Belum Dijawab ({unansweredCount})</span>
+                <span className="h-3 w-3 rounded bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 shrink-0"></span>
+                <span>Belum Terjawab</span>
               </div>
             </div>
 
             {/* Violation Alert Warning box */}
             {violationCount > 0 && (
-              <div className="p-3 bg-rose-50 dark:bg-red-950/20 border-2 border-rose-300 dark:border-red-500/30 rounded-2xl text-rose-700 dark:text-red-300 text-xs flex gap-2 shadow-sm">
+              <div className="p-3 bg-rose-50 dark:bg-red-950/20 border border-rose-200 dark:border-red-500/25 rounded-2xl text-rose-700 dark:text-red-300 text-xs flex gap-2 shadow-sm">
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 animate-bounce text-rose-600 dark:text-red-400" />
                 <div>
                   <span className="font-bold block">Peringatan Keamanan!</span>
@@ -1870,149 +1622,228 @@ export const ExamSessionPage: React.FC = () => {
 
           </div>
         </aside>
+
+        {/* Mobile Persistent 10-Question Dock (Tepi Kanan Layar HP) */}
+        {questions.length > 0 && (
+          <aside
+            aria-label="Navigasi Cepat 10 Nomor Soal"
+            className="md:hidden fixed right-1.5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center select-none"
+          >
+            <div className="bg-white/95 dark:bg-[#161C24]/95 backdrop-blur-md p-1 rounded-2xl border-2 border-[#030810] dark:border-[#32363A] shadow-[2.5px_2.5px_0px_#171717] dark:shadow-[2.5px_2.5px_0px_#000] flex flex-col items-center gap-1 max-h-[82vh]">
+              
+              {/* Range badge + Previous Chunk Button if > 10 questions */}
+              {totalChunks > 1 && (
+                <div className="flex flex-col items-center pb-0.5 border-b border-slate-200/80 dark:border-white/10 w-full">
+                  <button
+                    type="button"
+                    disabled={currentChunk === 0}
+                    onClick={() => setCurrentIdx(Math.max(0, mobileStartIdx - 1))}
+                    className="p-0.5 text-slate-400 hover:text-slate-800 dark:hover:text-white disabled:opacity-20 disabled:pointer-events-none transition cursor-pointer"
+                    title="10 Soal Sebelumnya"
+                  >
+                    <ChevronsUp className="h-3 w-3" />
+                  </button>
+                  <span className="text-[7.5px] font-black text-slate-500 dark:text-gray-400 font-mono tracking-tighter leading-none">
+                    {mobileStartIdx + 1}-{Math.min(mobileStartIdx + mobileChunkSize, questions.length)}
+                  </span>
+                </div>
+              )}
+
+              {/* 10 Compact Number Chips */}
+              <div className="flex flex-col gap-1 overflow-y-auto no-scrollbar py-0.5">
+                {mobileVisibleQuestions.map((q, localIdx) => {
+                  const globalIdx = mobileStartIdx + localIdx;
+                  const isAnswered = q.answer_content && Object.keys(q.answer_content).length > 0;
+                  const isCurrent = globalIdx === currentIdx;
+                  const isFlagged = q.is_flagged;
+
+                  return (
+                    <button
+                      key={globalIdx}
+                      type="button"
+                      onClick={() => setCurrentIdx(globalIdx)}
+                      className={`w-7 h-7 rounded-lg text-[10px] font-black font-mono transition-all flex items-center justify-center border cursor-pointer ${
+                        isCurrent
+                          ? 'bg-[#38B1ED] border-[#030810] text-white shadow-[1px_1px_0px_#000] scale-105 z-10'
+                          : isFlagged
+                          ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-yellow-500/20 dark:border-yellow-500/30 dark:text-yellow-400 font-bold'
+                          : isAnswered
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-500/20 dark:border-emerald-500/30 dark:text-emerald-400 font-bold'
+                          : 'bg-white/90 dark:bg-[#1A1E22] border-slate-300/80 dark:border-white/10 text-slate-700 dark:text-gray-300 hover:border-[#38B1ED]'
+                      }`}
+                      title={`Pindah ke soal nomor ${globalIdx + 1}`}
+                    >
+                      {globalIdx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Next Chunk Arrow if more chunks */}
+              {totalChunks > 1 && mobileStartIdx + mobileChunkSize < questions.length && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentIdx(mobileStartIdx + mobileChunkSize)}
+                  className="p-0.5 text-slate-400 hover:text-slate-800 dark:hover:text-white transition cursor-pointer"
+                  title="10 Soal Selanjutnya"
+                >
+                  <ChevronsDown className="h-3 w-3" />
+                </button>
+              )}
+
+              {/* Separator */}
+              <div className="w-full h-[1px] bg-slate-200/80 dark:bg-white/10 my-0.5" />
+
+              {/* Button: Pop up all numbers modal */}
+              <button
+                type="button"
+                onClick={() => setShowMobileNavSheet(true)}
+                className="w-7 py-1.5 flex flex-col items-center justify-center bg-[#38B1ED] hover:bg-[#1394D5] text-white rounded-lg border border-[#030810] shadow-[1.5px_1.5px_0px_#000] active:translate-x-[0.5px] active:translate-y-[0.5px] transition-all cursor-pointer group"
+                title="Buka seluruh nomor soal ujian"
+              >
+                <LayoutGrid className="h-3.5 w-3.5 stroke-[2.5] group-hover:scale-110 transition-transform" />
+                <span className="text-[7px] font-black uppercase tracking-tight mt-0.5 leading-none">
+                  Semua
+                </span>
+              </button>
+
+            </div>
+          </aside>
+        )}
+
+      </div>
+
+      {/* Mobile Question Navigator Sheet (HP / Mobile Screens) */}
+      {showMobileNavSheet && (
+        <div className="md:hidden fixed inset-0 z-50 bg-slate-900/60 dark:bg-[#070a13]/90 backdrop-blur-md flex flex-col justify-end animate-fade-in">
+          <div className="bg-white dark:bg-[#0f172a] rounded-t-3xl border-t border-slate-200 dark:border-white/10 p-5 max-h-[80vh] flex flex-col space-y-4 shadow-2xl animate-slideDown">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Daftar Nomor Soal Ujian</h3>
+              </div>
+              <button
+                onClick={() => setShowMobileNavSheet(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto max-h-[50vh] p-1">
+              <div className="grid grid-cols-5 sm:grid-cols-6 gap-2">
+                {questions.map((q, index) => {
+                  const isAnswered = q.answer_content && Object.keys(q.answer_content).length > 0;
+                  const isCurrent = index === currentIdx;
+                  const isFlagged = q.is_flagged;
+
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => {
+                        setCurrentIdx(index);
+                        setShowMobileNavSheet(false);
+                      }}
+                      className={`h-11 rounded-xl text-xs font-bold font-mono transition flex items-center justify-center border shadow-sm ${
+                        isCurrent
+                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30'
+                          : isFlagged
+                          ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-yellow-500/20 dark:border-yellow-500/30 dark:text-yellow-400'
+                          : isAnswered
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-500/20 dark:border-emerald-500/30 dark:text-emerald-400'
+                          : 'bg-white/80 dark:bg-white/5 border-slate-200/80 dark:border-white/5 text-slate-600 dark:text-gray-400 hover:border-indigo-300 dark:hover:text-white'
+                      }`}
+                    >
+                      {index + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-white/5 text-[10px] text-slate-600 dark:text-gray-400 font-medium">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded bg-indigo-600 shrink-0"></span>
+                <span>Soal Aktif</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded bg-emerald-500 shrink-0"></span>
+                <span>Terjawab</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded bg-amber-400 shrink-0"></span>
+                <span>Ragu-Ragu</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded bg-slate-300 dark:bg-white/20 shrink-0"></span>
+                <span>Belum</span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
-      </div>
-
-      {/* Mobile Sticky Bottom Bar (Revisi 8) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border-t-2 border-[#161C2D] dark:border-[#32363A] p-2 sm:p-3 shadow-[0px_-4px_16px_rgba(0,0,0,0.12)]">
-        <div className="flex items-center justify-between gap-2 max-w-md mx-auto">
-          <button
-            type="button"
-            onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
-            disabled={currentIdx === 0}
-            className="min-h-[44px] flex-1 flex items-center justify-center gap-1 py-2 px-2.5 bg-white dark:bg-[#1A1E22] hover:bg-slate-100 dark:hover:bg-[#252A2E] disabled:opacity-40 border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl text-xs font-black text-slate-800 dark:text-white shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition"
-          >
-            <ChevronLeft className="h-4 w-4 stroke-[2.5]" />
-            <span>Prev</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={toggleFlag}
-            className={`min-h-[44px] flex-1 flex items-center justify-center gap-1 py-2 px-2.5 border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl text-xs font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition ${
-              currentQuestion.is_flagged
-                ? 'bg-amber-400 text-amber-950 font-black'
-                : 'bg-white dark:bg-[#1A1E22] text-slate-700 dark:text-gray-300'
-            }`}
-          >
-            <HelpCircle className="h-4 w-4" />
-            <span>{currentQuestion.is_flagged ? 'Ragu' : 'Ragu?'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowNavDropdown(prev => !prev)}
-            className="min-h-[44px] flex-1 flex items-center justify-center gap-1 py-2 px-2.5 bg-indigo-50 dark:bg-indigo-950/40 text-[#4379EE] dark:text-indigo-300 border-2 border-[#161C2D] dark:border-[#32363A] rounded-xl text-xs font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition font-mono"
-            title="Buka Menu Dropdown Soal"
-          >
-            <CheckSquare className="h-4 w-4" />
-            <span>{currentIdx + 1}/{questions.length}</span>
-            <ChevronDown className={`h-3 w-3 transition-transform ${showNavDropdown ? 'rotate-180' : ''}`} />
-          </button>
-
-          {currentIdx === questions.length - 1 ? (
-            <button
-              type="button"
-              onClick={handleManualSubmit}
-              className="min-h-[44px] flex-1.2 flex items-center justify-center gap-1 py-2 px-3 bg-[#10B981] hover:bg-emerald-600 text-white border-2 border-[#161C2D] rounded-xl text-xs font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition"
-            >
-              <Send className="h-3.5 w-3.5" />
-              <span>Selesai</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
-              className="min-h-[44px] flex-1 flex items-center justify-center gap-1 py-2 px-2.5 bg-[#4379EE] hover:bg-[#3465D9] text-white border-2 border-[#161C2D] rounded-xl text-xs font-black shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition"
-            >
-              <span>Next</span>
-              <ChevronRight className="h-4 w-4 stroke-[2.5]" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Floating Quick Navigation Pill on Mobile/Tablet */}
-      <button
-        type="button"
-        onClick={() => setShowNavDropdown(prev => !prev)}
-        className="md:hidden fixed bottom-20 right-3.5 z-20 bg-white/95 dark:bg-[#1A1E22]/95 backdrop-blur-md border-2 border-[#161C2D] dark:border-[#32363A] shadow-[3px_3px_0px_0px_#171717] dark:shadow-[3px_3px_0px_0px_#000000] rounded-full px-3 py-2 flex items-center gap-2 text-xs font-black text-slate-900 dark:text-white active:scale-95 transition"
-        title="Buka Menu Dropdown Soal"
-      >
-        <CheckSquare className="h-4 w-4 text-[#4379EE]" />
-        <span>Soal ({answeredCount}/{questions.length})</span>
-        {unansweredCount > 0 ? (
-          <span className="px-1.5 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-mono font-bold animate-pulse">
-            {unansweredCount} Kosong
-          </span>
-        ) : (
-          <span className="px-1.5 py-0.5 bg-emerald-500 text-white rounded-full text-[10px] font-mono font-bold">
-            Lengkap
-          </span>
-        )}
-        <ChevronDown className={`h-3 w-3 transition-transform ${showNavDropdown ? 'rotate-180' : ''}`} />
-      </button>
-
-      {/* Confirmation Modal for Final Submit (Revisi 8) */}
+      {/* Confirmation Modal for Final Submit */}
       {showSubmitConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 dark:bg-black/85 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-[#1A1E22] rounded-3xl p-6 shadow-[4px_4px_0px_0px_#171717] dark:shadow-[4px_4px_0px_0px_#000000] relative border-2 border-[#161C2D] dark:border-[#32363A] space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 dark:bg-[#070a13]/80 backdrop-blur-md">
+          <div className="w-full max-w-md glass-panel rounded-3xl p-6 shadow-2xl relative border border-slate-200/80 dark:border-white/10 space-y-5">
             <button
               onClick={() => setShowSubmitConfirmModal(false)}
-              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 dark:hover:text-white"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5" />
             </button>
 
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-[#10B981] text-white rounded-2xl border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717]">
+              <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-2xl border border-emerald-200 dark:border-emerald-500/20">
                 <Send className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">Konfirmasi Selesai Ujian</h3>
-                <p className="text-xs text-slate-500 dark:text-gray-400 font-medium">Pastikan seluruh lembar soal telah Anda periksa.</p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">Konfirmasi Selesai Ujian</h3>
+                <p className="text-xs text-slate-500 dark:text-gray-400">Pastikan seluruh jawaban telah Anda periksa.</p>
               </div>
             </div>
 
             {/* Statistik Jawaban */}
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border-2 border-emerald-500 rounded-2xl shadow-[2px_2px_0px_0px_#10B981]">
-                <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono block">
-                  {answeredCount}
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl">
+                <span className="text-lg font-bold text-emerald-700 dark:text-emerald-400 font-mono block">
+                  {questions.filter(q => q.answer_content && Object.keys(q.answer_content).length > 0).length}
                 </span>
-                <span className="text-[10px] text-emerald-700 dark:text-emerald-300 uppercase font-black">Terjawab</span>
+                <span className="text-[10px] text-emerald-600 dark:text-gray-400 uppercase font-semibold">Terjawab</span>
               </div>
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border-2 border-rose-500 rounded-2xl shadow-[2px_2px_0px_0px_#EF4444]">
-                <span className="text-xl font-black text-rose-600 dark:text-rose-400 font-mono block">
-                  {unansweredCount}
+              <div className="p-3 bg-rose-50 dark:bg-red-500/10 border border-rose-200 dark:border-red-500/20 rounded-2xl">
+                <span className="text-lg font-bold text-rose-700 dark:text-red-400 font-mono block">
+                  {questions.filter(q => !q.answer_content || Object.keys(q.answer_content).length === 0).length}
                 </span>
-                <span className="text-[10px] text-rose-700 dark:text-rose-300 uppercase font-black">Kosong</span>
+                <span className="text-[10px] text-rose-600 dark:text-gray-400 uppercase font-semibold">Kosong</span>
               </div>
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border-2 border-amber-500 rounded-2xl shadow-[2px_2px_0px_0px_#F59E0B]">
-                <span className="text-xl font-black text-amber-600 dark:text-amber-400 font-mono block">
-                  {flaggedCount}
+              <div className="p-3 bg-amber-50 dark:bg-yellow-500/10 border border-amber-200 dark:border-yellow-500/20 rounded-2xl">
+                <span className="text-lg font-bold text-amber-700 dark:text-yellow-400 font-mono block">
+                  {questions.filter(q => q.is_flagged).length}
                 </span>
-                <span className="text-[10px] text-amber-700 dark:text-amber-300 uppercase font-black">Ragu-ragu</span>
+                <span className="text-[10px] text-amber-600 dark:text-gray-400 uppercase font-semibold">Ragu-ragu</span>
               </div>
             </div>
 
             {(() => {
-              if (unansweredCount > 0) {
+              const emptyCount = questions.filter(q => !q.answer_content || Object.keys(q.answer_content).length === 0).length;
+              if (emptyCount > 0) {
                 return (
-                  <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border-2 border-rose-400 rounded-2xl text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2.5">
+                  <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/30 rounded-2xl text-rose-800 dark:text-rose-300 text-xs flex items-start gap-3">
                     <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
                     <div>
-                      <p className="font-black text-sm">Masih ada {unansweredCount} soal yang belum dijawab!</p>
-                      <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-0.5 font-medium leading-relaxed">
-                        Apakah yakin ingin mengumpulkan sekarang? Lembar soal yang kosong akan bernilai 0.
+                      <p className="font-bold text-sm">Masih ada {emptyCount} soal yang belum dijawab.</p>
+                      <p className="text-[11px] text-rose-700 dark:text-rose-400 mt-0.5">
+                        Apakah yakin ingin mengumpulkan? Lembar soal yang kosong akan bernilai 0.
                       </p>
                     </div>
                   </div>
                 );
               }
               return (
-                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border-2 border-emerald-400 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 font-bold">
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
                   <Check className="h-4 w-4 shrink-0 text-emerald-600" />
                   <span>Semua soal ({questions.length}) telah Anda jawab dengan lengkap!</span>
                 </div>
@@ -2020,18 +1851,18 @@ export const ExamSessionPage: React.FC = () => {
             })()}
 
             {submitError && (
-              <div className="p-3 bg-rose-50 dark:bg-red-950/40 border-2 border-rose-400 text-rose-700 dark:text-red-300 rounded-2xl text-xs flex items-start gap-2 font-medium">
+              <div className="p-3 bg-rose-50 dark:bg-red-950/40 border border-rose-200 dark:border-red-500/30 text-rose-700 dark:text-red-300 rounded-2xl text-xs flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600" />
                 <span>{submitError}</span>
               </div>
             )}
 
-            <div className="flex gap-2.5 pt-2 border-t-2 border-slate-100 dark:border-white/5">
+            <div className="flex gap-3 pt-2 border-t border-slate-200/80 dark:border-white/5">
               <button
                 type="button"
                 onClick={() => setShowSubmitConfirmModal(false)}
                 disabled={isSubmitting}
-                className="flex-1 min-h-[44px] py-2 px-3 bg-white dark:bg-[#1A1E22] hover:bg-slate-100 dark:hover:bg-[#252A2E] text-slate-800 dark:text-white rounded-xl text-xs font-black border-2 border-[#161C2D] dark:border-[#32363A] shadow-[2px_2px_0px_0px_#171717] transition disabled:opacity-50"
+                className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
               >
                 Kembali ke Soal
               </button>
@@ -2039,7 +1870,7 @@ export const ExamSessionPage: React.FC = () => {
                 type="button"
                 onClick={handleConfirmFinalSubmit}
                 disabled={isSubmitting}
-                className="flex-1 min-h-[44px] py-2 px-3 bg-[#10B981] hover:bg-emerald-600 text-white rounded-xl text-xs font-black border-2 border-[#161C2D] shadow-[2px_2px_0px_0px_#171717] active:translate-x-[1px] active:translate-y-[1px] transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
@@ -2048,7 +1879,7 @@ export const ExamSessionPage: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Check className="h-4 w-4 stroke-[2.5]" />
+                    <Check className="h-4 w-4" />
                     <span>Tetap Kumpulkan</span>
                   </>
                 )}

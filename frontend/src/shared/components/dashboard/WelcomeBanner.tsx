@@ -52,21 +52,21 @@ export const WelcomeBanner: React.FC<WelcomeBannerProps> = ({
           </p>
         </div>
 
-        {/* Right: Quick metrics (Grid 3 kolom di mobile / flex di desktop - Revisi 7) */}
-        <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 md:gap-4 shrink-0 w-full lg:w-auto">
+        {/* Right: Quick metrics / Action button */}
+        <div className="flex flex-wrap items-center gap-3 md:gap-4 shrink-0">
           {metrics.map((m, idx) => (
             <div 
               key={idx} 
-              className={`p-2.5 sm:px-4 sm:py-3 rounded-2xl border-2 border-[#161C2D] dark:border-[#32363A] transition text-center sm:text-left flex-1 min-w-0 shadow-[2px_2px_0px_0px_#171717] ${
+              className={`px-4 py-3 rounded-2xl border backdrop-blur-md transition ${
                 m.highlight 
-                  ? 'bg-[#4379EE] text-white shadow-lg shadow-indigo-600/20' 
-                  : 'bg-white dark:bg-[#1A1E22] text-slate-800 dark:text-gray-200'
+                  ? 'bg-indigo-600 text-white dark:bg-indigo-600/30 dark:border-indigo-400/40 shadow-lg shadow-indigo-600/20' 
+                  : 'bg-white/90 dark:bg-white/[0.04] border-indigo-100 dark:border-white/10 text-slate-800 dark:text-gray-200 shadow-sm'
               }`}
             >
-              <p className={`text-[9px] sm:text-[10px] uppercase tracking-wider font-black truncate ${m.highlight ? 'text-indigo-100' : 'text-slate-500 dark:text-gray-400'}`}>
+              <p className={`text-[10px] uppercase tracking-wider font-semibold ${m.highlight ? 'text-indigo-100' : 'text-slate-500 dark:text-gray-400'}`}>
                 {m.label}
               </p>
-              <p className={`text-base sm:text-lg md:text-xl font-black font-mono mt-0.5 truncate ${m.highlight ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+              <p className={`text-lg md:text-xl font-black font-mono mt-0.5 ${m.highlight ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
                 {m.value}
               </p>
             </div>

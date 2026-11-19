@@ -508,18 +508,18 @@ export const TeacherDashboard: React.FC = () => {
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
-                              onClick={() => navigate('/teacher/reports')}
+                              onClick={() => navigate('/teacher/exams')}
                               className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300 rounded-xl text-[11px] font-bold transition btn-press"
-                              title="Lihat Laporan Nilai"
+                              title="Kelola Paket Soal & Jadwal"
                             >
-                              Laporan
+                              Kelola
                             </button>
                             <button
-                              onClick={() => navigate('/teacher/grading')}
+                              onClick={() => navigate(`/teacher/reports?exam_id=${ex.id}`)}
                               className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[11px] font-bold transition shadow-xs btn-press"
-                              title="Koreksi Jawaban Essay"
+                              title="Lihat Laporan & Rincian Nilai Siswa"
                             >
-                              Koreksi
+                              Laporan
                             </button>
                           </div>
                         </td>
