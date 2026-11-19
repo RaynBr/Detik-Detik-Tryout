@@ -79,6 +79,8 @@ class ExamAttemptController extends Controller
         $mapExam = function ($a) use ($user) {
             $attempt = AssessmentJawabanPilgan::where('idassessment', $a->idassessment)
                 ->where('iduser', $user->iduser)
+                ->orderByRaw("CASE WHEN komentar = 'submitted' THEN 0 ELSE 1 END")
+                ->orderByDesc('idassessment_jawaban_pilgan')
                 ->first();
 
             $startTime = $a->tanggal_mulai_assessment ?: now()->subDays(1)->format('Y-m-d H:i:s');
@@ -144,7 +146,7 @@ class ExamAttemptController extends Controller
                     'status' => $attemptStatus,
                     'started_at' => $attempt->tgl_input_time,
                     'submitted_at' => ($attempt->komentar === 'submitted') ? $attempt->tgl_input_time : null,
-                    'total_score' => ($attempt->komentar === 'submitted' && $isSessionEnded) ? (float) $attempt->nilai : null,
+                    'total_score' => ($attempt->komentar === 'submitted' && $attempt->nilai !== null) ? (float) $attempt->nilai : null,
                     'is_session_ended' => $isSessionEnded,
                 ] : null
             ];

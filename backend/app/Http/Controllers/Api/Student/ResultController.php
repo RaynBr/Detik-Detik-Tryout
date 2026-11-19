@@ -93,13 +93,18 @@ class ResultController extends Controller
                 return false;
             });
 
+        $isSessionEnded = true;
         if ($matchedGroup && $matchedGroup->end_time) {
             $sessionEndTime = \Carbon\Carbon::parse($matchedGroup->end_time);
+            $isSessionEnded = now()->gte($sessionEndTime);
         } elseif ($assessment->tanggal_batas_assessment) {
             $sessionEndTime = \Carbon\Carbon::parse($assessment->tanggal_batas_assessment);
+            if ($sessionEndTime->diffInDays(now()) > 7) {
+                $isSessionEnded = true;
+            } else {
+                $isSessionEnded = now()->gte($sessionEndTime);
+            }
         }
-
-        $isSessionEnded = $sessionEndTime ? now()->gte($sessionEndTime) : true;
 
         if (!$isSessionEnded) {
             return response()->json([

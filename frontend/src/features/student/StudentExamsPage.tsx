@@ -271,9 +271,13 @@ export const StudentExamsPage: React.FC = () => {
   const scoredExams = finishedExams.filter(e => e.attempt?.total_score !== null && e.attempt?.total_score !== undefined);
   const avgScore = scoredExams.length > 0
     ? Math.round(scoredExams.reduce((acc, curr) => acc + (curr.attempt?.total_score || 0), 0) / scoredExams.length)
-    : 100;
+    : 0;
 
-  // KKM Stats per Mapel
+  // Total available (not yet submitted) exams count
+  const totalAssignedExams = Math.max(statSourceExams.length, paginationMeta.total || 0, exams.length);
+  const availableExamsCount = Math.max(0, totalAssignedExams - finishedExams.length);
+
+  // KKM Stats per Mapel / Ujian
   const passedKkmExams = scoredExams.filter(e => (e.attempt?.total_score ?? 0) >= KKM_STANDARD);
   const failedKkmExams = scoredExams.filter(e => (e.attempt?.total_score ?? 0) < KKM_STANDARD);
   const tuntasCount = passedKkmExams.length;
@@ -612,7 +616,7 @@ export const StudentExamsPage: React.FC = () => {
           subtitle="Kerjakan ujian dengan jujur, teliti, dan pastikan koneksi internet Anda stabil selama sesi berlangsung."
           roleBadge="Portal Peserta Ujian"
           metrics={[
-            { label: 'Ujian Tersedia', value: exams.length - finishedExams.length, highlight: (exams.length - finishedExams.length) > 0 },
+            { label: 'Ujian Tersedia', value: availableExamsCount, highlight: availableExamsCount > 0 },
             { label: 'Ujian Selesai', value: finishedExams.length },
             { label: 'Rata-rata Skor', value: scoredExams.length > 0 ? avgScore : '-' }
           ]}
@@ -663,7 +667,12 @@ export const StudentExamsPage: React.FC = () => {
                 centerSublabel="Rata-rata Skor"
                 items={[
                   { label: 'Rata-rata Nilai', percentage: avgScore, color: '#6366f1' },
-                  { label: 'Ujian Selesai', percentage: Math.round((finishedExams.length / Math.max(exams.length, 1)) * 100), color: '#10b981', count: `${finishedExams.length}/${exams.length}` }
+                  { 
+                    label: 'Ujian Selesai', 
+                    percentage: Math.min(100, Math.round((finishedExams.length / Math.max(totalAssignedExams, 1)) * 100)), 
+                    color: '#10b981', 
+                    count: `${finishedExams.length}/${totalAssignedExams}` 
+                  }
                 ]}
               />
 
@@ -685,9 +694,9 @@ export const StudentExamsPage: React.FC = () => {
                     value={scoredExams.length > 0 ? `${tuntasCount} / ${scoredExams.length} Tuntas` : 'Standar KKM 75'}
                     subtitle={
                       remedialCount > 0
-                        ? `${remedialCount} mapel perlu remedial (< KKM 75)`
+                        ? `${remedialCount} ujian perlu remedial (< KKM 75)`
                         : scoredExams.length > 0
-                          ? 'Semua mapel memenuhi KKM 75'
+                          ? 'Semua ujian memenuhi KKM 75'
                           : 'Klik untuk lihat rincian KKM'
                     }
                     icon={Award}
@@ -1602,7 +1611,7 @@ export const StudentExamsPage: React.FC = () => {
               {/* Metric summary */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
                 <div className="p-3 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 rounded-2xl text-center">
-                  <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase">Total Mapel</span>
+                  <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase">Total Ujian</span>
                   <p className="text-xl font-black font-mono text-slate-900 dark:text-white mt-0.5">{statSourceExams.length}</p>
                 </div>
                 <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl text-center">
